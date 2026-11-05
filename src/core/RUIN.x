@@ -236,9 +236,29 @@ static void RefreshFeatures(void) {
     RUINInstallLegacyMessagingConfiguration();
     RUINInstallClientVersionAdvertisement();
     RUINInstallLocalNotifications();
-    RUINInstallLocalAppearance(); RUINInstallNativeFontCustomization(); RUINInstallNativeMuteSend();
-    RUINInstallFeatures(); RUINInstallReadBoundary(); RUINInstallReadOnReply(); RUINInstallConfirmations(); RUINInstallNativeChatControls();
-    RUINRefreshInterfaceFeatures(); RUINInstallAutomaticReadGate(); RUINInstallMessageHistory(); RUINInstallUnsendRetention(); RUINInstallUnsendOperation(); RUINInstallUnsendMarkerUI(); RUINInstallAgeVerification(); RUINInstallReadUsersEvents(); RUINInstallThemeFeatures(); RUINInstallThemeStoreDownload(); RUINInstallThemeStoreImages(); RUINInstallNativeThemeImages(); RUINInstallNativeThemeWorkflow(); RUINInstallThemeStoreWeb(); RUINInstallMenuExtras();
+    RUINInstallLocalAppearance();
+    RUINInstallNativeFontCustomization();
+    RUINInstallNativeMuteSend();
+    RUINInstallFeatures();
+    RUINInstallReadBoundary();
+    RUINInstallReadOnReply();
+    RUINInstallConfirmations();
+    RUINInstallNativeChatControls();
+    RUINRefreshInterfaceFeatures();
+    RUINInstallAutomaticReadGate();
+    RUINInstallMessageHistory();
+    RUINInstallUnsendRetention();
+    RUINInstallUnsendOperation();
+    RUINInstallUnsendMarkerUI();
+    RUINInstallAgeVerification();
+    RUINInstallReadUsersEvents();
+    RUINInstallThemeFeatures();
+    RUINInstallThemeStoreDownload();
+    RUINInstallThemeStoreImages();
+    RUINInstallNativeThemeImages();
+    RUINInstallNativeThemeWorkflow();
+    RUINInstallThemeStoreWeb();
+    RUINInstallMenuExtras();
     RUINWriteRuntimeReport();
 }
 
@@ -546,8 +566,10 @@ static void RUINMaybeScheduleEnvironmentSettings(void) {
 static void RUINApplicationDidBecomeActive(void) {
     if (RUINIsCompatible()) {
         RUINInstallLegacyMessagingConfiguration();
-        RUINInstallLocalNotifications(); RUINInstallLocalAppearance();
-        RUINInstallNativeFontCustomization(); RUINInstallNativeMuteSend();
+        RUINInstallLocalNotifications();
+        RUINInstallLocalAppearance();
+        RUINInstallNativeFontCustomization();
+        RUINInstallNativeMuteSend();
     }
     static BOOL selfTestAttempted;
     if (!selfTestAttempted && [NSProcessInfo.processInfo.environment[@"RUIN_SELF_TEST"] isEqualToString:@"1"]) {
@@ -558,7 +580,30 @@ static void RUINApplicationDidBecomeActive(void) {
         RUINReadControlEnabledDefaultsKey: @NO,
         RUINLocalNamesDefaultsKey: @{}
     }];
-    if (RUINIsCompatible()) { RUINInstallFeatures(); RUINInstallReadBoundary(); RUINInstallNativeEntry(); RUINInstallSecondaryLogin(); RUINInstallReadOnReply(); RUINInstallAutomaticReadGate(); RUINInstallThemeFeatures(); RUINInstallThemeStoreDownload(); RUINInstallThemeStoreImages(); RUINInstallNativeThemeImages(); RUINInstallNativeThemeWorkflow(); RUINInstallThemeStoreWeb(); RUINInstallInterfaceFeatures(); RUINInstallConfirmations(); RUINInstallMessageHistory(); RUINInstallUnsendRetention(); RUINInstallUnsendOperation(); RUINInstallUnsendMarkerUI(); RUINInstallAgeVerification(); RUINInstallMenuExtras(); RUINInstallNativeChatControls(); InstallRuntimeInspector(); }
+    if (RUINIsCompatible()) {
+        RUINInstallFeatures();
+        RUINInstallReadBoundary();
+        RUINInstallNativeEntry();
+        RUINInstallSecondaryLogin();
+        RUINInstallReadOnReply();
+        RUINInstallAutomaticReadGate();
+        RUINInstallThemeFeatures();
+        RUINInstallThemeStoreDownload();
+        RUINInstallThemeStoreImages();
+        RUINInstallNativeThemeImages();
+        RUINInstallNativeThemeWorkflow();
+        RUINInstallThemeStoreWeb();
+        RUINInstallInterfaceFeatures();
+        RUINInstallConfirmations();
+        RUINInstallMessageHistory();
+        RUINInstallUnsendRetention();
+        RUINInstallUnsendOperation();
+        RUINInstallUnsendMarkerUI();
+        RUINInstallAgeVerification();
+        RUINInstallMenuExtras();
+        RUINInstallNativeChatControls();
+        InstallRuntimeInspector();
+    }
     RUINMaybeScheduleEnvironmentSettings();
     RUINWriteRuntimeReport();
 }

@@ -38,37 +38,39 @@ static void ObserveSendEntry(id message) {
     // Completion/history notifications do not identify a new user reply.
     atomic_fetch_add(&observedSentNotifications, 1);
     %orig;
-
 }
 %end
 %end
+
 %group RUINReplySquareSent
 %hook RUINReplySquare
 - (void)addNotificationOfSentMessage {
     atomic_fetch_add(&observedSentNotifications, 1);
     %orig;
-
 }
 %end
 %end
+
 %group RUINReplyTalkSend
 %hook RUINReplyTalk
 - (void)sendWithCompletionHandler:(id)completion {
-    atomic_fetch_add(&modelSendEntries, 1); ObserveSendEntry(self);
+    atomic_fetch_add(&modelSendEntries, 1);
+    ObserveSendEntry(self);
     %orig;
-
 }
 %end
 %end
+
 %group RUINReplySquareSend
 %hook RUINReplySquare
 - (void)sendWithCompletionHandler:(id)completion {
-    atomic_fetch_add(&modelSendEntries, 1); ObserveSendEntry(self);
+    atomic_fetch_add(&modelSendEntries, 1);
+    ObserveSendEntry(self);
     %orig;
-
 }
 %end
 %end
+
 static BOOL Install(const char *name, const char *selectorName, const char *encoding, void (^initialize)(Class)) {
     Class cls = objc_getClass(name);
     Method method = cls ? class_getInstanceMethod(cls, sel_registerName(selectorName)) : NULL;

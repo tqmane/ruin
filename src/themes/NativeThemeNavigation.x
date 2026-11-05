@@ -412,9 +412,11 @@ static BOOL RUINClassOwnsSelector(Class cls, SEL selector)
     unsigned int count = 0;
     Method *methods = class_copyMethodList(cls, &count);
     BOOL owns = NO;
-    for (unsigned int i = 0; i < count; i++) if (method_getName(methods[i]) == selector) {
-        owns = YES;
-        break;
+    for (unsigned int i = 0; i < count; i++) {
+        if (method_getName(methods[i]) == selector) {
+            owns = YES;
+            break;
+        }
     }
     free(methods);
     return owns;
@@ -434,8 +436,7 @@ void RUINInstallNativeMyThemesDidAppearHook(void)
     if (!cls || !method || !encoding || strcmp(encoding, "v20@0:8B16") ||
         RUINClassOwnsSelector(cls, selector)) return;
 
-    IMP original = method_getImplementation(method);
-    if (!original) return;
+    if (!method_getImplementation(method)) return;
     %init(RUINNativeMyThemes, RUINNativeMyThemesController=cls);
     gNativeMyThemesHookInstalled = YES;
 }

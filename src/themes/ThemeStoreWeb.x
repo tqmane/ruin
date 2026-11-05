@@ -510,7 +510,12 @@ static void RUINThemeStoreWebInstallHook(void)
         unsigned int count = 0;
         Method *methods = class_copyMethodList(cls, &count);
         Method ownMethod = NULL;
-        for (unsigned int i = 0; i < count; i++) if (method_getName(methods[i]) == selector) { ownMethod = methods[i]; break; }
+        for (unsigned int i = 0; i < count; i++) {
+            if (method_getName(methods[i]) == selector) {
+                ownMethod = methods[i];
+                break;
+            }
+        }
         free(methods);
         if (!ownMethod) {
             atomic_store(&gRUINThemeStoreWebHookStatus, RUINThemeStoreWebHookMethodUnavailable);

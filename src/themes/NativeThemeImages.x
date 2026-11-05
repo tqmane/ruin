@@ -24,29 +24,12 @@ enum { kCacheNotRequested, kCacheTargetMismatch, kCacheScheduled, kCacheRunning,
        kCacheComplete, kCacheUnavailable };
 enum { kMaxNamespaces = 64, kMaxDirectoryEntries = 1024, kMaxNamespaceName = 67 };
 
-
-
 static const char *gSelectorNames[kHookCount] = {
     "dataTaskWithRequest:", "dataTaskWithRequest:completionHandler:",
     "dataTaskWithURL:", "dataTaskWithURL:completionHandler:",
     "downloadTaskWithRequest:", "downloadTaskWithRequest:completionHandler:",
     "downloadTaskWithURL:", "downloadTaskWithURL:completionHandler:"
 };
-
-static SEL RUINSelectorAtIndex(NSUInteger index)
-{
-    switch (index) {
-        case kRequest: return @selector(dataTaskWithRequest:);
-        case kRequestCompletion: return @selector(dataTaskWithRequest:completionHandler:);
-        case kURL: return @selector(dataTaskWithURL:);
-        case kURLCompletion: return @selector(dataTaskWithURL:completionHandler:);
-        case kDownloadRequest: return @selector(downloadTaskWithRequest:);
-        case kDownloadRequestCompletion: return @selector(downloadTaskWithRequest:completionHandler:);
-        case kDownloadURL: return @selector(downloadTaskWithURL:);
-        case kDownloadURLCompletion: return @selector(downloadTaskWithURL:completionHandler:);
-        default: return NULL;
-    }
-}
 
 static Class gInstalledTaskClass;
 static atomic_int gSelectorStatus[kHookCount] = {
@@ -353,25 +336,46 @@ static void RUINInstallDelegateTaskHooks(Class cls)
         if (atomic_load(&gDelegateStatus[i]) == kInstalled) continue;
         SEL selector = sel_registerName(gDelegateNames[i]);
         Method method = class_getInstanceMethod(cls, selector);
-        if (!method) { atomic_store(&gDelegateStatus[i], kMissingSelector); continue; }
+        if (!method) {
+            atomic_store(&gDelegateStatus[i], kMissingSelector);
+            continue;
+        }
         NSMethodSignature *signature = [NSMethodSignature signatureWithObjCTypes:method_getTypeEncoding(method)];
-        BOOL completion = i >= kDelegateRequestCompletion;
-        BOOL valid = signature.numberOfArguments == (completion ? 5 : 4) &&
+        BOOL hasCompletion = i >= kDelegateRequestCompletion;
+        BOOL valid = signature.numberOfArguments == (hasCompletion ? 5 : 4) &&
             RUINTypeIsObject(signature.methodReturnType, NO) &&
             RUINTypeIsObject([signature getArgumentTypeAtIndex:0], NO) &&
             RUINTypeIsSelector([signature getArgumentTypeAtIndex:1]) &&
             RUINTypeIsObject([signature getArgumentTypeAtIndex:2], NO) &&
             RUINTypeIsObject([signature getArgumentTypeAtIndex:3], NO) &&
-            (!completion || RUINTypeIsObject([signature getArgumentTypeAtIndex:4], YES));
-        if (!valid) { atomic_store(&gDelegateStatus[i], kABIMismatch); continue; }
-        if (!method_getImplementation(method)) { atomic_store(&gDelegateStatus[i], kInstallFailed); continue; }
+            (!hasCompletion || RUINTypeIsObject([signature getArgumentTypeAtIndex:4], YES));
+        if (!valid) {
+            atomic_store(&gDelegateStatus[i], kABIMismatch);
+            continue;
+        }
+        if (!method_getImplementation(method)) {
+            atomic_store(&gDelegateStatus[i], kInstallFailed);
+            continue;
+        }
         switch (i) {
-            case kDelegateRequest: %init(RUINNativeThemeDelegateRequest, RUINThemeURLSession=cls); break;
-            case kDelegateURL: %init(RUINNativeThemeDelegateURL, RUINThemeURLSession=cls); break;
-            case kDelegateRequestCompletion: %init(RUINNativeThemeDelegateRequestCompletion, RUINThemeURLSession=cls); break;
-            case kDelegateURLCompletion: %init(RUINNativeThemeDelegateURLCompletion, RUINThemeURLSession=cls); break;
-            case kDelegateDownloadRequestCompletion: %init(RUINNativeThemeDelegateDownloadRequestCompletion, RUINThemeURLSession=cls); break;
-            case kDelegateDownloadURLCompletion: %init(RUINNativeThemeDelegateDownloadURLCompletion, RUINThemeURLSession=cls); break;
+            case kDelegateRequest:
+                %init(RUINNativeThemeDelegateRequest, RUINThemeURLSession=cls);
+                break;
+            case kDelegateURL:
+                %init(RUINNativeThemeDelegateURL, RUINThemeURLSession=cls);
+                break;
+            case kDelegateRequestCompletion:
+                %init(RUINNativeThemeDelegateRequestCompletion, RUINThemeURLSession=cls);
+                break;
+            case kDelegateURLCompletion:
+                %init(RUINNativeThemeDelegateURLCompletion, RUINThemeURLSession=cls);
+                break;
+            case kDelegateDownloadRequestCompletion:
+                %init(RUINNativeThemeDelegateDownloadRequestCompletion, RUINThemeURLSession=cls);
+                break;
+            case kDelegateDownloadURLCompletion:
+                %init(RUINNativeThemeDelegateDownloadURLCompletion, RUINThemeURLSession=cls);
+                break;
             default: continue;
         }
         atomic_store(&gDelegateStatus[i], kInstalled);
@@ -394,7 +398,7 @@ static BOOL RUINInstallHooksOnClass(Class cls, BOOL requireNSURLSessionSubclass)
     BOOL anyInvalid = NO;
     BOOL anyABIMismatch = NO;
     for (NSUInteger i = 0; i < kHookCount; i++) {
-        Method method = class_getInstanceMethod(cls, RUINSelectorAtIndex(i));
+        Method method = class_getInstanceMethod(cls, sel_registerName(gSelectorNames[i]));
         if (!method) {
             atomic_store(&gSelectorStatus[i], kMissingSelector);
             anyInvalid = YES;

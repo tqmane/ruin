@@ -73,17 +73,26 @@ static void RUINInstallAgeHook(Class target, RUINAgeHook *hook)
 {
     Class metaclass = target ? object_getClass((id)target) : Nil;
     if (atomic_load(&hook->status) == RUINAgeHookInstalled) return;
-    if (!metaclass) { atomic_store(&hook->status, RUINAgeHookMissingClass); return; }
+    if (!metaclass) {
+        atomic_store(&hook->status, RUINAgeHookMissingClass);
+        return;
+    }
     SEL selector = sel_registerName(hook->selectorName);
     Method method = class_getInstanceMethod(metaclass, selector);
-    if (!method) { atomic_store(&hook->status, RUINAgeHookMissingSelector); return; }
+    if (!method) {
+        atomic_store(&hook->status, RUINAgeHookMissingSelector);
+        return;
+    }
     const char *encoding = method_getTypeEncoding(method);
     if (!encoding || strcmp(encoding, hook->encoding) != 0) {
         atomic_store(&hook->status, RUINAgeHookEncodingMismatch);
         return;
     }
     IMP original = method_getImplementation(method);
-    if (!original) { atomic_store(&hook->status, RUINAgeHookInstallFailed); return; }
+    if (!original) {
+        atomic_store(&hook->status, RUINAgeHookInstallFailed);
+        return;
+    }
 
     if (hook == &gAgeNecessaryHook) {
         %init(RUINAgeNecessary, RUINAgeNecessaryTarget = target);

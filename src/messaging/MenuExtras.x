@@ -1377,9 +1377,13 @@ void RUINInstallMenuExtras(void)
     }
     BOOL allInstalled = sCalloutCountInstalled && sCalloutCellInstalled && sCalloutSelectionInstalled;
     atomic_store(&sCalloutGridHooksReady, allInstalled);
-    atomic_store(&sCalloutGridHookStatus, allInstalled ? RUINMenuExtrasHookInstalled :
-        (numberStatus != RUINMenuExtrasHookInstalled ? numberStatus :
-         (cellStatus != RUINMenuExtrasHookInstalled ? cellStatus : selectStatus)));
+    RUINMenuExtrasHookStatus gridStatus = RUINMenuExtrasHookInstalled;
+    if (!allInstalled) {
+        if (numberStatus != RUINMenuExtrasHookInstalled) gridStatus = numberStatus;
+        else if (cellStatus != RUINMenuExtrasHookInstalled) gridStatus = cellStatus;
+        else gridStatus = selectStatus;
+    }
+    atomic_store(&sCalloutGridHookStatus, gridStatus);
 
     RUINMenuExtrasHookStatus intrinsicStatus = sCalloutIntrinsicInstalled ? RUINMenuExtrasHookInstalled :
         RUINMenuExtrasValidateHook(callout, sel_registerName("intrinsicContentSize"), "{CGSize=dd}16@0:8", YES);

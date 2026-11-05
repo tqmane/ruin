@@ -223,84 +223,97 @@ static long long ReadRuntimeBoundary(NSManagedObject *object, uintptr_t caller) 
 %end
 %end
 
+static void InstallBoundaryAccessor(Class cls) {
+    NSString *name = NSStringFromClass(cls);
+    if (!LongLongProperty(cls, "readUpToMessageIDSynced") || !LongLongProperty(cls, "readUpToMessageID")) {
+        installedBoundaries[name] = @"missing_verified_properties";
+        return;
+    }
+    SEL selector = sel_registerName("readUpToMessageIDSynced");
+    Method method = class_getInstanceMethod(cls, selector);
+    IMP current = method ? method_getImplementation(method) : NULL;
+    NSValue *installed = installedImplementations[name];
+    if (installed) {
+        // A later swizzler may retain our entry in its original chain.
+        // Rebinding that same entry to a new original would also change
+        // the old chain and lose this class's getter. Successful class
+        // bindings stay immutable; a native replacement is left in place.
+        if (current != installed.pointerValue) installedBoundaries[name] = @"accessor_changed_after_install";
+        else {
+            RUINBoundaryAccessorState *state = objc_getAssociatedObject(cls, &boundaryAccessorStateKey);
+            installedBoundaries[name] = state.original ? @"installed_original_accessor" : @"installed_coredata_accessor";
+        }
+        return;
+    }
+    if (method && strcmp(method_getTypeEncoding(method), "q16@0:8") && strcmp(method_getTypeEncoding(method), "q@:")) {
+        installedBoundaries[name] = @"encoding_mismatch";
+        return;
+    }
+    // An inherited RUIN entry already resolves the closest registered
+    // ancestor. Only native overrides need an additional class binding.
+    if (current && (current == boundaryExistingEntry || current == boundaryMissingEntry)) {
+        installedBoundaries[name] = @"inherited_boundary_accessor";
+        return;
+    }
+    RUINBoundaryAccessorState *state = [RUINBoundaryAccessorState new];
+    state.owner = cls;
+    state.original = current;
+    objc_setAssociatedObject(cls, &boundaryAccessorStateKey, state, OBJC_ASSOCIATION_RETAIN);
+    if (current) {
+        %init(RUINBoundaryExisting, RUINBoundaryExistingAccessor = cls);
+    } else {
+        %init(RUINBoundaryMissing, RUINBoundaryMissingAccessor = cls);
+    }
+    IMP replacement = class_getMethodImplementation(cls, selector);
+    if (!replacement || replacement == current) {
+        objc_setAssociatedObject(cls, &boundaryAccessorStateKey, nil, OBJC_ASSOCIATION_RETAIN);
+        installedBoundaries[name] = @"installation_failed";
+        return;
+    }
+    if (current) boundaryExistingEntry = replacement;
+    else boundaryMissingEntry = replacement;
+    installedImplementations[name] = [NSValue valueWithPointer:replacement];
+    installedBoundaries[name] = current ? @"installed_original_accessor" : @"installed_coredata_accessor";
+}
+
 void RUINInstallReadBoundary(void) {
     NSDictionary *info = NSBundle.mainBundle.infoDictionary;
     if (![info[@"RUINOriginalBundleIdentifier"] isEqual:RUINTargetBundleIdentifier] ||
         ![info[@"CFBundleShortVersionString"] isEqual:RUINTargetVersion] ||
         ![info[@"CFBundleVersion"] isEqual:RUINTargetBuild]) return;
     @synchronized (NSManagedObjectContext.class) {
-    if (!installedBoundaries) installedBoundaries = [NSMutableDictionary dictionary];
-    if (!installedImplementations) installedImplementations = [NSMutableDictionary dictionary];
-    if (!nativeReadCaller) VerifyNativeReadSite();
-    if (!fetchFilterInstalled) {
-        Method fetch = class_getInstanceMethod(NSManagedObjectContext.class, @selector(executeFetchRequest:error:));
-        NSMethodSignature *signature = fetch ? [NSMethodSignature signatureWithObjCTypes:method_getTypeEncoding(fetch)] : nil;
-        if (signature.numberOfArguments == 4 && signature.methodReturnType[0] == '@' &&
-            [signature getArgumentTypeAtIndex:2][0] == '@' && !strcmp([signature getArgumentTypeAtIndex:3], "^@")) {
-            if (method_getImplementation(fetch)) {
+        if (!installedBoundaries) installedBoundaries = [NSMutableDictionary dictionary];
+        if (!installedImplementations) installedImplementations = [NSMutableDictionary dictionary];
+        if (!nativeReadCaller) VerifyNativeReadSite();
+        if (!fetchFilterInstalled) {
+            Method fetch = class_getInstanceMethod(NSManagedObjectContext.class, @selector(executeFetchRequest:error:));
+            NSMethodSignature *signature = fetch ? [NSMethodSignature signatureWithObjCTypes:method_getTypeEncoding(fetch)] : nil;
+            if (signature.numberOfArguments == 4 && signature.methodReturnType[0] == '@' &&
+                [signature getArgumentTypeAtIndex:2][0] == '@' && !strcmp([signature getArgumentTypeAtIndex:3], "^@") &&
+                method_getImplementation(fetch)) {
                 %init(RUINBoundaryFetch);
                 fetchFilterInstalled = YES;
             }
         }
-    }
-    NSArray *baseNames = @[@"ManagedChat", @"ManagedSquareChat", @"ManagedSquareChatThread"];
-    NSMutableArray *targets = [NSMutableArray array];
-    for (NSString *baseName in baseNames) {
-        Class base = objc_getClass(baseName.UTF8String);
-        if (base) [targets addObject:base];
-        else installedBoundaries[baseName] = @"class_not_loaded";
-    }
-    unsigned int count = 0;
-    Class *classes = objc_copyClassList(&count);
-    for (unsigned int i = 0; i < count; i++) {
-        for (Class parent = class_getSuperclass(classes[i]); parent; parent = class_getSuperclass(parent)) {
-            if ([targets containsObject:parent]) { if (![targets containsObject:classes[i]]) [targets addObject:classes[i]]; break; }
+        NSArray *baseNames = @[@"ManagedChat", @"ManagedSquareChat", @"ManagedSquareChatThread"];
+        NSMutableArray *targets = [NSMutableArray array];
+        for (NSString *baseName in baseNames) {
+            Class base = objc_getClass(baseName.UTF8String);
+            if (base) [targets addObject:base];
+            else installedBoundaries[baseName] = @"class_not_loaded";
         }
-    }
-    free(classes);
-    for (Class cls in targets) {
-        NSString *name = NSStringFromClass(cls);
-        if (!LongLongProperty(cls, "readUpToMessageIDSynced") || !LongLongProperty(cls, "readUpToMessageID")) {
-            installedBoundaries[name] = @"missing_verified_properties"; continue;
-        }
-        SEL selector = sel_registerName("readUpToMessageIDSynced");
-        Method method = class_getInstanceMethod(cls, selector);
-        IMP current = method ? method_getImplementation(method) : NULL;
-        NSValue *installed = installedImplementations[name];
-        if (installed) {
-            // A later swizzler may retain our entry in its original chain.
-            // Rebinding that same entry to a new original would also change
-            // the old chain and lose this class's getter. Successful class
-            // bindings stay immutable; a native replacement is left in place.
-            if (current != installed.pointerValue) installedBoundaries[name] = @"accessor_changed_after_install";
-            else {
-                RUINBoundaryAccessorState *state = objc_getAssociatedObject(cls, &boundaryAccessorStateKey);
-                installedBoundaries[name] = state.original ? @"installed_original_accessor" : @"installed_coredata_accessor";
+        unsigned int count = 0;
+        Class *classes = objc_copyClassList(&count);
+        for (unsigned int i = 0; i < count; i++) {
+            for (Class parent = class_getSuperclass(classes[i]); parent; parent = class_getSuperclass(parent)) {
+                if ([targets containsObject:parent]) {
+                    if (![targets containsObject:classes[i]]) [targets addObject:classes[i]];
+                    break;
+                }
             }
-            continue;
         }
-        if (method && strcmp(method_getTypeEncoding(method), "q16@0:8") && strcmp(method_getTypeEncoding(method), "q@:")) {
-            installedBoundaries[name] = @"encoding_mismatch"; continue;
-        }
-        // An inherited RUIN entry already resolves the closest registered
-        // ancestor. Only native overrides need an additional class binding.
-        if (current && (current == boundaryExistingEntry || current == boundaryMissingEntry)) {
-            installedBoundaries[name] = @"inherited_boundary_accessor"; continue;
-        }
-        RUINBoundaryAccessorState *state = [RUINBoundaryAccessorState new];
-        state.owner = cls; state.original = current;
-        objc_setAssociatedObject(cls, &boundaryAccessorStateKey, state, OBJC_ASSOCIATION_RETAIN);
-        if (current) { %init(RUINBoundaryExisting, RUINBoundaryExistingAccessor = cls); }
-        else { %init(RUINBoundaryMissing, RUINBoundaryMissingAccessor = cls); }
-        IMP replacement = class_getMethodImplementation(cls, selector);
-        if (!replacement || replacement == current) {
-            objc_setAssociatedObject(cls, &boundaryAccessorStateKey, nil, OBJC_ASSOCIATION_RETAIN);
-            installedBoundaries[name] = @"installation_failed"; continue;
-        }
-        if (current) boundaryExistingEntry = replacement; else boundaryMissingEntry = replacement;
-        installedImplementations[name] = [NSValue valueWithPointer:replacement];
-        installedBoundaries[name] = current ? @"installed_original_accessor" : @"installed_coredata_accessor";
-    }
+        free(classes);
+        for (Class cls in targets) InstallBoundaryAccessor(cls);
     }
 }
 NSDictionary *RUINReadBoundaryDiagnostics(void) {

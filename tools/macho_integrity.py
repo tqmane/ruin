@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Read-only checks that packaging leaves LINE's existing Mach-O sections intact."""
+"""Read-only checks that packaging changes only LINE's loading/signing metadata."""
 import argparse
 import hashlib
 from pathlib import Path
+import plistlib
 import struct
 import zipfile
 
@@ -43,47 +44,46 @@ def _commands(data):
 
 def sections(data):
     """Return unchanged section headers/hashes and ordinary dylib dependencies."""
-    header, commands, end = _commands(data)
+    header, commands, command_end = _commands(data)
     result = {}
     dependencies = []
     for command, raw_command in commands:
         size = len(raw_command)
         # All offsets below are relative to the current load command.
-        cursor = 0
-        command_data = raw_command
         if command == LC_SEGMENT_64:
             if size < 72:
                 raise ValueError('Truncated segment command.')
-            segment = _name(command_data[cursor + 8:cursor + 24])
-            section_count = struct.unpack_from('<I', command_data, cursor + 64)[0]
+            segment = _name(raw_command[8:24])
+            section_count = struct.unpack_from('<I', raw_command, 64)[0]
             if 72 + section_count * 80 != size:
                 raise ValueError('Invalid section table size.')
             for index in range(section_count):
-                pos = cursor + 72 + index * 80
-                section = _name(command_data[pos:pos + 16])
-                owner = _name(command_data[pos + 16:pos + 32])
-                address, length, offset = struct.unpack_from('<QQI', command_data, pos + 32)
-                section_flags = struct.unpack_from('<I', command_data, pos + 64)[0]
+                section_offset = 72 + index * 80
+                section_header = raw_command[section_offset:section_offset + 80]
+                section = _name(section_header[:16])
+                owner = _name(section_header[16:32])
+                _, length, offset = struct.unpack_from('<QQI', section_header, 32)
+                section_flags = struct.unpack_from('<I', section_header, 64)[0]
                 key = (segment, section)
                 if owner != segment or key in result:
                     raise ValueError('Invalid or duplicate Mach-O section.')
                 digest = None
-                if length and section_flags & 0xFF not in ZEROFILL_TYPES:
-                    if offset < end or offset + length > len(data):
+                if length and (section_flags & 0xFF) not in ZEROFILL_TYPES:
+                    if offset < command_end or offset + length > len(data):
                         raise ValueError('Invalid Mach-O section file range.')
                     digest = hashlib.sha256(memoryview(data)[offset:offset + length]).hexdigest()
                 # Preserve the entire section header, not just the file bytes.
-                result[key] = (command_data[pos:pos + 80], digest)
+                result[key] = (section_header, digest)
         elif command == LC_LOAD_DYLIB:
             if size < 24:
                 raise ValueError('Truncated dylib load command.')
-            offset = struct.unpack_from('<I', command_data, cursor + 8)[0]
+            offset = struct.unpack_from('<I', raw_command, 8)[0]
             if offset < 24 or offset >= size:
                 raise ValueError('Invalid dylib name offset.')
-            raw = command_data[cursor + offset:cursor + size]
-            if b'\0' not in raw:
+            raw_name = raw_command[offset:]
+            if b'\0' not in raw_name:
                 raise ValueError('Unterminated dylib name.')
-            dependencies.append(raw.split(b'\0', 1)[0].decode('utf-8'))
+            dependencies.append(raw_name.split(b'\0', 1)[0].decode('utf-8'))
     if ('__TEXT', '__text') not in result:
         raise ValueError('Invalid command table or missing executable section.')
     return header, result, dependencies
@@ -179,9 +179,10 @@ def verify_packaged(original, packaged):
     # This also covers __LINKEDIT fixups, exports, symbol tables and inter-section
     # bytes that section hashing alone cannot protect. No executable is written.
     body_start = max(old_command_end, new_command_end)
+    original_body = memoryview(original)[body_start:prefix_end]
+    packaged_body = memoryview(packaged)[body_start:prefix_end]
     if (prefix_end < body_start or len(packaged) < prefix_end or
-            hashlib.sha256(memoryview(original)[body_start:prefix_end]).digest() !=
-            hashlib.sha256(memoryview(packaged)[body_start:prefix_end]).digest()):
+            hashlib.sha256(original_body).digest() != hashlib.sha256(packaged_body).digest()):
         raise ValueError('Packaging changed non-signature Mach-O bytes (including __LINKEDIT).')
     return len(original_sections)
 
@@ -189,7 +190,6 @@ def verify_packaged(original, packaged):
 def read_executable(path):
     if path.suffix.lower() != '.ipa':
         return path.read_bytes()
-    import plistlib
     with zipfile.ZipFile(path) as archive:
         names = [name for name in archive.namelist()
                  if name.startswith('Payload/') and name.endswith('.app/Info.plist')

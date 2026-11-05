@@ -125,13 +125,6 @@ static BOOL RUINThemeStoreDownloadShouldProject(id object)
 %end
 %end
 
-typedef struct {
-    SEL selector;
-    const char *encoding;
-    Method method;
-    IMP original;
-} RUINThemeStoreDownloadMethod;
-
 static Method RUINThemeStoreDownloadOwnMethod(Class cls, SEL selector)
 {
     unsigned int count = 0;
@@ -177,28 +170,30 @@ void RUINInstallThemeStoreDownload(void)
         return;
     }
 
-    RUINThemeStoreDownloadMethod methods[] = {
-        { sel_registerName("type"), "@16@0:8", NULL, NULL },
-        { sel_registerName("isOwned"), "B16@0:8", NULL, NULL },
-        { sel_registerName("isAvailableForMyself"), "B16@0:8", NULL, NULL },
-        { sel_registerName("priceInLineCoin"), "@16@0:8", NULL, NULL },
-        { sel_registerName("customDownloadButtonLabel"), "@16@0:8", NULL, NULL },
-        { sel_registerName("read:"), "v24@0:8@16", NULL, NULL }
+    const struct {
+        SEL selector;
+        const char *encoding;
+    } requiredMethods[] = {
+        { sel_registerName("type"), "@16@0:8" },
+        { sel_registerName("isOwned"), "B16@0:8" },
+        { sel_registerName("isAvailableForMyself"), "B16@0:8" },
+        { sel_registerName("priceInLineCoin"), "@16@0:8" },
+        { sel_registerName("customDownloadButtonLabel"), "@16@0:8" },
+        { sel_registerName("read:"), "v24@0:8@16" }
     };
-    const size_t methodCount = sizeof(methods) / sizeof(methods[0]);
+    const size_t methodCount = sizeof(requiredMethods) / sizeof(requiredMethods[0]);
     for (size_t index = 0; index < methodCount; index++) {
-        methods[index].method = RUINThemeStoreDownloadOwnMethod(cls, methods[index].selector);
-        if (!methods[index].method) {
+        Method method = RUINThemeStoreDownloadOwnMethod(cls, requiredMethods[index].selector);
+        if (!method) {
             atomic_store_explicit(&gStatus, RUINThemeStoreDownloadMissingSelector, memory_order_release);
             return;
         }
-        const char *actual = method_getTypeEncoding(methods[index].method);
-        if (!actual || strcmp(actual, methods[index].encoding) != 0) {
+        const char *actual = method_getTypeEncoding(method);
+        if (!actual || strcmp(actual, requiredMethods[index].encoding) != 0) {
             atomic_store_explicit(&gStatus, RUINThemeStoreDownloadEncodingMismatch, memory_order_release);
             return;
         }
-        methods[index].original = method_getImplementation(methods[index].method);
-        if (!methods[index].original) {
+        if (!method_getImplementation(method)) {
             atomic_store_explicit(&gStatus, RUINThemeStoreDownloadInstallFailed, memory_order_release);
             return;
         }

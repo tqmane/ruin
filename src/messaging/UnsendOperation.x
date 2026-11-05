@@ -43,7 +43,13 @@ static const CodeAnchor anchors[] = {
 static const uintptr_t scopePCs[] = {0x103ed03ac, 0x104029300, 0x103e29b80, 0x103e29b30, 0x1000bac48};
 static _Atomic(uintptr_t) imageSlide;
 static atomic_bool codeVerified;
-static atomic_int fetchStatus, displayStatus, param1Status; // 0 pending, 1 gated, 2 ABI mismatch, 3 installed.
+typedef NS_ENUM(int, OperationHookStatus) {
+    OperationHookPending = 0,
+    OperationHookGated = 1,
+    OperationHookUnavailable = 2,
+    OperationHookInstalled = 3
+};
+static atomic_int fetchStatus, displayStatus, param1Status;
 static atomic_uint_fast64_t fetchCalls, scopedLookups, protectedMessages, rejectedLookups, observationErrors;
 static atomic_uint_fast64_t markerFailures, historyFreezes, displayReturns;
 static atomic_uint_fast64_t capturedOperations, rejectedOperations;
@@ -281,28 +287,36 @@ static BOOL RetainedMarker(NSDictionary *key, BOOL write) {
 }
 %end
 %end
-static void Install(Class cls, const char *name, const char *encoding, atomic_int *status, void (^initialize)(Class)) {
-    if (atomic_load(status) == 3) return;
+static void InstallOperationHook(Class cls, const char *name, const char *encoding, atomic_int *status, void (^initialize)(Class)) {
+    if (atomic_load(status) == OperationHookInstalled) return;
     Method method = cls ? class_getInstanceMethod(cls, sel_registerName(name)) : NULL;
     if (!method || strcmp(method_getTypeEncoding(method), encoding) || !method_getImplementation(method)) {
-        atomic_store(status, 2); return;
+        atomic_store(status, OperationHookUnavailable);
+        return;
     }
     initialize(cls);
-    atomic_store(status, 3);
+    atomic_store(status, OperationHookInstalled);
 }
 void RUINInstallUnsendOperation(void) {
     os_unfair_lock_lock(&installLock);
     @try {
-        BOOL valid = TargetMatches() && VerifyCode(); atomic_store(&codeVerified, valid);
+        BOOL valid = TargetMatches() && VerifyCode();
+        atomic_store(&codeVerified, valid);
         if (!valid) {
-            if (atomic_load(&fetchStatus) != 3) atomic_store(&fetchStatus, 1);
-            if (atomic_load(&displayStatus) != 3) atomic_store(&displayStatus, 1);
-            if (atomic_load(&param1Status) != 3) atomic_store(&param1Status, 1);
+            if (atomic_load(&fetchStatus) != OperationHookInstalled) atomic_store(&fetchStatus, OperationHookGated);
+            if (atomic_load(&displayStatus) != OperationHookInstalled) atomic_store(&displayStatus, OperationHookGated);
+            if (atomic_load(&param1Status) != OperationHookInstalled) atomic_store(&param1Status, OperationHookGated);
             return;
         }
-        Install(NSManagedObjectContext.class, "executeFetchRequest:error:", "@32@0:8@16^@24", &fetchStatus, ^(__unused Class cls) { %init(RUINUnsendFetch); });
-        Install(objc_getClass("ManagedMessage"), "displayedText", "@16@0:8", &displayStatus, ^(Class cls) { %init(RUINUnsendDisplay, RUINUnsendDisplayedMessage = cls); });
-        Install(objc_getClass("LineOperation"), "param1", "@16@0:8", &param1Status, ^(Class cls) { %init(RUINUnsendParam1, RUINUnsendParsedOperation = cls); });
+        InstallOperationHook(NSManagedObjectContext.class, "executeFetchRequest:error:", "@32@0:8@16^@24", &fetchStatus, ^(__unused Class cls) {
+            %init(RUINUnsendFetch);
+        });
+        InstallOperationHook(objc_getClass("ManagedMessage"), "displayedText", "@16@0:8", &displayStatus, ^(Class cls) {
+            %init(RUINUnsendDisplay, RUINUnsendDisplayedMessage = cls);
+        });
+        InstallOperationHook(objc_getClass("LineOperation"), "param1", "@16@0:8", &param1Status, ^(Class cls) {
+            %init(RUINUnsendParam1, RUINUnsendParsedOperation = cls);
+        });
     } @finally { os_unfair_lock_unlock(&installLock); }
 }
 __attribute__((constructor)) static void EarlyUnsendOperation(void) { @autoreleasepool { RUINInstallUnsendOperation(); } }

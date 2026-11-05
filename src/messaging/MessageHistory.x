@@ -854,10 +854,20 @@ static void CaptureReadRanges(id chatID, id ranges) {
 %end
 %end
 
-static void InitRUINHistoryTalk(Class cls) { %init(RUINHistoryTalk, RUINHistoryMessage = cls); }
-static void InitRUINHistorySquare(Class cls) { %init(RUINHistorySquare, RUINHistorySquareMessage = cls); }
-static void InitRUINHistoryRead(Class cls) { %init(RUINHistoryRead, RUINHistoryReadRange = cls); }
-static void InitRUINHistoryRanges(Class cls) { %init(RUINHistoryRanges, RUINHistoryReadRange = cls); }
+// Shared by normal installation and host fixtures: Logos permits one %init
+// source location per group, even when multiple callers need the same hook.
+static void InitRUINHistoryTalk(Class cls) {
+    %init(RUINHistoryTalk, RUINHistoryMessage = cls);
+}
+static void InitRUINHistorySquare(Class cls) {
+    %init(RUINHistorySquare, RUINHistorySquareMessage = cls);
+}
+static void InitRUINHistoryRead(Class cls) {
+    %init(RUINHistoryRead, RUINHistoryReadRange = cls);
+}
+static void InitRUINHistoryRanges(Class cls) {
+    %init(RUINHistoryRanges, RUINHistoryReadRange = cls);
+}
 
 static void InstallHistoryHook(const char *className, const char *selectorName, const char *encoding, void (*initialize)(Class)) {
     NSString *key = [NSString stringWithFormat:@"%s.%s", className, selectorName];

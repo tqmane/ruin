@@ -11,18 +11,21 @@
 #import <stdatomic.h>
 
 NSString *const RUINSecondaryLoginEnabledKey = @"RUINSecondaryLoginEnabled";
-static BOOL activeSecondaryMode, installed, welcomeHookInstalled, secondaryScreenHookInstalled;
+static BOOL activeSecondaryMode;
+static BOOL deviceIdiomHookInstalled, welcomeHookInstalled, secondaryScreenHookInstalled;
 static BOOL autoLoginOpened;
 static BOOL autoQROpened;
 static atomic_ulong appIdiomRequests;
 static char gestureKey;
 static NSString *lastLoginScreen;
 
-static BOOL Supported(void) {
+static BOOL RUINSecondaryLoginTargetMatches(void) {
     NSDictionary *info = NSBundle.mainBundle.infoDictionary;
     return [info[@"RUINOriginalBundleIdentifier"] isEqual:RUINTargetBundleIdentifier] &&
-        [info[@"CFBundleShortVersionString"] isEqual:RUINTargetVersion] && [info[@"CFBundleVersion"] isEqual:RUINTargetBuild];
+        [info[@"CFBundleShortVersionString"] isEqual:RUINTargetVersion] &&
+        [info[@"CFBundleVersion"] isEqual:RUINTargetBuild];
 }
+
 %group RUINSecondaryDeviceRole
 %hook UIDevice
 - (UIUserInterfaceIdiom)userInterfaceIdiom
@@ -41,17 +44,16 @@ static BOOL Supported(void) {
 %end
 %end
 
-static void ShowRestartNotice(UIViewController *controller) {
+static void RUINShowLoginRestartNotice(UIViewController *controller) {
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"ログイン方法を切り替えました"
         message:@"LINEを一度完全に終了して開き直してください。次回起動時から選んだログイン方法になります。"
         preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:@"確認" style:UIAlertActionStyleDefault handler:nil]];
     [controller presentViewController:alert animated:YES completion:nil];
 }
-static void ToggleSecondaryLogin(id self, SEL selector, UILongPressGestureRecognizer *gesture) {
-    (void)selector;
+
+static void RUINPresentLoginModeMenu(UIViewController *controller, UILongPressGestureRecognizer *gesture) {
     if (gesture.state != UIGestureRecognizerStateBegan) return;
-    UIViewController *controller = self;
     if (controller.presentedViewController) return;
     UIAlertController *menu = [UIAlertController alertControllerWithTitle:@"ログイン方法"
         message:@"サブ端末では、現在のメイン端末でQRコードを読み取り、ログインを承認します。"
@@ -60,7 +62,7 @@ static void ToggleSecondaryLogin(id self, SEL selector, UILongPressGestureRecogn
         NSString *title = enabled.boolValue ? @"iPad扱いでサブ端末ログイン" : @"通常のiPhoneログイン";
         [menu addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
             [NSUserDefaults.standardUserDefaults setBool:enabled.boolValue forKey:RUINSecondaryLoginEnabledKey];
-            dispatch_async(dispatch_get_main_queue(), ^{ ShowRestartNotice(controller); });
+            dispatch_async(dispatch_get_main_queue(), ^{ RUINShowLoginRestartNotice(controller); });
         }]];
     }
     [menu addAction:[UIAlertAction actionWithTitle:@"キャンセル" style:UIAlertActionStyleCancel handler:nil]];
@@ -70,7 +72,8 @@ static void ToggleSecondaryLogin(id self, SEL selector, UILongPressGestureRecogn
     }
     [controller presentViewController:menu animated:YES completion:nil];
 }
-static UIControl *FindLoginControl(UIView *view, id owner) {
+
+static UIControl *RUINFindLoginControl(UIView *view, id owner) {
     if ([view isKindOfClass:UIControl.class]) {
         UIControl *control = (UIControl *)view;
         for (id target in control.allTargets) {
@@ -79,17 +82,18 @@ static UIControl *FindLoginControl(UIView *view, id owner) {
         }
     }
     for (UIView *child in view.subviews) {
-        UIControl *found = FindLoginControl(child, owner);
+        UIControl *found = RUINFindLoginControl(child, owner);
         if (found) return found;
     }
     return nil;
 }
-static void WelcomeDidAppear(id self) {
+
+static void RUINWelcomeDidAppear(UIViewController *controller) {
     lastLoginScreen = @"welcome";
-    UIControl *control = FindLoginControl(((UIViewController *)self).view, self);
+    UIControl *control = RUINFindLoginControl(controller.view, controller);
     if (control && !objc_getAssociatedObject(control, &gestureKey)) {
         UILongPressGestureRecognizer *gesture = [[UILongPressGestureRecognizer alloc]
-            initWithTarget:self action:sel_registerName("ruin_chooseLoginMode:")];
+            initWithTarget:controller action:sel_registerName("ruin_chooseLoginMode:")];
         gesture.minimumPressDuration = 0.65;
         gesture.cancelsTouchesInView = YES;
         [control addGestureRecognizer:gesture];
@@ -98,44 +102,49 @@ static void WelcomeDidAppear(id self) {
     if (activeSecondaryMode && !autoLoginOpened &&
         [NSProcessInfo.processInfo.environment[@"RUIN_OPEN_SECONDARY_LOGIN"] isEqual:@"1"]) {
         autoLoginOpened = YES;
-        __weak UIViewController *controller = self;
+        __weak UIViewController *weakController = controller;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-            if (controller.view.window && !controller.presentedViewController)
-                [(id<RUINLINEWelcomeCalls>)controller loginButtonAction];
+            if (weakController.view.window && !weakController.presentedViewController)
+                [(id<RUINLINEWelcomeCalls>)weakController loginButtonAction];
         });
     }
 }
-static void SecondaryDidAppear(id self) {
+
+static void RUINSecondaryLoginDidAppear(UIViewController *controller) {
     lastLoginScreen = @"native_secondary_login";
     if (activeSecondaryMode && !autoQROpened &&
         [NSProcessInfo.processInfo.environment[@"RUIN_OPEN_SECONDARY_LOGIN"] isEqual:@"1"]) {
         autoQROpened = YES;
-        __weak UIViewController *controller = self;
+        __weak UIViewController *weakController = controller;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-            if (controller.view.window && !controller.presentedViewController) {
-                [(id<RUINLINESecondaryLoginCalls>)controller showQRCodeLoginButtonPressed];
+            if (weakController.view.window && !weakController.presentedViewController) {
+                [(id<RUINLINESecondaryLoginCalls>)weakController showQRCodeLoginButtonPressed];
                 lastLoginScreen = @"native_secondary_qr_requested";
             }
         });
     }
 }
+
 %group RUINWelcomeLogin
 %hook RUINWelcomeController
 - (void)viewDidAppear:(BOOL)animated
 {
     %orig(animated);
-    WelcomeDidAppear(self);
+    RUINWelcomeDidAppear(self);
 }
 - (void)loginButtonAction
 {
     BOOL requested = [NSUserDefaults.standardUserDefaults boolForKey:RUINSecondaryLoginEnabledKey];
-    if (requested != activeSecondaryMode) { ShowRestartNotice(self); return; }
+    if (requested != activeSecondaryMode) {
+        RUINShowLoginRestartNotice(self);
+        return;
+    }
     %orig;
 }
 %new(v24@0:8@16)
 - (void)ruin_chooseLoginMode:(UILongPressGestureRecognizer *)gesture
 {
-    ToggleSecondaryLogin(self, _cmd, gesture);
+    RUINPresentLoginModeMenu(self, gesture);
 }
 %end
 %end
@@ -145,7 +154,7 @@ static void SecondaryDidAppear(id self) {
 - (void)viewDidAppear:(BOOL)animated
 {
     %orig(animated);
-    SecondaryDidAppear(self);
+    RUINSecondaryLoginDidAppear(self);
 }
 %end
 %end
@@ -158,7 +167,7 @@ static BOOL RUINSecondaryMethodMatches(Class cls, const char *name, const char *
 }
 
 void RUINInstallSecondaryLogin(void) {
-    if (!Supported()) return;
+    if (!RUINSecondaryLoginTargetMatches()) return;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         NSString *requested = NSProcessInfo.processInfo.environment[@"RUIN_SECONDARY_LOGIN"];
@@ -167,7 +176,7 @@ void RUINInstallSecondaryLogin(void) {
         activeSecondaryMode = [NSUserDefaults.standardUserDefaults boolForKey:RUINSecondaryLoginEnabledKey];
         if (RUINSecondaryMethodMatches(UIDevice.class, "userInterfaceIdiom", "q16@0:8")) {
             %init(RUINSecondaryDeviceRole);
-            installed = YES;
+            deviceIdiomHookInstalled = YES;
         }
     });
     if (!welcomeHookInstalled) {
@@ -188,9 +197,16 @@ void RUINInstallSecondaryLogin(void) {
         }
     }
 }
+
 NSDictionary *RUINSecondaryLoginDiagnostics(void) {
-    return @{@"activeTabletRole":@(activeSecondaryMode), @"requestedTabletRole":@([NSUserDefaults.standardUserDefaults boolForKey:RUINSecondaryLoginEnabledKey]),
-        @"deviceIdiomHookInstalled":@(installed), @"welcomeHooksInstalled":@(welcomeHookInstalled),
-        @"secondaryScreenHookInstalled":@(secondaryScreenHookInstalled), @"tabletQueriesFromLINE":@(atomic_load(&appIdiomRequests)),
-        @"lastLoginScreen":lastLoginScreen ?: @"not_observed", @"accountCoexistenceVerified":@NO};
+    return @{
+        @"activeTabletRole": @(activeSecondaryMode),
+        @"requestedTabletRole": @([NSUserDefaults.standardUserDefaults boolForKey:RUINSecondaryLoginEnabledKey]),
+        @"deviceIdiomHookInstalled": @(deviceIdiomHookInstalled),
+        @"welcomeHooksInstalled": @(welcomeHookInstalled),
+        @"secondaryScreenHookInstalled": @(secondaryScreenHookInstalled),
+        @"tabletQueriesFromLINE": @(atomic_load(&appIdiomRequests)),
+        @"lastLoginScreen": lastLoginScreen ?: @"not_observed",
+        @"accountCoexistenceVerified": @NO
+    };
 }

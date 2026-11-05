@@ -1074,19 +1074,16 @@ static void RUINHandleHook(RUINConfirmationHook *hook, id self, SEL selector, id
         }
     }
 
-    if (hook->flags & RUINHookCameraToggle) {
-        if (RUINCameraSenderIsOffStateButton(self, argument0)) {
-            // The verified off-state control is the only toggle that turns the camera on.
-        } else {
-            id onButtons = RUINObjectGetter(self, hook->className, "videoOnButtons");
-            if ([onButtons isKindOfClass:NSArray.class] && [(NSArray *)onButtons containsObject:argument0]) {
-                RUINCallOriginalDirect(hook, self, selector, argument0, argument1, dispatchedAction);
-                return;
-            }
-            atomic_fetch_add_explicit(&gUnknownCameraState, 1, memory_order_relaxed);
-            atomic_fetch_add_explicit(&hook->missingContext, 1, memory_order_relaxed);
+    // The verified off-state control is the only toggle that turns the camera on.
+    if ((hook->flags & RUINHookCameraToggle) && !RUINCameraSenderIsOffStateButton(self, argument0)) {
+        id onButtons = RUINObjectGetter(self, hook->className, "videoOnButtons");
+        if ([onButtons isKindOfClass:NSArray.class] && [(NSArray *)onButtons containsObject:argument0]) {
+            RUINCallOriginalDirect(hook, self, selector, argument0, argument1, dispatchedAction);
             return;
         }
+        atomic_fetch_add_explicit(&gUnknownCameraState, 1, memory_order_relaxed);
+        atomic_fetch_add_explicit(&hook->missingContext, 1, memory_order_relaxed);
+        return;
     }
 
     RUINConfirmationPending *pending = [RUINConfirmationPending new];

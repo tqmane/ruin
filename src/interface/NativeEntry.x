@@ -25,11 +25,6 @@ static UITableView *RUINFindSettingsTable(UIView *view) {
     return nil;
 }
 
-static void RUINSettingsEntryTapped(id self, SEL selector, id sender) {
-    (void)selector; (void)sender;
-    RUINOpenSettingsInLINE((UIViewController *)self);
-}
-
 static void RUINAttachSettingsEntry(UIViewController *controller) {
     UITableView *table = RUINFindSettingsTable(controller.view);
     if (!table) return;
@@ -98,7 +93,8 @@ static void RUINAttachHomeSettingsButton(UIViewController *controller) {
 %new(v24@0:8@16)
 - (void)ruin_openSettings:(id)sender
 {
-    RUINSettingsEntryTapped(self, _cmd, sender);
+    (void)sender;
+    RUINOpenSettingsInLINE((UIViewController *)self);
 }
 %end
 %end
@@ -113,7 +109,8 @@ static void RUINAttachHomeSettingsButton(UIViewController *controller) {
 %new(v24@0:8@16)
 - (void)ruin_openSettings:(id)sender
 {
-    RUINSettingsEntryTapped(self, _cmd, sender);
+    (void)sender;
+    RUINOpenSettingsInLINE((UIViewController *)self);
 }
 %end
 %end
@@ -128,7 +125,8 @@ static void RUINAttachHomeSettingsButton(UIViewController *controller) {
 %new(v24@0:8@16)
 - (void)ruin_openSettings:(id)sender
 {
-    RUINSettingsEntryTapped(self, _cmd, sender);
+    (void)sender;
+    RUINOpenSettingsInLINE((UIViewController *)self);
 }
 %end
 %end
@@ -140,19 +138,19 @@ void RUINInstallNativeEntry(void) {
         ![info[@"CFBundleShortVersionString"] isEqual:RUINTargetVersion] ||
         ![info[@"CFBundleVersion"] isEqual:RUINTargetBuild]) return;
     for (NSString *name in @[@"_TtC8LineHome18HomeViewController", @"_TtC11LineHomeTab23FriendTabViewController"]) {
-        BOOL *flag = [name containsString:@"FriendTab"] ? &friendHomeHookInstalled : &homeHookInstalled;
-        if (*flag) continue;
+        BOOL *hookInstalled = [name containsString:@"FriendTab"] ? &friendHomeHookInstalled : &homeHookInstalled;
+        if (*hookInstalled) continue;
         Class home = objc_getClass(name.UTF8String);
         Method appearance = home ? class_getInstanceMethod(home, @selector(viewDidAppear:)) : NULL;
         const char *types = appearance ? method_getTypeEncoding(appearance) : NULL;
         if (types && !strcmp(types, "v20@0:8B16") &&
             !class_getInstanceMethod(home, sel_registerName("ruin_openSettings:"))) {
-            if (flag == &friendHomeHookInstalled) {
+            if (hookInstalled == &friendHomeHookInstalled) {
                 %init(RUINFriendHomeEntry, RUINFriendHomeController = home);
             } else {
                 %init(RUINHomeEntry, RUINHomeController = home);
             }
-            *flag = YES;
+            *hookInstalled = YES;
         }
     }
     if (nativeHookInstalled) return;

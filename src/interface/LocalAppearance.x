@@ -316,9 +316,10 @@ static void RUINLocalApplyIcon(id self, SEL selector, id sender)
     }
 
     NSString *modelName = RUINIconNameFromSwiftObject(self, gAppIconApplySheetClass,
-                                                       "icon.name", NULL);
-    if (!modelName || !RUINApplyLocalIconName(modelName, self, YES))
+        "icon.name", NULL);
+    if (!modelName || !RUINApplyLocalIconName(modelName, self, YES)) {
         if (original) original(self, selector, sender);
+    }
 }
 
 static void RUINLocalInlineApplyIcon(id self, SEL selector)
@@ -336,8 +337,9 @@ static void RUINLocalInlineApplyIcon(id self, SEL selector)
 
     UIViewController *controller = RUINAppIconControllerInResponderChain((UIResponder *)self);
     NSString *modelName = RUINCapturedLocalIconName(controller);
-    if (!controller || !modelName || !RUINApplyLocalIconName(modelName, controller, NO))
+    if (!controller || !modelName || !RUINApplyLocalIconName(modelName, controller, NO)) {
         if (original) original(self, selector);
+    }
 }
 
 %group RUINLocalAppIcons

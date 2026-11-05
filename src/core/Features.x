@@ -508,26 +508,19 @@ static void RUINInstallHook(RUINHook *hook)
     }
     if (hook == &gManagedChatReadHook) {
         %init(RUINManagedChatRead, RUINManagedChatReadTarget = cls);
-    }
-    else if (hook == &gSquareChatReadHook) {
+    } else if (hook == &gSquareChatReadHook) {
         %init(RUINSquareChatRead, RUINSquareChatReadTarget = cls);
-    }
-    else if (hook == &gUserDisplayNameHook) {
+    } else if (hook == &gUserDisplayNameHook) {
         %init(RUINUserDisplayName, RUINUserDisplayNameTarget = cls);
-    }
-    else if (hook == &gUserDisplayNameNoAddressBookHook) {
+    } else if (hook == &gUserDisplayNameNoAddressBookHook) {
         %init(RUINUserDisplayNameNoAddressBook, RUINUserDisplayNameNoAddressBookTarget = cls);
-    }
-    else if (hook == &gUnifiedGroupDisplayNameHook) {
+    } else if (hook == &gUnifiedGroupDisplayNameHook) {
         %init(RUINUnifiedGroupDisplayName, RUINUnifiedGroupDisplayNameTarget = cls);
-    }
-    else if (hook == &gManagedChatGroupNameHook) {
+    } else if (hook == &gManagedChatGroupNameHook) {
         %init(RUINManagedChatGroupName, RUINManagedChatGroupNameTarget = cls);
-    }
-    else if (hook == &gSquareChatGroupNameHook) {
+    } else if (hook == &gSquareChatGroupNameHook) {
         %init(RUINSquareChatGroupName, RUINSquareChatGroupNameTarget = cls);
-    }
-    else {
+    } else {
         atomic_store(&hook->status, RUINHookInstallFailed);
         return;
     }

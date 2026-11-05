@@ -5,7 +5,6 @@
 #import "../core/Features.h"
 
 #import <objc/runtime.h>
-#import <os/lock.h>
 #import <stdatomic.h>
 #import <string.h>
 
@@ -71,7 +70,6 @@ static atomic_uint_fast64_t gRewriteApplicationVersion;
 static atomic_uint_fast64_t gRewriteUserAgent;
 static atomic_uint_fast64_t gRewriteUserAgentBuildVersion;
 static dispatch_once_t gInstallOnce;
-static os_unfair_lock gInstallLock = OS_UNFAIR_LOCK_INIT;
 
 #if defined(RUIN_CLIENT_VERSION_ADVERTISEMENT_HOST_CHECK)
 NSString *const RUINTargetBundleIdentifier = @"jp.naver.line";
@@ -488,10 +486,8 @@ static Class RUINDirectRequestSessionClass(void)
 void RUINInstallClientVersionAdvertisement(void)
 {
     dispatch_once(&gInstallOnce, ^{
-        os_unfair_lock_lock(&gInstallLock);
         if (!RUINClientVersionAdvertisementTargetMatches()) {
             atomic_store(&gHookStatus, RUINAdvertisementHookTargetMismatch);
-            os_unfair_lock_unlock(&gInstallLock);
             return;
         }
 
@@ -500,7 +496,6 @@ void RUINInstallClientVersionAdvertisement(void)
         Class directRequestClass = RUINDirectRequestSessionClass();
         if (!RUINClassIsNSURLSession(sharedClass) || directRequestClass != sharedClass) {
             atomic_store(&gHookStatus, RUINAdvertisementHookSessionClassMismatch);
-            os_unfair_lock_unlock(&gInstallLock);
             return;
         }
         atomic_store(&gRequestSessionClassMatched, true);
@@ -513,12 +508,10 @@ void RUINInstallClientVersionAdvertisement(void)
             methods[i] = class_getInstanceMethod(sharedClass, selectors[i]);
             if (!methods[i]) {
                 atomic_store(&gHookStatus, RUINAdvertisementHookSelectorMissing);
-                os_unfair_lock_unlock(&gInstallLock);
                 return;
             }
             if (!RUINMethodHasRequestABI(methods[i], i == kRequestCompletionHook)) {
                 atomic_store(&gHookStatus, RUINAdvertisementHookABIMismatch);
-                os_unfair_lock_unlock(&gInstallLock);
                 return;
             }
         }
@@ -528,7 +521,6 @@ void RUINInstallClientVersionAdvertisement(void)
             previous[i] = method_getImplementation(methods[i]);
             if (!previous[i]) {
                 atomic_store(&gHookStatus, RUINAdvertisementHookInstallFailed);
-                os_unfair_lock_unlock(&gInstallLock);
                 return;
             }
         }
@@ -543,7 +535,6 @@ void RUINInstallClientVersionAdvertisement(void)
         }
         atomic_store(&gHookStatus, installed ? RUINAdvertisementHookInstalled :
             RUINAdvertisementHookInstallFailed);
-        os_unfair_lock_unlock(&gInstallLock);
     });
 }
 
