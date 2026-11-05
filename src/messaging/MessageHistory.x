@@ -1,5 +1,6 @@
 %config(generator=internal);
 
+#import "MessagingPrivateAPI.h"
 #import "MessageHistory.h"
 #import "Features.h"
 #import "NativeReadPositions.h"
@@ -716,7 +717,7 @@ static void CaptureLocalIncomingNotification(id value) {
         SEL metadataSelector = sel_registerName("contentMetadataDictionary");
         Method metadataGetter = class_getInstanceMethod(object_getClass(message), metadataSelector);
         if (!metadataGetter || strcmp(method_getTypeEncoding(metadataGetter), "@16@0:8")) return;
-        id metadata = ((id (*)(id, SEL))objc_msgSend)(message, metadataSelector);
+        id metadata = [(id<RUINMessagingMessageFields>)message contentMetadataDictionary];
         if (metadata && ![metadata isKindOfClass:NSDictionary.class]) return;
         id silentFlag = metadata[@"NOTIFICATION_DISABLED"];
         // Native metadata is string-valued; absent means normal. Unknown

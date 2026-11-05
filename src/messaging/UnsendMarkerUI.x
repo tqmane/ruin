@@ -1,5 +1,6 @@
 %config(generator=internal);
 
+#import "MessagingPrivateAPI.h"
 #import "UnsendMarkerUI.h"
 #import "UnsendOperation.h"
 #import "MessageHistory.h"
@@ -174,7 +175,7 @@ static NSManagedObject *UIOwnerChat(UIViewController *controller) {
     SEL selector = sel_registerName("chat");
     Method getter = controller ? class_getInstanceMethod(object_getClass(controller), selector) : NULL;
     if (!getter || strcmp(method_getTypeEncoding(getter), "@16@0:8")) return nil;
-    id chat = ((id (*)(id, SEL))objc_msgSend)(controller, selector);
+    id chat = [(id<RUINMessagingChatOwner>)controller chat];
     return [chat isKindOfClass:NSManagedObject.class] ? chat : nil;
 }
 static BOOL UIHasContentAt(UIView *view, UIView *host, UILabel *ownBadge, CGRect frame, NSUInteger depth, NSUInteger *budget) {

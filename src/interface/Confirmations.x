@@ -3,6 +3,7 @@
 #define RUIN_CONFIRMATIONS_INTERNAL 1
 #import "Confirmations.h"
 #import "SwiftFields.h"
+#import "LINEPrivateCalls.h"
 
 #import <UIKit/UIKit.h>
 #import <objc/message.h>
@@ -504,6 +505,8 @@ static const char *RUINHookStatusName(RUINHookStatus status)
 
 static id RUINObjectIvar(id object, const char *className, const char *ivarName)
 {
+    // The self-contained internal Logos target does not link Substrate. Keep
+    // validated runtime access for named ObjC fields and Mirror for Swift ones.
     Class cls = className ? objc_getClass(className) : Nil;
     if (!object || !cls || !ivarName || ![object isKindOfClass:cls]) return nil;
     Ivar ivar = class_getInstanceVariable(cls, ivarName);
@@ -524,6 +527,8 @@ static id RUINObjectGetter(id object, const char *className, const char *selecto
     Method method = class_getInstanceMethod(cls, selector);
     const char *encoding = method ? method_getTypeEncoding(method) : NULL;
     if (!encoding || strcmp(encoding, "@16@0:8") != 0) return nil;
+    // The confirmation table supplies the selector dynamically; only getters
+    // with the verified object-return ABI can reach this shared dispatcher.
     return ((id (*)(id, SEL))objc_msgSend)(object, selector);
 }
 
@@ -563,7 +568,7 @@ static id RUINChatObject(UIViewController *controller)
     Method method = class_getInstanceMethod(cls, selector);
     const char *encoding = method ? method_getTypeEncoding(method) : NULL;
     if (!encoding || strcmp(encoding, "@16@0:8") != 0) return nil;
-    return ((id (*)(id, SEL))objc_msgSend)(controller, selector);
+    return [(id<RUINLINEChatControllerCalls>)controller chat];
 }
 
 static NSString *RUINChatMID(id chat)
@@ -601,7 +606,7 @@ static RUINChatSnapshot *RUINReadChatSnapshot(id target)
     Method oneOnOneMethod = class_getInstanceMethod(object_getClass(chat), oneOnOneSelector);
     const char *oneOnOneEncoding = oneOnOneMethod ? method_getTypeEncoding(oneOnOneMethod) : NULL;
     if (oneOnOneEncoding && strcmp(oneOnOneEncoding, "B16@0:8") == 0) {
-        snapshot.oneOnOne = ((BOOL (*)(id, SEL))objc_msgSend)(chat, oneOnOneSelector);
+        snapshot.oneOnOne = [(id<RUINLINEManagedChatCalls>)chat isOneOnOneChat];
         snapshot.oneOnOneKnown = YES;
     }
 
@@ -609,7 +614,7 @@ static RUINChatSnapshot *RUINReadChatSnapshot(id target)
     Method countMethod = class_getInstanceMethod(object_getClass(chat), countSelector);
     const char *countEncoding = countMethod ? method_getTypeEncoding(countMethod) : NULL;
     if (countEncoding && strcmp(countEncoding, "q16@0:8") == 0) {
-        NSInteger excludingSelf = ((NSInteger (*)(id, SEL))objc_msgSend)(chat, countSelector);
+        NSInteger excludingSelf = [(id<RUINLINEManagedChatCalls>)chat memberCountExcludingMyself];
         if (excludingSelf >= 0 && excludingSelf < NSIntegerMax) {
             snapshot.totalMemberCount = excludingSelf + 1;
             snapshot.memberCountKnown = YES;

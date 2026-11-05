@@ -1,5 +1,6 @@
 %config(generator=internal);
 
+#import "MessagingPrivateAPI.h"
 #import "ReadUsersEvents.h"
 #import "MessageHistory.h"
 #import "Features.h"
@@ -58,7 +59,7 @@ static BOOL HasEncoding(Class cls, const char *name, const char *expected) {
         if (!HasEncoding(cls, "type", "q16@0:8")) {
             atomic_fetch_add(&rejectedEvents, 1); return;
         }
-        long long type = ((long long (*)(id, SEL))objc_msgSend)(self, sel_registerName("type"));
+        long long type = [(id<RUINMessagingOperationFields>)self type];
         if (type != 55) { atomic_fetch_add(&otherTypes, 1); return; }
         atomic_fetch_add(&type55Events, 1);
         // Recheck the actual receiver, including subclass overrides, before
@@ -66,9 +67,9 @@ static BOOL HasEncoding(Class cls, const char *name, const char *expected) {
         for (const char **name = (const char *[]){"param1", "param2", "param3", NULL}; *name; name++) {
             if (!HasEncoding(cls, *name, "@16@0:8")) { atomic_fetch_add(&rejectedEvents, 1); return; }
         }
-        id p1 = ((id (*)(id, SEL))objc_msgSend)(self, sel_registerName("param1"));
-        id p2 = ((id (*)(id, SEL))objc_msgSend)(self, sel_registerName("param2"));
-        id p3 = ((id (*)(id, SEL))objc_msgSend)(self, sel_registerName("param3"));
+        id p1 = [(id<RUINMessagingOperationFields>)self param1];
+        id p2 = [(id<RUINMessagingOperationFields>)self param2];
+        id p3 = [(id<RUINMessagingOperationFields>)self param3];
         if (![p1 isKindOfClass:NSString.class] || ![p2 isKindOfClass:NSString.class] || ![p3 isKindOfClass:NSString.class]) {
             atomic_fetch_add(&rejectedEvents, 1); return;
         }
@@ -76,7 +77,7 @@ static BOOL HasEncoding(Class cls, const char *name, const char *expected) {
         // Native LineOperation -createdTime q16@0:8 (0x1026a014c).
         long long serverTime = 0;
         if (HasEncoding(cls, "createdTime", "q16@0:8"))
-            serverTime = MAX(0, ((long long (*)(id, SEL))objc_msgSend)(self, sel_registerName("createdTime")));
+            serverTime = MAX(0, [(id<RUINMessagingOperationFields>)self createdTime]);
         long long observedTime = (long long)llround(NSDate.date.timeIntervalSince1970 * 1000.0);
         atomic_fetch_add(serverTime > 0 ? &knownEventTimes : &observationOnlyTimes, 1);
         // The bridge validates every code unit and signed-Int64 range and
@@ -139,6 +140,9 @@ NSDictionary *RUINReadUsersEventsDiagnostics(void) {
  /tmp/ruin-check-read-users && /tmp/ruin-check-read-users owned && /tmp/ruin-check-read-users mismatch
  */
 #import <stdio.h>
+@protocol RUINReadUsersWrongReadABI <NSObject>
+- (long long)read:(id)protocol;
+@end
 static NSDictionary *testInfo;
 static NSURL *testSupport;
 static IMP testOriginalDirectories;
@@ -252,7 +256,7 @@ int main(int argc, const char *argv[]) {
             if (mismatch) {
                 [defaults setBool:YES forKey:RUINTrackReadUsersKey];
                 __block long long returned = 0;
-                dispatch_sync(queue, ^{ returned = ((long long (*)(id, SEL, id))objc_msgSend)(operation, @selector(read:), payload); });
+                dispatch_sync(queue, ^{ returned = [(id<RUINReadUsersWrongReadABI>)operation read:payload]; });
                 Check(returned == 7 && atomic_load(&testOriginalCalls) == 1 && Recorded() == 0 &&
                     [RUINReadUsersEventsDiagnostics()[@"status"] isEqual:@"encoding_mismatch"], @"mismatched original was replaced or changed");
             } else {

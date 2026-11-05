@@ -38,6 +38,7 @@ int main(void) { @autoreleasepool {
 #import "NativeChatControls.h"
 
 #import "Features.h"
+#import "LINEPrivateCalls.h"
 #import "SwiftFields.h"
 #import "AutomaticReadGate.h"
 
@@ -316,7 +317,7 @@ static UIViewController *RUINNativeChatController(id object)
 static id RUINNativeChatObject(UIViewController *controller)
 {
     if (!controller || !RUINNativeChatController(controller)) return nil;
-    return ((id (*)(id, SEL))objc_msgSend)(controller, @selector(chat));
+    return [(id<RUINLINEChatControllerCalls>)controller chat];
 }
 
 static BOOL RUINNativeControllerIsCurrent(UIViewController *controller, id chat)
@@ -437,7 +438,7 @@ static RUINNativeChatIdentity *RUINNativeChatIdentityOnOwnerQueue(id chat,
         if (failure) *failure = @"oneOnOneMetadataMissing";
         return result;
     }
-    BOOL isOneOnOne = ((BOOL (*)(id, SEL))objc_msgSend)(chat, oneOnOne);
+    BOOL isOneOnOne = [(id<RUINLINEManagedChatCalls>)chat isOneOnOneChat];
     if (isOneOnOne) {
         if (identifier.length) result.localNameKey = [@"user:" stringByAppendingString:identifier];
         return result;

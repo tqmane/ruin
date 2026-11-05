@@ -1,5 +1,6 @@
 %config(generator=internal)
 
+#import "ThemePrivateAPI.h"
 #import "NativeThemeValidation.h"
 #import "NativeThemeRegistration.h"
 #import "ThemeShop.h"

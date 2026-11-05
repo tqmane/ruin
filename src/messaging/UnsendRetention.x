@@ -1,5 +1,6 @@
 %config(generator=internal);
 
+#import "MessagingPrivateAPI.h"
 #import "UnsendRetention.h"
 #import "MessageHistory.h"
 #import "Features.h"
@@ -230,7 +231,7 @@ static BOOL VerifyNativeKeys(void) {
             Method method = class_getClassMethod(cls, selector);
             const char *encoding = method ? method_getTypeEncoding(method) : NULL;
             if (!encoding || strcmp(encoding, "@16@0:8")) return NO;
-            id value = ((id (*)(id, SEL))objc_msgSend)((id)cls, selector);
+            id value = ([key isEqual:@"UNSENT"] ? [(Class<RUINMessagingUnsendKeys>)cls UNSENT] : [(Class<RUINMessagingUnsendKeys>)cls SILENTLY_UNSENT]);
             if (![value isKindOfClass:NSString.class] || ![value isEqualToString:key]) return NO;
         }
         return YES;
@@ -245,7 +246,7 @@ static NSDictionary *Metadata(id object) {
     Method method = class_getInstanceMethod(object_getClass(object), selector);
     const char *encoding = method ? method_getTypeEncoding(method) : NULL;
     if (!encoding || strcmp(encoding, "@16@0:8")) return nil;
-    id result = ((id (*)(id, SEL))objc_msgSend)(object, selector);
+    id result = [(id<RUINMessagingMessageFields>)object contentMetadataDictionary];
     return [result isKindOfClass:NSDictionary.class] ? result : nil;
 }
 static int FlagShape(id value) {
@@ -276,7 +277,7 @@ static NSString *RetainedNativePlaintext(id message) {
     Method method = class_getInstanceMethod(object_getClass(message), selector);
     const char *encoding = method ? method_getTypeEncoding(method) : NULL;
     if (!encoding || strcmp(encoding, "@16@0:8")) return nil;
-    id text = ((id (*)(id, SEL))objc_msgSend)(message, selector);
+    id text = [(id<RUINMessagingMessageFields>)message plaintext];
     return [text isKindOfClass:NSString.class] && [text length] ? text : nil;
 }
 static NSString *InspectAndRetain(id message) {

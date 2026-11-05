@@ -1,4 +1,4 @@
-%config(generator=internal);
+%config(generator=internal)
 
 #import "NativeThemeRegistration.h"
 #import "NativeThemeLocalPolicy.h"

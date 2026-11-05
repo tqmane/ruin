@@ -1,5 +1,6 @@
 %config(generator=internal)
 
+#import "ThemePrivateAPI.h"
 #import "ThemeStoreDownload.h"
 #import "ThemeFeatures.h"
 
@@ -20,7 +21,6 @@ typedef enum {
 } RUINThemeStoreDownloadStatus;
 
 static atomic_int gStatus = ATOMIC_VAR_INIT(RUINThemeStoreDownloadPending);
-static _Atomic(IMP) gOriginalType = ATOMIC_VAR_INIT(NULL);
 static atomic_uint_fast64_t gOwnedCalls = ATOMIC_VAR_INIT(0);
 static atomic_uint_fast64_t gAvailableCalls = ATOMIC_VAR_INIT(0);
 static atomic_uint_fast64_t gPriceCalls = ATOMIC_VAR_INIT(0);
@@ -66,9 +66,7 @@ static BOOL RUINThemeStoreDownloadEnabled(void)
 
 static BOOL RUINThemeStoreDownloadIsTheme(id object)
 {
-    IMP original = atomic_load_explicit(&gOriginalType, memory_order_acquire);
-    if (!original) return NO;
-    id type = ((id (*)(id, SEL))original)(object, sel_registerName("type"));
+    id type = [(LineShopProductDetail *)object type];
     return [type isKindOfClass:NSString.class] &&
         [(NSString *)type caseInsensitiveCompare:@"theme"] == NSOrderedSame;
 }
@@ -206,7 +204,6 @@ void RUINInstallThemeStoreDownload(void)
         }
     }
 
-    atomic_store_explicit(&gOriginalType, methods[0].original, memory_order_release);
     %init(RUINThemeStoreDownload, LineShopProductDetail=cls);
     atomic_store_explicit(&gStatus, RUINThemeStoreDownloadInstalled, memory_order_release);
 }

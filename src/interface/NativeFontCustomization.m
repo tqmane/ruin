@@ -6,6 +6,9 @@
 
 // Font callers pass feature 3 and compare the scalar reason to 3.
 // Other features and the OFF state retain the complete original reason.
+// Logos %hook cannot express this Swift protocol witness / swiftcall ABI.
+// Keep the typed runtime data-pointer adapter inside RUIN.dylib; no IPA bytes
+// or executable instructions are modified by it.
 typedef uintptr_t (*RUINBenefitReasonGetter)(uintptr_t, const void *, const void *,
     void * __attribute__((swift_context))) __attribute__((swiftcall));
 static RUINBenefitReasonGetter gOriginalReason;

@@ -1,6 +1,7 @@
 %config(generator=internal);
 
 #import "Features.h"
+#import "LINEPrivateCalls.h"
 
 #import <objc/runtime.h>
 #import <objc/message.h>
@@ -34,52 +35,43 @@ typedef struct {
     const char *className;
     const char *selectorName;
     const char *encoding;
-    _Atomic(IMP) original;
     atomic_uint_fast64_t calls;
     atomic_int status;
 } RUINHook;
 
-static BOOL RUINManagedChatCanMarkRead(id self, SEL selector);
-static BOOL RUINSquareChatCanMarkRead(id self, SEL selector);
-static id RUINUserDisplayName(id self, SEL selector);
-static id RUINUserDisplayNameNoAddressBook(id self, SEL selector);
-static id RUINUnifiedGroupDisplayName(id self, SEL selector, id profileInfo, id userContext);
-static id RUINManagedChatGroupName(id self, SEL selector, id context);
-static id RUINSquareChatGroupName(id self, SEL selector, id context);
-
 static RUINHook gManagedChatReadHook = {
     "ManagedChat", "canMarkChatAsReadToServer", "B16@0:8",
-    ATOMIC_VAR_INIT(NULL), ATOMIC_VAR_INIT(0),
+    ATOMIC_VAR_INIT(0),
     ATOMIC_VAR_INIT(RUINHookPending)
 };
 static RUINHook gSquareChatReadHook = {
     "ManagedSquareChat", "canMarkChatAsReadToServer", "B16@0:8",
-    ATOMIC_VAR_INIT(NULL), ATOMIC_VAR_INIT(0),
+    ATOMIC_VAR_INIT(0),
     ATOMIC_VAR_INIT(RUINHookPending)
 };
 static RUINHook gUserDisplayNameHook = {
     "ManagedUser", "displayUserName", "@16@0:8",
-    ATOMIC_VAR_INIT(NULL), ATOMIC_VAR_INIT(0),
+    ATOMIC_VAR_INIT(0),
     ATOMIC_VAR_INIT(RUINHookPending)
 };
 static RUINHook gUserDisplayNameNoAddressBookHook = {
     "ManagedUser", "displayUserNameNoAddressBook", "@16@0:8",
-    ATOMIC_VAR_INIT(NULL), ATOMIC_VAR_INIT(0),
+    ATOMIC_VAR_INIT(0),
     ATOMIC_VAR_INIT(RUINHookPending)
 };
 static RUINHook gUnifiedGroupDisplayNameHook = {
     "ManagedUnifiedGroup", "displayNameWithMyProfileInfo:inUserContext:", "@32@0:8@16@24",
-    ATOMIC_VAR_INIT(NULL), ATOMIC_VAR_INIT(0),
+    ATOMIC_VAR_INIT(0),
     ATOMIC_VAR_INIT(RUINHookPending)
 };
 static RUINHook gSquareChatGroupNameHook = {
     "ManagedSquareChat", "groupNameWithContext:", "@24@0:8@16",
-    ATOMIC_VAR_INIT(NULL), ATOMIC_VAR_INIT(0),
+    ATOMIC_VAR_INIT(0),
     ATOMIC_VAR_INIT(RUINHookPending)
 };
 static RUINHook gManagedChatGroupNameHook = {
     "ManagedChat", "groupNameWithContext:", "@24@0:8@16",
-    ATOMIC_VAR_INIT(NULL), ATOMIC_VAR_INIT(0),
+    ATOMIC_VAR_INIT(0),
     ATOMIC_VAR_INIT(RUINHookPending)
 };
 
@@ -209,6 +201,8 @@ static NSString *RUINStringProperty(id object, const char *name)
         if (!RUINVerifiedProperty(object, name, "@\"NSString\"", NSStringAttributeType)) return nil;
         SEL selector = sel_registerName(name);
         if (!RUINGetterSignatureMatches(object, selector, "@")) return nil;
+        // Metadata selects mid/id/name at runtime; this generic getter cannot
+        // be a single bracket message. Its object-return ABI is checked above.
         id value = ((id (*)(id, SEL))objc_msgSend)(object, selector);
         return [value isKindOfClass:[NSString class]] ? [value copy] : nil;
     } @catch (__unused NSException *exception) {
@@ -223,7 +217,7 @@ static BOOL RUINReceivedBoundary(id chat, long long *boundary)
         if (!RUINVerifiedProperty(chat, name, "q", NSInteger64AttributeType)) return NO;
         SEL selector = sel_registerName(name);
         if (!RUINGetterSignatureMatches(chat, selector, "q")) return NO;
-        *boundary = ((long long (*)(id, SEL))objc_msgSend)(chat, selector);
+        *boundary = [(id<RUINLINEManagedChatCalls>)chat lastReceivedMessageID];
         return *boundary > 0;
     } @catch (__unused NSException *exception) {
         return NO;
@@ -257,7 +251,7 @@ NSDictionary *RUINIdentityForObject(id object)
             Method method = class_getInstanceMethod(object_getClass(object), selector);
             const char *encoding = method ? method_getTypeEncoding(method) : NULL;
             if (encoding && strcmp(encoding, "@16@0:8") == 0) {
-                id name = ((id (*)(id, SEL))objc_msgSend)(object, selector);
+                id name = [(id<RUINLINEManagedUserCalls>)object displayUserName];
                 if ([name isKindOfClass:[NSString class]]) displayName = name;
             }
         }
@@ -380,9 +374,9 @@ void RUINAllowReadAfterUserReply(id chat)
 %hook RUINManagedChatReadTarget
 - (BOOL)canMarkChatAsReadToServer
 {
-    IMP original = (IMP)&%orig;
-    if (original) atomic_store_explicit(&gManagedChatReadHook.original, original, memory_order_release);
-    return RUINManagedChatCanMarkRead(self, _cmd);
+    atomic_fetch_add_explicit(&gManagedChatReadHook.calls, 1, memory_order_relaxed);
+    if (RUINShouldSuppressReadForChat(self)) return NO;
+    return %orig;
 }
 %end
 %end
@@ -391,9 +385,9 @@ void RUINAllowReadAfterUserReply(id chat)
 %hook RUINSquareChatReadTarget
 - (BOOL)canMarkChatAsReadToServer
 {
-    IMP original = (IMP)&%orig;
-    if (original) atomic_store_explicit(&gSquareChatReadHook.original, original, memory_order_release);
-    return RUINSquareChatCanMarkRead(self, _cmd);
+    atomic_fetch_add_explicit(&gSquareChatReadHook.calls, 1, memory_order_relaxed);
+    if (RUINShouldSuppressReadForChat(self)) return NO;
+    return %orig;
 }
 %end
 %end
@@ -402,9 +396,16 @@ void RUINAllowReadAfterUserReply(id chat)
 %hook RUINUserDisplayNameTarget
 - (id)displayUserName
 {
-    IMP original = (IMP)&%orig;
-    if (original) atomic_store_explicit(&gUserDisplayNameHook.original, original, memory_order_release);
-    return RUINUserDisplayName(self, _cmd);
+    atomic_fetch_add_explicit(&gUserDisplayNameHook.calls, 1, memory_order_relaxed);
+    BOOL outermost = gDisplayNameHookDepth++ == 0;
+    id name = nil;
+    @try {
+        name = %orig;
+        if (outermost) name = RUINApplyLocalAlias(self, name);
+    } @finally {
+        gDisplayNameHookDepth--;
+    }
+    return name;
 }
 %end
 %end
@@ -413,9 +414,16 @@ void RUINAllowReadAfterUserReply(id chat)
 %hook RUINUserDisplayNameNoAddressBookTarget
 - (id)displayUserNameNoAddressBook
 {
-    IMP original = (IMP)&%orig;
-    if (original) atomic_store_explicit(&gUserDisplayNameNoAddressBookHook.original, original, memory_order_release);
-    return RUINUserDisplayNameNoAddressBook(self, _cmd);
+    atomic_fetch_add_explicit(&gUserDisplayNameNoAddressBookHook.calls, 1, memory_order_relaxed);
+    BOOL outermost = gDisplayNameHookDepth++ == 0;
+    id name = nil;
+    @try {
+        name = %orig;
+        if (outermost) name = RUINApplyLocalAlias(self, name);
+    } @finally {
+        gDisplayNameHookDepth--;
+    }
+    return name;
 }
 %end
 %end
@@ -424,9 +432,16 @@ void RUINAllowReadAfterUserReply(id chat)
 %hook RUINUnifiedGroupDisplayNameTarget
 - (id)displayNameWithMyProfileInfo:(id)profileInfo inUserContext:(id)userContext
 {
-    IMP original = (IMP)&%orig;
-    if (original) atomic_store_explicit(&gUnifiedGroupDisplayNameHook.original, original, memory_order_release);
-    return RUINUnifiedGroupDisplayName(self, _cmd, profileInfo, userContext);
+    atomic_fetch_add_explicit(&gUnifiedGroupDisplayNameHook.calls, 1, memory_order_relaxed);
+    BOOL outermost = gDisplayNameHookDepth++ == 0;
+    id name = nil;
+    @try {
+        name = %orig(profileInfo, userContext);
+        if (outermost) name = RUINApplyLocalAlias(self, name);
+    } @finally {
+        gDisplayNameHookDepth--;
+    }
+    return name;
 }
 %end
 %end
@@ -435,9 +450,16 @@ void RUINAllowReadAfterUserReply(id chat)
 %hook RUINManagedChatGroupNameTarget
 - (id)groupNameWithContext:(id)context
 {
-    IMP original = (IMP)&%orig;
-    if (original) atomic_store_explicit(&gManagedChatGroupNameHook.original, original, memory_order_release);
-    return RUINManagedChatGroupName(self, _cmd, context);
+    atomic_fetch_add_explicit(&gManagedChatGroupNameHook.calls, 1, memory_order_relaxed);
+    BOOL outermost = gDisplayNameHookDepth++ == 0;
+    id name = nil;
+    @try {
+        name = %orig(context);
+        if (outermost) name = RUINApplyLocalAlias(self, name);
+    } @finally {
+        gDisplayNameHookDepth--;
+    }
+    return name;
 }
 %end
 %end
@@ -446,9 +468,16 @@ void RUINAllowReadAfterUserReply(id chat)
 %hook RUINSquareChatGroupNameTarget
 - (id)groupNameWithContext:(id)context
 {
-    IMP original = (IMP)&%orig;
-    if (original) atomic_store_explicit(&gSquareChatGroupNameHook.original, original, memory_order_release);
-    return RUINSquareChatGroupName(self, _cmd, context);
+    atomic_fetch_add_explicit(&gSquareChatGroupNameHook.calls, 1, memory_order_relaxed);
+    BOOL outermost = gDisplayNameHookDepth++ == 0;
+    id name = nil;
+    @try {
+        name = %orig(context);
+        if (outermost) name = RUINApplyLocalAlias(self, name);
+    } @finally {
+        gDisplayNameHookDepth--;
+    }
+    return name;
 }
 %end
 %end
@@ -477,7 +506,6 @@ static void RUINInstallHook(RUINHook *hook)
         atomic_store(&hook->status, RUINHookInstallFailed);
         return;
     }
-    atomic_store_explicit(&hook->original, original, memory_order_release);
     if (hook == &gManagedChatReadHook) {
         %init(RUINManagedChatRead, RUINManagedChatReadTarget = cls);
     }
@@ -526,99 +554,6 @@ void RUINInstallFeatures(void)
     } @finally {
         os_unfair_lock_unlock(&gInstallLock);
     }
-}
-
-static BOOL RUINReadControlResult(RUINHook *hook, id self, SEL selector)
-{
-    atomic_fetch_add_explicit(&hook->calls, 1, memory_order_relaxed);
-    if (RUINShouldSuppressReadForChat(self)) return NO;
-    IMP original = atomic_load_explicit(&hook->original, memory_order_acquire);
-    return original ? ((BOOL (*)(id, SEL))original)(self, selector) : YES;
-}
-
-static BOOL RUINManagedChatCanMarkRead(id self, SEL selector)
-{
-    return RUINReadControlResult(&gManagedChatReadHook, self, selector);
-}
-
-static BOOL RUINSquareChatCanMarkRead(id self, SEL selector)
-{
-    return RUINReadControlResult(&gSquareChatReadHook, self, selector);
-}
-
-static id RUINUserDisplayName(id self, SEL selector)
-{
-    atomic_fetch_add_explicit(&gUserDisplayNameHook.calls, 1, memory_order_relaxed);
-    BOOL outermost = gDisplayNameHookDepth++ == 0;
-    id name = nil;
-    @try {
-        IMP original = atomic_load_explicit(&gUserDisplayNameHook.original, memory_order_acquire);
-        name = original ? ((id (*)(id, SEL))original)(self, selector) : nil;
-        if (outermost) name = RUINApplyLocalAlias(self, name);
-    } @finally {
-        gDisplayNameHookDepth--;
-    }
-    return name;
-}
-
-static id RUINUserDisplayNameNoAddressBook(id self, SEL selector)
-{
-    atomic_fetch_add_explicit(&gUserDisplayNameNoAddressBookHook.calls, 1, memory_order_relaxed);
-    BOOL outermost = gDisplayNameHookDepth++ == 0;
-    id name = nil;
-    @try {
-        IMP original = atomic_load_explicit(&gUserDisplayNameNoAddressBookHook.original, memory_order_acquire);
-        name = original ? ((id (*)(id, SEL))original)(self, selector) : nil;
-        if (outermost) name = RUINApplyLocalAlias(self, name);
-    } @finally {
-        gDisplayNameHookDepth--;
-    }
-    return name;
-}
-
-static id RUINUnifiedGroupDisplayName(id self, SEL selector, id profileInfo, id userContext)
-{
-    atomic_fetch_add_explicit(&gUnifiedGroupDisplayNameHook.calls, 1, memory_order_relaxed);
-    BOOL outermost = gDisplayNameHookDepth++ == 0;
-    id name = nil;
-    @try {
-        IMP original = atomic_load_explicit(&gUnifiedGroupDisplayNameHook.original, memory_order_acquire);
-        name = original ? ((id (*)(id, SEL, id, id))original)(self, selector, profileInfo, userContext) : nil;
-        if (outermost) name = RUINApplyLocalAlias(self, name);
-    } @finally {
-        gDisplayNameHookDepth--;
-    }
-    return name;
-}
-
-static id RUINManagedChatGroupName(id self, SEL selector, id context)
-{
-    atomic_fetch_add_explicit(&gManagedChatGroupNameHook.calls, 1, memory_order_relaxed);
-    BOOL outermost = gDisplayNameHookDepth++ == 0;
-    id name = nil;
-    @try {
-        IMP original = atomic_load_explicit(&gManagedChatGroupNameHook.original, memory_order_acquire);
-        name = original ? ((id (*)(id, SEL, id))original)(self, selector, context) : nil;
-        if (outermost) name = RUINApplyLocalAlias(self, name);
-    } @finally {
-        gDisplayNameHookDepth--;
-    }
-    return name;
-}
-
-static id RUINSquareChatGroupName(id self, SEL selector, id context)
-{
-    atomic_fetch_add_explicit(&gSquareChatGroupNameHook.calls, 1, memory_order_relaxed);
-    BOOL outermost = gDisplayNameHookDepth++ == 0;
-    id name = nil;
-    @try {
-        IMP original = atomic_load_explicit(&gSquareChatGroupNameHook.original, memory_order_acquire);
-        name = original ? ((id (*)(id, SEL, id))original)(self, selector, context) : nil;
-        if (outermost) name = RUINApplyLocalAlias(self, name);
-    } @finally {
-        gDisplayNameHookDepth--;
-    }
-    return name;
 }
 
 static NSString *RUINStatusName(RUINHookStatus status)

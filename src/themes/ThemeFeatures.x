@@ -1,5 +1,6 @@
 %config(generator=internal)
 
+#import "ThemePrivateAPI.h"
 #import "ThemeFeatures.h"
 #import "SwiftFields.h"
 #import "ThemeVersion.h"
@@ -7,7 +8,7 @@
 #import "ThemeApplyEvent.h"
 #import "NativeThemeValidation.h"
 
-#import <objc/message.h>
+#import <CoreData/CoreData.h>
 #import <objc/runtime.h>
 #import <os/lock.h>
 #import <stdlib.h>
@@ -142,12 +143,13 @@ static BOOL RUINThemeValidUntilIsActive(int64_t value)
 
 static BOOL RUINThemeProductDetailHasLocalAccess(id self)
 {
-    id type = ((id (*)(id, SEL))objc_msgSend)(self, sel_registerName("type"));
+    LineShopProductDetail *product = self;
+    id type = [product type];
     if (![type isKindOfClass:[NSString class]] || [(NSString *)type caseInsensitiveCompare:@"theme"] != NSOrderedSame)
         return NO;
-    BOOL owned = ((BOOL (*)(id, SEL))objc_msgSend)(self, sel_registerName("isOwned"));
-    BOOL granted = ((BOOL (*)(id, SEL))objc_msgSend)(self, sel_registerName("isGrantedByDefault"));
-    int64_t validUntil = ((int64_t (*)(id, SEL))objc_msgSend)(self, sel_registerName("validUntil"));
+    BOOL owned = [product isOwned];
+    BOOL granted = [product isGrantedByDefault];
+    int64_t validUntil = [product validUntil];
     return owned || granted || RUINThemeValidUntilIsActive(validUntil);
 }
 
@@ -380,8 +382,8 @@ static NSURL *RUINThemeModelURL(void)
 
 static BOOL RUINThemeCatalogRuntimeAvailable(void)
 {
-    return RUINThemeModelURL() && objc_lookUpClass("NSManagedObjectModel") &&
-        objc_lookUpClass("NSPersistentStoreCoordinator") && objc_lookUpClass("NSManagedObjectContext");
+    // Core Data is linked by the dylib and available at the iOS 18 deployment floor.
+    return RUINThemeModelURL() != nil;
 }
 
 static NSArray<NSURL *> *RUINThemeProductStoreURLs(NSError **error)
@@ -440,97 +442,63 @@ static NSError *RUINThemeStoreError(NSString *reason, NSError *underlying)
                            userInfo:info];
 }
 
-static BOOL RUINThemeHasInstanceMethod(Class cls, SEL selector)
-{
-    return cls && class_getInstanceMethod(cls, selector) != NULL;
-}
-
 static NSArray<NSDictionary<NSString *, id> *> *RUINThemeReadProductStoreBody(NSURL *storeURL,
                                                                               NSString *storeName,
                                                                               NSError **error)
 {
     NSURL *modelURL = RUINThemeModelURL();
-    Class modelClass = objc_lookUpClass("NSManagedObjectModel");
-    Class coordinatorClass = objc_lookUpClass("NSPersistentStoreCoordinator");
-    Class contextClass = objc_lookUpClass("NSManagedObjectContext");
-    Class fetchRequestClass = objc_lookUpClass("NSFetchRequest");
-    if (!modelURL || !modelClass || !coordinatorClass || !contextClass || !fetchRequestClass) {
-        if (error) *error = RUINThemeStoreError(@"The bundled Theme.momd model or Core Data runtime is unavailable.", nil);
+    if (!modelURL) {
+        if (error) *error = RUINThemeStoreError(@"The bundled Theme.momd model is unavailable.", nil);
         return nil;
     }
-    if (!RUINThemeHasInstanceMethod(modelClass, sel_registerName("initWithContentsOfURL:")) ||
-        !RUINThemeHasInstanceMethod(modelClass, sel_registerName("entitiesByName")) ||
-        !RUINThemeHasInstanceMethod(coordinatorClass, sel_registerName("initWithManagedObjectModel:")) ||
-        !RUINThemeHasInstanceMethod(coordinatorClass, sel_registerName("addPersistentStoreWithType:configuration:URL:options:error:")) ||
-        !RUINThemeHasInstanceMethod(contextClass, sel_registerName("initWithConcurrencyType:")) ||
-        !RUINThemeHasInstanceMethod(contextClass, sel_registerName("setPersistentStoreCoordinator:")) ||
-        !RUINThemeHasInstanceMethod(contextClass, sel_registerName("performBlockAndWait:")) ||
-        !RUINThemeHasInstanceMethod(contextClass, sel_registerName("executeFetchRequest:error:")) ||
-        !class_getClassMethod(fetchRequestClass, sel_registerName("fetchRequestWithEntityName:")) ||
-        !RUINThemeHasInstanceMethod(fetchRequestClass, sel_registerName("setFetchLimit:"))) {
-        if (error) *error = RUINThemeStoreError(@"The Core Data runtime does not expose the expected public read-only store methods.", nil);
-        return nil;
-    }
-
-    id model = ((id (*)(id, SEL))objc_msgSend)((id)modelClass, sel_registerName("alloc"));
-    model = ((id (*)(id, SEL, id))objc_msgSend)(model,
-        sel_registerName("initWithContentsOfURL:"), modelURL);
+    NSManagedObjectModel *model = [[NSManagedObjectModel alloc] initWithContentsOfURL:modelURL];
     if (!model) {
         if (error) *error = RUINThemeStoreError(@"Theme.momd could not be loaded.", nil);
         return nil;
     }
-    NSDictionary *entities = ((id (*)(id, SEL))objc_msgSend)(model,
-        sel_registerName("entitiesByName"));
+    NSDictionary *entities = model.entitiesByName;
     if (!model || ![entities isKindOfClass:[NSDictionary class]] || !entities[@"OwnedThemeProduct"]) {
         if (error) *error = RUINThemeStoreError(@"Theme.momd did not load the verified OwnedThemeProduct entity.", nil);
         return nil;
     }
 
-    id coordinator = ((id (*)(id, SEL))objc_msgSend)((id)coordinatorClass, sel_registerName("alloc"));
-    coordinator = ((id (*)(id, SEL, id))objc_msgSend)(coordinator,
-        sel_registerName("initWithManagedObjectModel:"), model);
+    NSPersistentStoreCoordinator *coordinator = [[NSPersistentStoreCoordinator alloc]
+        initWithManagedObjectModel:model];
     if (!coordinator) {
         if (error) *error = RUINThemeStoreError(@"A Core Data coordinator could not be created.", nil);
         return nil;
     }
     NSError *storeError = nil;
     NSDictionary *options = @{
-        @"NSReadOnlyPersistentStoreOption": @YES,
-        @"NSMigratePersistentStoresAutomaticallyOption": @NO,
-        @"NSInferMappingModelAutomaticallyOption": @NO
+        NSReadOnlyPersistentStoreOption: @YES,
+        NSMigratePersistentStoresAutomaticallyOption: @NO,
+        NSInferMappingModelAutomaticallyOption: @NO
     };
-    id store = ((id (*)(id, SEL, id, id, id, id, NSError **))objc_msgSend)(coordinator,
-        sel_registerName("addPersistentStoreWithType:configuration:URL:options:error:"),
-        @"SQLite", nil, storeURL, options, &storeError);
+    NSPersistentStore *store = [coordinator addPersistentStoreWithType:NSSQLiteStoreType
+        configuration:nil URL:storeURL options:options error:&storeError];
     if (!store) {
         if (error) *error = RUINThemeStoreError(@"LINE's theme product store could not be opened read-only.", storeError);
         return nil;
     }
 
-    id context = ((id (*)(id, SEL))objc_msgSend)((id)contextClass, sel_registerName("alloc"));
-    context = ((id (*)(id, SEL, NSUInteger))objc_msgSend)(context,
-        sel_registerName("initWithConcurrencyType:"), (NSUInteger)1);
+    NSManagedObjectContext *context = [[NSManagedObjectContext alloc]
+        initWithConcurrencyType:NSPrivateQueueConcurrencyType];
     if (!context) {
         if (error) *error = RUINThemeStoreError(@"A read-only Core Data context could not be created.", nil);
         return nil;
     }
-    ((void (*)(id, SEL, id))objc_msgSend)(context,
-        sel_registerName("setPersistentStoreCoordinator:"), coordinator);
-    id request = ((id (*)(id, SEL, id))objc_msgSend)((id)fetchRequestClass,
-        sel_registerName("fetchRequestWithEntityName:"), @"OwnedThemeProduct");
+    context.persistentStoreCoordinator = coordinator;
+    NSFetchRequest *request = [NSFetchRequest fetchRequestWithEntityName:@"OwnedThemeProduct"];
     if (!request) {
         if (error) *error = RUINThemeStoreError(@"A fetch request for OwnedThemeProduct could not be created.", nil);
         return nil;
     }
-    ((void (*)(id, SEL, NSUInteger))objc_msgSend)(request,
-        sel_registerName("setFetchLimit:"), (NSUInteger)4097);
+    request.fetchLimit = 4097;
 
     __block NSArray *result = nil;
     __block NSError *fetchError = nil;
-    ((void (*)(id, SEL, void (^)(void)))objc_msgSend)(context,
-        sel_registerName("performBlockAndWait:"), ^{
-            NSArray *records = ((id (*)(id, SEL, id, NSError **))objc_msgSend)(context,
-                sel_registerName("executeFetchRequest:error:"), request, &fetchError);
+    [context performBlockAndWait:^{
+            NSArray *records = [context executeFetchRequest:request error:&fetchError];
             if (!records && !fetchError) {
                 fetchError = RUINThemeStoreError(@"Core Data returned no result for the theme product fetch.", nil);
                 return;
@@ -563,7 +531,7 @@ static NSArray<NSDictionary<NSString *, id> *> *RUINThemeReadProductStoreBody(NS
                 [installed addObject:[item copy]];
             }
             result = [installed copy];
-        });
+        }];
 
     if (fetchError) {
         if (error) *error = RUINThemeStoreError(@"LINE's theme product records could not be fetched read-only.", fetchError);
@@ -1400,7 +1368,7 @@ void RUINResetTheme(RUINThemeApplyCompletion completion)
         gThemePendingResetID = requestID;
         os_unfair_lock_unlock(&gThemePendingResetLock);
 
-        ((void (*)(id, SEL))objc_msgSend)(controller, sel_registerName("didTapResetButton"));
+        [(id<RUINThemeResetAction>)controller didTapResetButton];
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(120 * NSEC_PER_SEC)),
                        dispatch_get_main_queue(), ^{
             RUINThemeFinishPendingReset(requestID, NO, RUINThemeError(

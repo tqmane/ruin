@@ -1,5 +1,6 @@
 %config(generator=internal);
 
+#import "MessagingPrivateAPI.h"
 #import "AutomaticReadGate.h"
 #import "Features.h"
 #import "SwiftFields.h"
@@ -35,7 +36,7 @@ static void Apply(UIViewController *controller) {
         SEL selector = sel_registerName("chat");
         Method method = class_getInstanceMethod(object_getClass(controller), selector);
         if (method && !strcmp(method_getTypeEncoding(method), "@16@0:8")) {
-            id chat = ((id (*)(id, SEL))objc_msgSend)(controller, selector);
+            id chat = [(id<RUINMessagingChatOwner>)controller chat];
             if ([chat isKindOfClass:NSManagedObject.class]) {
                 NSManagedObjectContext *owner = [chat managedObjectContext];
                 if (owner) {

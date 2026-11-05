@@ -1,5 +1,6 @@
 %config(generator=internal);
 
+#import "MessagingPrivateAPI.h"
 #import "ReadOnReply.h"
 #import "Features.h"
 #import "AutomaticReadGate.h"
@@ -20,7 +21,7 @@ static void ObserveSendEntry(id message) {
         Method chatGetter = class_getInstanceMethod([message class], sel_registerName("chatObject"));
         if (!sent || !chatGetter || strcmp(method_getTypeEncoding(sent), "B16@0:8") ||
             strcmp(method_getTypeEncoding(chatGetter), "@16@0:8")) return;
-        id chat = ((id (*)(id, SEL))objc_msgSend)(message, sel_registerName("chatObject"));
+        id chat = [(id<RUINMessagingMessageFields>)message chatObject];
         if (![chat isKindOfClass:NSManagedObject.class]) return;
         NSManagedObjectContext *context = ((NSManagedObject *)chat).managedObjectContext;
         if (!context) return;

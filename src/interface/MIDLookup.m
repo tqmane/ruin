@@ -1,4 +1,5 @@
 #import "MIDLookup.h"
+#import "LINEPrivateCalls.h"
 
 #import <objc/runtime.h>
 #import <stdatomic.h>
@@ -37,13 +38,13 @@ static NSURL *RUINMIDURL(id input)
     return [NSURL URLWithString:[@"line://nv/profilePopup/mid=" stringByAppendingString:mid]];
 }
 
-static IMP RUINMIDRouter(id delegate)
+static BOOL RUINMIDRouterAvailable(id delegate)
 {
     Class cls = objc_getClass(RUINMIDDelegateClass);
-    if (!cls || !delegate || object_getClass(delegate) != cls) return NULL;
+    if (!cls || !delegate || object_getClass(delegate) != cls) return NO;
     Method method = class_getInstanceMethod(cls, sel_registerName(RUINMIDRouterSelector));
     const char *types = method ? method_getTypeEncoding(method) : NULL;
-    return types && strcmp(types, "B24@0:8@16") == 0 ? method_getImplementation(method) : NULL;
+    return types && strcmp(types, "B24@0:8@16") == 0 && method_getImplementation(method) != NULL;
 }
 
 // Fixed status codes only; neither exceptions nor user input enter diagnostics.
@@ -52,12 +53,10 @@ static NSString *RUINMIDDispatch(id input, id delegate, NSDictionary *info)
     NSURL *url = RUINMIDURL(input);
     if (!url) return @"invalid_mid";
     if (!RUINMIDTargetMatches(info)) return @"version_gated";
-    IMP router = RUINMIDRouter(delegate);
-    if (!router) return @"native_router_unavailable_or_abi_mismatch";
+    if (!RUINMIDRouterAvailable(delegate)) return @"native_router_unavailable_or_abi_mismatch";
     atomic_fetch_add(&gMIDRequests, 1);
     @try {
-        BOOL accepted = ((BOOL (*)(id, SEL, NSURL *))router)(delegate,
-            sel_registerName(RUINMIDRouterSelector), url);
+        BOOL accepted = [(id<RUINLINEAppDelegateCalls>)delegate openURLForObjC:url];
         atomic_fetch_add(accepted ? &gMIDAccepted : &gMIDRejected, 1);
         return accepted ? @"native_route_accepted" : @"native_route_rejected";
     } @catch (__unused NSException *exception) {
@@ -77,7 +76,7 @@ NSDictionary<NSString *, id> *RUINMIDLookupDiagnostics(void)
     } mutableCopy];
 #if !defined(RUIN_MIDLOOKUP_HOST_CHECK)
     if (NSThread.isMainThread) {
-        result[@"nativeRouterAvailable"] = @(RUINMIDRouter(UIApplication.sharedApplication.delegate) != NULL);
+        result[@"nativeRouterAvailable"] = @(RUINMIDRouterAvailable(UIApplication.sharedApplication.delegate));
     } else {
         result[@"nativeRouterStatus"] = @"main_thread_check_required";
     }

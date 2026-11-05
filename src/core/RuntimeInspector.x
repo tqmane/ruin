@@ -14,6 +14,7 @@
 #import <CoreData/CoreData.h>
 
 #import "Features.h"
+#import "LINEPrivateCalls.h"
 #import "SwiftFields.h"
 #import "ThemeApplyEvent.h"
 extern void RUINRefreshRuntimeReport(void);
@@ -536,6 +537,8 @@ static void RUINAppendAppTabMetadata(id mirrorRoot, NSString * _Nullable mirrorP
             [ivars addObject:@{@"name":name, @"type":type, @"declaringClass":declaringClass}];
             (*ivarCount)++;
             if (follow) {
+                // Inspector enumerates fields dynamically and the internal
+                // Logos target has no Substrate; object encodings were checked.
                 id child = object_getIvar(object, ivar);
                 if (child) [ivarFollow addObject:@{@"name":name, @"object":child,
                     @"fullPath":[path stringByAppendingFormat:@".%@", name]}];
@@ -590,7 +593,9 @@ static NSDictionary *RUINAppTabMetadata(void) {
         Method getter = class_getInstanceMethod(object_getClass(delegate), selector);
         if (!getter || strcmp(method_getTypeEncoding(getter), "@16@0:8")) continue;
         @try {
-            id object = ((id (*)(id, SEL))objc_msgSend)(delegate, selector);
+            id<RUINLINEAppDelegateCalls> appDelegate = delegate;
+            id object = [name isEqualToString:@"lineTabBarControllerManager"]
+                ? [appDelegate lineTabBarControllerManager] : [appDelegate tabBarController];
             if (object) RUINAppendAppTabMetadata(object, nil,
                 [@"UIApplication.delegate." stringByAppendingString:name], 1, visited, nodes,
                 &swiftFieldCount, &ivarCount, &selectorCount, &truncated);

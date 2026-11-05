@@ -1,3 +1,4 @@
+#import "MessagingPrivateAPI.h"
 #import "ReadersSheet.h"
 
 #import <CoreData/CoreData.h>
@@ -70,10 +71,10 @@ static NSString *RUINReaderCachedName(NSManagedObject *user, NSEntityDescription
     if (!typed || ![user respondsToSelector:midSelector]) return nil;
     NSMethodSignature *signature = [user methodSignatureForSelector:midSelector];
     if (signature.numberOfArguments != 2 || strcmp(signature.methodReturnType, "@") != 0) return nil;
-    id mid = ((id (*)(id, SEL))objc_msgSend)(user, midSelector);
+    id mid = [(id<RUINMessagingUserFields>)user mid];
     if (![mid isKindOfClass:NSString.class] || ![mid length]) return nil;
     // Verified ManagedUser.displayUserName @16@0:8, IMP 0x1088c9928.
-    // Use objc_msgSend so RUIN's installed alias hook remains in effect.
+    // Normal message dispatch preserves RUIN's installed display-name alias hook.
     SEL display = sel_registerName("displayUserName");
     Method method = class_getInstanceMethod(object_getClass(user), display);
     const char *encoding = method ? method_getTypeEncoding(method) : NULL;
@@ -81,7 +82,7 @@ static NSString *RUINReaderCachedName(NSManagedObject *user, NSEntityDescription
         atomic_fetch_add(&gReaderABIRejected, 1);
         return nil;
     }
-    id value = ((id (*)(id, SEL))objc_msgSend)(user, display);
+    id value = [(id<RUINMessagingUserFields>)user displayUserName];
     if (![value isKindOfClass:NSString.class]) return nil;
     NSString *name = [value stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
     // A native unknown-user fallback may contain the MID: never expose it.
@@ -117,7 +118,7 @@ static NSDictionary<NSString *, NSString *> *RUINReaderFetchNames(NSManagedObjec
                 if (![user isKindOfClass:NSManagedObject.class] || user.managedObjectContext != context) continue;
                 NSString *name = RUINReaderCachedName(user, entity);
                 if (!name) continue;
-                id mid = ((id (*)(id, SEL))objc_msgSend)(user, sel_registerName("mid"));
+                id mid = [(id<RUINMessagingUserFields>)user mid];
                 if ([batch containsObject:mid]) names[mid] = name;
             } @catch (__unused NSException *exception) { atomic_fetch_add(&gReaderFetchFailures, 1); }
         }

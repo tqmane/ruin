@@ -1,5 +1,6 @@
-%config(generator=internal);
+%config(generator=internal)
 
+#import "ThemePrivateAPI.h"
 #import "NativeThemeNavigation.h"
 
 #import <UIKit/UIKit.h>
@@ -287,8 +288,8 @@ static BOOL RUINDispatchNativeThemeSettingsRoute(NSError **error)
         return NO;
     }
     @try {
-        BOOL accepted = ((BOOL (*)(id, SEL, NSURL *))method_getImplementation(method))(
-            delegate, selector, [NSURL URLWithString:RUINNativeMyThemesURL]);
+        BOOL accepted = [(id<RUINThemeURLRouting>)delegate
+            openURLForObjC:[NSURL URLWithString:RUINNativeMyThemesURL]];
         if (!accepted && error) *error = RUINNativeThemeNavigationError(
             RUINNativeThemeNavigationUnavailable, @"LINE rejected the native theme route.");
         return accepted;

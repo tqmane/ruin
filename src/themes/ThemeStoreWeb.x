@@ -1,4 +1,4 @@
-%config(generator=internal);
+%config(generator=internal)
 
 #import "ThemeStoreWeb.h"
 #import "NativeThemeWorkflow.h"

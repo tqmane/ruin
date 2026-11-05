@@ -1,5 +1,6 @@
 %config(generator=internal)
 
+#import "ThemePrivateAPI.h"
 #import "ThemeShop.h"
 
 #import <objc/runtime.h>
@@ -19,7 +20,7 @@
 // LINE 26.16.0 / 2026.1006.1718: AppDelegate -openURLForObjC:
 // B24@0:8@16 at 0x100043398, with an NSURL argument boxed by 0x100043274.
 // The complete fixed shop URL is in this binary at 0x10a44eb50.
-// See tools/theme-shop-evidence.json. No native theme/purchase model is edited.
+// See docs/theme-persistence.md. No native theme/purchase model is edited.
 static NSString * const RUINThemeShopURLString = @"line://shop/theme";
 static const char * const RUINThemeShopDelegateClass = "_TtC4LINE11AppDelegate";
 static const char * const RUINThemeShopSelector = "openURLForObjC:";
@@ -267,23 +268,23 @@ static BOOL RUINThemeShopVerifySites(void)
 
 static void RUINThemeShopInstallGate(void)
 {
-    static BOOL attempted;
-    if (attempted) return;
-    attempted = YES;
-    if (!RUINThemeShopVerifySites()) { atomic_store(&gThemeShopGateStatus, 1); return; }
-    Class cls = object_getClass(NSUserDefaults.standardUserDefaults);
-    Method integer = class_getInstanceMethod(cls, @selector(integerForKey:));
-    Method object = class_getInstanceMethod(cls, @selector(objectForKey:));
-    if (!integer || !object || strcmp(method_getTypeEncoding(integer), "q24@0:8@16") ||
-        strcmp(method_getTypeEncoding(object), "@24@0:8@16")) {
-        atomic_store(&gThemeShopGateStatus, 2); return;
-    }
-    if (!method_getImplementation(integer) || !method_getImplementation(object)) {
-        atomic_store(&gThemeShopGateStatus, 4); return;
-    }
-    %init(RUINThemeDefaults, RUINThemeDefaultsStore=cls);
-    atomic_store(&gThemeShopGateStatus, 3);
-    atomic_store(&gThemeShopGateReady, YES);
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        if (!RUINThemeShopVerifySites()) { atomic_store(&gThemeShopGateStatus, 1); return; }
+        Class cls = object_getClass(NSUserDefaults.standardUserDefaults);
+        Method integer = class_getInstanceMethod(cls, @selector(integerForKey:));
+        Method object = class_getInstanceMethod(cls, @selector(objectForKey:));
+        if (!integer || !object || strcmp(method_getTypeEncoding(integer), "q24@0:8@16") ||
+            strcmp(method_getTypeEncoding(object), "@24@0:8@16")) {
+            atomic_store(&gThemeShopGateStatus, 2); return;
+        }
+        if (!method_getImplementation(integer) || !method_getImplementation(object)) {
+            atomic_store(&gThemeShopGateStatus, 4); return;
+        }
+        %init(RUINThemeDefaults, RUINThemeDefaultsStore=cls);
+        atomic_store(&gThemeShopGateStatus, 3);
+        atomic_store(&gThemeShopGateReady, YES);
+    });
 }
 #endif
 
@@ -295,7 +296,7 @@ static NSNumber *RUINThemeShopUnscopedPrimary(void)
     SEL selector = sel_registerName("isPrimary");
     Method method = cls ? class_getClassMethod(cls, selector) : NULL;
     if (!method || strcmp(method_getTypeEncoding(method), "B16@0:8")) return nil;
-    return @(((BOOL (*)(id, SEL))method_getImplementation(method))((id)cls, selector));
+    return @([(Class<RUINThemeAccountLevelReading>)cls isPrimary]);
 }
 #endif
 
@@ -324,13 +325,13 @@ NSDictionary *RUINThemePersistenceDiagnostics(void)
         @"storedAccountRoleModified": @NO, @"executableCodeModified": @NO};
 }
 
-static IMP RUINThemeShopRouter(id delegate)
+static BOOL RUINThemeShopRouterAvailable(id delegate)
 {
     Class cls = objc_getClass(RUINThemeShopDelegateClass);
-    if (!cls || !delegate || object_getClass(delegate) != cls) return NULL;
+    if (!cls || !delegate || object_getClass(delegate) != cls) return NO;
     Method method = class_getInstanceMethod(cls, sel_registerName(RUINThemeShopSelector));
     const char *types = method ? method_getTypeEncoding(method) : NULL;
-    return types && strcmp(types, "B24@0:8@16") == 0 ? method_getImplementation(method) : NULL;
+    return types && strcmp(types, "B24@0:8@16") == 0;
 }
 
 static RUINThemeShopStatus RUINThemeShopRecord(RUINThemeShopStatus status)
@@ -366,16 +367,15 @@ static NSString *RUINThemeShopGateStatusName(void)
 static RUINThemeShopStatus RUINThemeShopDispatch(id delegate, NSDictionary *info)
 {
     if (!RUINThemeShopTargetMatches(info)) return RUINThemeShopRecord(RUINThemeShopVersionGated);
-    IMP router = RUINThemeShopRouter(delegate);
-    if (!router) return RUINThemeShopRecord(RUINThemeShopRouterUnavailable);
+    if (!RUINThemeShopRouterAvailable(delegate)) return RUINThemeShopRecord(RUINThemeShopRouterUnavailable);
 #if !defined(RUIN_THEMESHOP_HOST_CHECK)
     if (!atomic_load(&gThemeShopRequests)) gThemeShopUnscopedPrimaryBefore = RUINThemeShopUnscopedPrimary();
     RUINThemeShopInstallGate();
 #endif
     atomic_fetch_add(&gThemeShopRequests, 1);
     @try {
-        BOOL accepted = ((BOOL (*)(id, SEL, NSURL *))router)(delegate,
-            sel_registerName(RUINThemeShopSelector), [NSURL URLWithString:RUINThemeShopURLString]);
+        BOOL accepted = [(id<RUINThemeURLRouting>)delegate
+            openURLForObjC:[NSURL URLWithString:RUINThemeShopURLString]];
         atomic_fetch_add(accepted ? &gThemeShopAccepted : &gThemeShopRejected, 1);
         return RUINThemeShopRecord(accepted ? RUINThemeShopRouteAccepted : RUINThemeShopRouteRejected);
     } @catch (__unused NSException *exception) {
@@ -413,7 +413,7 @@ NSDictionary<NSString *, id> *RUINThemeShopDiagnostics(void)
     } mutableCopy];
 #if !defined(RUIN_THEMESHOP_HOST_CHECK)
     if (NSThread.isMainThread) {
-        BOOL routerAvailable = RUINThemeShopRouter(UIApplication.sharedApplication.delegate) != NULL;
+        BOOL routerAvailable = RUINThemeShopRouterAvailable(UIApplication.sharedApplication.delegate);
         result[@"nativeRouterAvailable"] = @(routerAvailable);
         if (atomic_load(&gThemeShopRequests)) {
             NSNumber *actual = RUINThemeShopUnscopedPrimary();
@@ -570,6 +570,7 @@ static void RUINThemeShopCheckGate(void)
         }
     }
 
+    NSUInteger migrationsBeforePersistenceChecks = testNativeMigrations;
     for (unsigned mode = 0; mode < 2; mode++) {
         RUINThemeShopTestStack(mode, RUINThemeShopGateStylesheetPersistence);
         assert(RUINThemeShopCaptureScope(NULL, mode).kind == RUINThemeShopGateStylesheetPersistence);
@@ -583,7 +584,8 @@ static void RUINThemeShopCheckGate(void)
         assert(!RUINThemeShopCaptureScope(NULL, mode).kind);
     }
     assert([RUINThemePersistenceDiagnostics()[@"roleReadProjections"] unsignedLongLongValue] > 0);
-    assert(testStoredLevel.longLongValue == 1 && testStoredMode == 1 && testNativeMigrations == 0);
+    assert(testStoredLevel.longLongValue == 1 && testStoredMode == 1 &&
+        testNativeMigrations == migrationsBeforePersistenceChecks);
 
     RUINThemeShopTestStack(YES, RUINThemeShopGateThemeAction);
     assert(RUINThemeShopTestReadMode(nil, @selector(integerForKey:), @"otherModeKey",

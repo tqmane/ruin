@@ -1,5 +1,6 @@
 %config(generator=internal);
 
+#import "MessagingPrivateAPI.h"
 #import "UnsendOperation.h"
 #import "Features.h"
 #import "MessageHistory.h"
@@ -146,8 +147,8 @@ static NSString *MessageID(id value) {
             Method method = class_getInstanceMethod(cls, sel_registerName(names[i]));
             if (!method || strcmp(method_getTypeEncoding(method), types[i])) { atomic_fetch_add(&rejectedOperations, 1); return actual; }
         }
-        long long type = ((long long (*)(id, SEL))objc_msgSend)(object, sel_registerName("type"));
-        id rawMessage = ((id (*)(id, SEL))objc_msgSend)(object, sel_registerName("param2"));
+        long long type = [(id<RUINMessagingOperationFields>)object type];
+        id rawMessage = [(id<RUINMessagingOperationFields>)object param2];
         NSString *message = MessageID(rawMessage);
         if ((type != 64 && type != 65) || !message) { atomic_fetch_add(&rejectedOperations, 1); return actual; }
         thread[OperationThreadKey] = @{@"chat":[actual copy], @"message":message};
@@ -269,7 +270,7 @@ static BOOL RetainedMarker(NSDictionary *key, BOOL write) {
                     [[message valueForKey:@"contentType"] shortValue] != 0) return;
                 Method getter = class_getInstanceMethod(object_getClass(message), sel_registerName("plaintext"));
                 if (!getter || strcmp(method_getTypeEncoding(getter), "@16@0:8")) return;
-                id value = ((id (*)(id, SEL))objc_msgSend)(message, sel_registerName("plaintext"));
+                id value = [(id<RUINMessagingMessageFields>)message plaintext];
                 if ([value isKindOfClass:NSString.class] && [value length]) text = [value copy];
             }];
             if (text) { atomic_fetch_add(&displayReturns, 1); return [text stringByAppendingString:@"\n取消済"]; }

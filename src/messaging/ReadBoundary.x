@@ -1,5 +1,6 @@
 %config(generator=internal);
 
+#import "MessagingPrivateAPI.h"
 #import "ReadBoundary.h"
 #import "Features.h"
 #import <CoreData/CoreData.h>

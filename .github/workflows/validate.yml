@@ -13,14 +13,14 @@ jobs:
   portable:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Preprocess Logos and check packaging integrity
         run: make -j4 check-portable
 
   apple:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Build arm64 iOS dylib
         run: make -j4 all
       - name: Run macOS host fixtures

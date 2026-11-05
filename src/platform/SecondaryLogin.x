@@ -2,6 +2,7 @@
 
 #import "SecondaryLogin.h"
 #import "Features.h"
+#import "LINEPrivateCalls.h"
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
@@ -100,7 +101,7 @@ static void WelcomeDidAppear(id self) {
         __weak UIViewController *controller = self;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC), dispatch_get_main_queue(), ^{
             if (controller.view.window && !controller.presentedViewController)
-                ((void (*)(id, SEL))objc_msgSend)(controller, @selector(loginButtonAction));
+                [(id<RUINLINEWelcomeCalls>)controller loginButtonAction];
         });
     }
 }
@@ -112,7 +113,7 @@ static void SecondaryDidAppear(id self) {
         __weak UIViewController *controller = self;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC), dispatch_get_main_queue(), ^{
             if (controller.view.window && !controller.presentedViewController) {
-                ((void (*)(id, SEL))objc_msgSend)(controller, sel_registerName("showQRCodeLoginButtonPressed"));
+                [(id<RUINLINESecondaryLoginCalls>)controller showQRCodeLoginButtonPressed];
                 lastLoginScreen = @"native_secondary_qr_requested";
             }
         });

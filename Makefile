@@ -27,6 +27,7 @@ check-fixtures: check-host build/check_native_theme_registration build/check_nat
 	@test -f "$(LINE_APP)/LineShopThemeRepository-Resources.bundle/Theme.momd/Theme 2.mom" || (echo 'Set LINE_APP to the extracted source app.'; exit 1)
 	@test -f "$(THEME_ARCHIVE)" || (echo 'Set THEME_ARCHIVE to a locally obtained theme archive.'; exit 1)
 	python3 tools/macho_integrity.py "$(LINE_APP)/LINE"
+	python3 tests/check_theme_persistence.py "$(LINE_APP)/LINE"
 	python3 tests/check_native_tabs.py "$(LINE_APP)/LINE"
 	./build/check_native_theme_registration "$(LINE_APP)/LineShopThemeRepository-Resources.bundle/Theme.momd/Theme 2.mom"
 	./build/check_native_theme_install "$(THEME_ARCHIVE)"

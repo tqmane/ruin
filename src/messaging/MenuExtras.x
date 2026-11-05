@@ -1,5 +1,6 @@
 %config(generator=internal);
 
+#import "MessagingPrivateAPI.h"
 #import "MenuExtras.h"
 
 #import "Features.h"
@@ -360,12 +361,12 @@ static NSDictionary *RUINMenuExtrasLegacyMenuSnapshot(void)
     if (!sharedEncoding || strcmp(sharedEncoding, "@16@0:8") != 0)
         return @{@"menuVisible":@NO, @"itemActions":actions};
 
-    id menuController = ((id (*)(id, SEL))objc_msgSend)((id)menuControllerClass, sharedSelector);
+    id menuController = [(Class<RUINMessagingLegacyMenuController>)menuControllerClass sharedMenuController];
     SEL visibleSelector = sel_registerName("isMenuVisible");
     Method visibleMethod = class_getInstanceMethod(object_getClass(menuController), visibleSelector);
     const char *visibleEncoding = visibleMethod ? method_getTypeEncoding(visibleMethod) : NULL;
     if (!visibleEncoding || strcmp(visibleEncoding, "B16@0:8") != 0 ||
-        !((BOOL (*)(id, SEL))objc_msgSend)(menuController, visibleSelector))
+        ![(id<RUINMessagingLegacyMenuController>)menuController isMenuVisible])
         return @{@"menuVisible":@NO, @"itemActions":actions};
 
     SEL itemsSelector = sel_registerName("menuItems");
@@ -374,7 +375,7 @@ static NSDictionary *RUINMenuExtrasLegacyMenuSnapshot(void)
     if (!itemsEncoding || strcmp(itemsEncoding, "@16@0:8") != 0)
         return @{@"menuVisible":@YES, @"itemActions":actions};
 
-    id items = ((id (*)(id, SEL))objc_msgSend)(menuController, itemsSelector);
+    id items = [(id<RUINMessagingLegacyMenuController>)menuController menuItems];
     Class menuItemClass = objc_getClass("UIMenuItem");
     if ([items isKindOfClass:NSArray.class] && menuItemClass) {
         SEL actionSelector = sel_registerName("action");
@@ -386,10 +387,10 @@ static NSDictionary *RUINMenuExtrasLegacyMenuSnapshot(void)
             const char *actionEncoding = actionMethod ? method_getTypeEncoding(actionMethod) : NULL;
             const char *targetEncoding = targetMethod ? method_getTypeEncoding(targetMethod) : NULL;
             if (!actionEncoding || strcmp(actionEncoding, ":16@0:8") != 0) continue;
-            SEL action = ((SEL (*)(id, SEL))objc_msgSend)(item, actionSelector);
+            SEL action = [(id<RUINMessagingLegacyMenuItem>)item action];
             if (!action) continue;
             id target = targetEncoding && strcmp(targetEncoding, "@16@0:8") == 0
-                ? ((id (*)(id, SEL))objc_msgSend)(item, targetSelector) : nil;
+                ? [(id<RUINMessagingLegacyMenuItem>)item target] : nil;
             [actions addObject:@{
                 @"itemClassName": NSStringFromClass(object_getClass(item)),
                 @"actionSelector": NSStringFromSelector(action),
@@ -747,7 +748,7 @@ static NSDictionary *RUINMenuExtrasMessageKeyForCell(UICollectionViewCell *cell)
     UIViewController *owner = RUINMenuExtrasChatControllerForCell(cell, cell.window);
     Method getter = owner ? class_getInstanceMethod(object_getClass(owner), sel_registerName("chat")) : NULL;
     if (!getter || strcmp(method_getTypeEncoding(getter), "@16@0:8")) return nil;
-    id chat = ((id (*)(id, SEL))objc_msgSend)(owner, sel_registerName("chat"));
+    id chat = [(id<RUINMessagingChatOwner>)owner chat];
     if (![chat isKindOfClass:NSManagedObject.class]) return nil;
     NSManagedObjectContext *context = [chat managedObjectContext];
     if (!context) return nil;
@@ -1163,7 +1164,7 @@ static void RUINMenuExtrasPresentReaders(UIViewController *chatController,
         SEL chatSelector = sel_registerName("chat");
         Method getter = chatController ? class_getInstanceMethod(object_getClass(chatController), chatSelector) : NULL;
         if (getter && !strcmp(method_getTypeEncoding(getter), "@16@0:8")) {
-            id chat = ((id (*)(id, SEL))objc_msgSend)(chatController, chatSelector);
+            id chat = [(id<RUINMessagingChatOwner>)chatController chat];
             nativeChat = chat;
             RUINObserveNativeReadPositionsForMessageKey(messageKey, chat);
         }
@@ -1314,7 +1315,7 @@ BOOL RUINMenuExtrasCopyMIDFromManagedUser(id managedUser, NSError **error)
         return NO;
     }
 
-    id value = ((id (*)(id, SEL))objc_msgSend)(managedUser, midStringSelector);
+    id value = [(id<RUINMessagingUserFields>)managedUser midString];
     if (![value isKindOfClass:NSString.class] || [(NSString *)value length] == 0) {
         RUINMenuExtrasSetError(error, RUINMenuExtrasErrorMIDUnavailable, @"This user has no copyable MID.");
         return NO;

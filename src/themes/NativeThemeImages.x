@@ -1,5 +1,6 @@
 %config(generator=internal)
 
+#import "ThemePrivateAPI.h"
 #import "NativeThemeImages.h"
 #if !defined(RUIN_NATIVE_THEME_IMAGES_HOST_CHECK)
 #import "NativeReadRangeSync.h"
@@ -23,7 +24,6 @@ enum { kCacheNotRequested, kCacheTargetMismatch, kCacheScheduled, kCacheRunning,
        kCacheComplete, kCacheUnavailable };
 enum { kMaxNamespaces = 64, kMaxDirectoryEntries = 1024, kMaxNamespaceName = 67 };
 
-typedef void (^RUINNativeTaskCompletion)(NSData *, NSURLResponse *, NSError *);
 
 
 static const char *gSelectorNames[kHookCount] = {
@@ -264,7 +264,7 @@ static NSURLRequest *RUINRequestWithNormalizedThemeURL(NSURLRequest *request)
     return %orig(RUINRequestWithNormalizedThemeURL(request));
 }
 
-- (id)downloadTaskWithRequest:(NSURLRequest *)request completionHandler:(RUINNativeTaskCompletion)completion
+- (id)downloadTaskWithRequest:(NSURLRequest *)request completionHandler:(RUINNativeDownloadTaskCompletion)completion
 {
     atomic_fetch_add(&gOriginalCalls[kDownloadRequestCompletion], 1);
     return %orig(RUINRequestWithNormalizedThemeURL(request), completion);
@@ -276,7 +276,7 @@ static NSURLRequest *RUINRequestWithNormalizedThemeURL(NSURLRequest *request)
     return %orig(RUINNormalizeNativeThemeImageURL(URL));
 }
 
-- (id)downloadTaskWithURL:(NSURL *)URL completionHandler:(RUINNativeTaskCompletion)completion
+- (id)downloadTaskWithURL:(NSURL *)URL completionHandler:(RUINNativeDownloadTaskCompletion)completion
 {
     atomic_fetch_add(&gOriginalCalls[kDownloadURLCompletion], 1);
     return %orig(RUINNormalizeNativeThemeImageURL(URL), completion);
@@ -327,7 +327,7 @@ static NSURLRequest *RUINRequestWithNormalizedThemeURL(NSURLRequest *request)
 
 %group RUINNativeThemeDelegateDownloadRequestCompletion
 %hook RUINThemeURLSession
-- (id)_downloadTaskWithRequest:(NSURLRequest *)request delegate:(id)delegate completionHandler:(RUINNativeTaskCompletion)completion
+- (id)_downloadTaskWithRequest:(NSURLRequest *)request delegate:(id)delegate completionHandler:(RUINNativeDownloadTaskCompletion)completion
 {
     atomic_fetch_add(&gDelegateCalls[kDelegateDownloadRequestCompletion], 1);
     return %orig(RUINRequestWithNormalizedThemeURL(request), delegate, completion);
@@ -337,7 +337,7 @@ static NSURLRequest *RUINRequestWithNormalizedThemeURL(NSURLRequest *request)
 
 %group RUINNativeThemeDelegateDownloadURLCompletion
 %hook RUINThemeURLSession
-- (id)_downloadTaskWithURL:(NSURL *)URL delegate:(id)delegate completionHandler:(RUINNativeTaskCompletion)completion
+- (id)_downloadTaskWithURL:(NSURL *)URL delegate:(id)delegate completionHandler:(RUINNativeDownloadTaskCompletion)completion
 {
     atomic_fetch_add(&gDelegateCalls[kDelegateDownloadURLCompletion], 1);
     return %orig(RUINNormalizeNativeThemeImageURL(URL), delegate, completion);

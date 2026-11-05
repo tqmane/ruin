@@ -17,6 +17,41 @@ extern void RUINBoundaryTestNativeCaller(BOOL value);
 - (_Bool)canMarkChatAsReadToServer { return YES; }
 @end
 
+// Multiple native overrides must retain separate originals when a Logos entry
+// is bound to runtime-created Core Data subclasses. Also exercise an original
+// that calls a different receiver before returning through its own superclass.
+static NSUInteger chainBaseCalls, chainACalls, chainBCalls;
+static __weak ManagedChat *chainNestedReceiver;
+static long long chainNestedResult;
+@interface RUINBoundaryChainBase : ManagedChat @end
+@implementation RUINBoundaryChainBase
+- (int64_t)readUpToMessageIDSynced {
+    chainBaseCalls++;
+    [self willAccessValueForKey:@"readUpToMessageIDSynced"];
+    @try { return [[self primitiveValueForKey:@"readUpToMessageIDSynced"] longLongValue]; }
+    @finally { [self didAccessValueForKey:@"readUpToMessageIDSynced"]; }
+}
+@end
+@interface RUINBoundaryChainA : RUINBoundaryChainBase @end
+@implementation RUINBoundaryChainA
+- (int64_t)readUpToMessageIDSynced {
+    chainACalls++;
+    if (chainNestedReceiver) {
+        ManagedChat *nested = chainNestedReceiver;
+        chainNestedReceiver = nil;
+        chainNestedResult = nested.readUpToMessageIDSynced;
+    }
+    return [super readUpToMessageIDSynced] + 1;
+}
+@end
+@interface RUINBoundaryChainB : RUINBoundaryChainBase @end
+@implementation RUINBoundaryChainB
+- (int64_t)readUpToMessageIDSynced {
+    chainBCalls++;
+    return [super readUpToMessageIDSynced] + 2;
+}
+@end
+
 static IMP savedInfo;
 static NSDictionary *Info(id self, SEL selector) {
     if (self != NSBundle.mainBundle) return ((id (*)(id, SEL))savedInfo)(self, selector);
@@ -28,6 +63,44 @@ static NSAttributeDescription *Attribute(NSString *name, NSAttributeType type) {
 }
 static void Require(BOOL condition, NSString *reason) {
     if (!condition) @throw [NSException exceptionWithName:@"ReadBoundaryCheck" reason:reason userInfo:nil];
+}
+static NSEntityDescription *ChatEntity(NSString *name, NSString *className) {
+    NSEntityDescription *entity = [NSEntityDescription new];
+    entity.name = name; entity.managedObjectClassName = className;
+    entity.properties = @[Attribute(@"mid", NSStringAttributeType), Attribute(@"readUpToMessageID", NSInteger64AttributeType),
+        Attribute(@"readUpToMessageIDSynced", NSInteger64AttributeType), Attribute(@"lastReceivedMessageID", NSInteger64AttributeType)];
+    return entity;
+}
+static void CheckAccessorChains(NSManagedObjectContext *context, NSUserDefaults *defaults) {
+    ManagedChat *a = [NSEntityDescription insertNewObjectForEntityForName:@"ChainA" inManagedObjectContext:context];
+    ManagedChat *b = [NSEntityDescription insertNewObjectForEntityForName:@"ChainB" inManagedObjectContext:context];
+    a.mid = @"chain-a"; a.readUpToMessageID = 50; a.lastReceivedMessageID = 50; a.readUpToMessageIDSynced = 10;
+    b.mid = @"chain-b"; b.readUpToMessageID = 60; b.lastReceivedMessageID = 60; b.readUpToMessageIDSynced = 30;
+    Require([context save:NULL], @"chain fixture save failed");
+    RUINInstallReadBoundary();
+    SEL getter = @selector(readUpToMessageIDSynced);
+    IMP aEntry = class_getMethodImplementation(object_getClass(a), getter);
+    IMP bEntry = class_getMethodImplementation(object_getClass(b), getter);
+    RUINInstallReadBoundary();
+    Require(aEntry == class_getMethodImplementation(object_getClass(a), getter) &&
+        bEntry == class_getMethodImplementation(object_getClass(b), getter), @"repeated install wrapped a dynamic getter twice");
+    chainACalls = chainBCalls = chainBaseCalls = 0;
+    chainNestedReceiver = b;
+    Require(a.readUpToMessageIDSynced == 11 && chainNestedResult == 32,
+        @"dynamic subclasses shared an original or lost their superclass implementation");
+    Require(chainACalls == 1 && chainBCalls == 1 && chainBaseCalls == 2,
+        @"nested receiver or superclass original was skipped/reentered");
+    [defaults setBool:YES forKey:RUINReadControlEnabledDefaultsKey]; RUINInstallFeatures();
+    Require(a.readUpToMessageIDSynced == 50 && b.readUpToMessageIDSynced == 60,
+        @"dynamic getter projection did not remain scoped to each receiver");
+    RUINBoundaryTestNativeCaller(NO);
+    Require(a.readUpToMessageIDSynced == 11 && b.readUpToMessageIDSynced == 32,
+        @"unrelated consumers lost per-class native getter behavior");
+    RUINBoundaryTestNativeCaller(YES);
+    Require([[a primitiveValueForKey:@"readUpToMessageIDSynced"] longLongValue] == 10 &&
+        [[b primitiveValueForKey:@"readUpToMessageIDSynced"] longLongValue] == 30,
+        @"dynamic accessor projection changed persisted fields");
+    [defaults setBool:NO forKey:RUINReadControlEnabledDefaultsKey]; RUINInstallFeatures();
 }
 int main(int argc, const char **argv) { @autoreleasepool {
     BOOL early = argc > 1 && strcmp(argv[1], "early") == 0;
@@ -46,10 +119,9 @@ int main(int argc, const char **argv) { @autoreleasepool {
         [defaults setObject:@[] forKey:RUINReadExceptionsDefaultsKey];
         RUINInstallFeatures();
         if (early) RUINInstallReadBoundary();
-        NSEntityDescription *entity = [NSEntityDescription new];
-        entity.name = @"Chat"; entity.managedObjectClassName = @"ManagedChat";
-        entity.properties = @[Attribute(@"mid", NSStringAttributeType), Attribute(@"readUpToMessageID", NSInteger64AttributeType), Attribute(@"readUpToMessageIDSynced", NSInteger64AttributeType), Attribute(@"lastReceivedMessageID", NSInteger64AttributeType)];
-        NSManagedObjectModel *model = [NSManagedObjectModel new]; model.entities = @[entity];
+        NSManagedObjectModel *model = [NSManagedObjectModel new];
+        model.entities = @[ChatEntity(@"Chat", @"ManagedChat"), ChatEntity(@"ChainA", @"RUINBoundaryChainA"),
+            ChatEntity(@"ChainB", @"RUINBoundaryChainB")];
         NSPersistentStoreCoordinator *coordinator = [[NSPersistentStoreCoordinator alloc] initWithManagedObjectModel:model];
         NSURL *databaseURL = [fixture URLByAppendingPathComponent:@"fixture.sqlite"];
         NSPersistentStore *persistent = [coordinator addPersistentStoreWithType:NSSQLiteStoreType configuration:nil URL:databaseURL options:nil error:NULL];
@@ -61,6 +133,7 @@ int main(int argc, const char **argv) { @autoreleasepool {
         Require(chat.readUpToMessageIDSynced == 10, @"disabled getter changed native value");
         Require([context save:NULL], @"initial native save failed");
         if (!early) RUINInstallReadBoundary();
+        CheckAccessorChains(context, defaults);
         [defaults setBool:YES forKey:RUINReadControlEnabledDefaultsKey]; RUINInstallFeatures();
         long long held = chat.readUpToMessageIDSynced;
         if (held != 20) NSLog(@"Boundary fixture debug: runtimeClass=%@ declared=%@ currentRead=%lld primitive=%@ encoding=%s diagnostics=%@", NSStringFromClass(object_getClass(chat)), NSStringFromClass(chat.class), chat.readUpToMessageID, [chat primitiveValueForKey:@"readUpToMessageIDSynced"], method_getTypeEncoding(class_getInstanceMethod(object_getClass(chat), @selector(readUpToMessageIDSynced))), RUINReadBoundaryDiagnostics());

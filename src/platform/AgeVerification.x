@@ -25,16 +25,12 @@ typedef enum {
 typedef struct {
     const char *selectorName;
     const char *encoding;
-    _Atomic(IMP) original;
     atomic_uint_fast64_t calls;
     atomic_int status;
 } RUINAgeHook;
 
-static BOOL RUINAgeVerificationIsNecessary(id self, SEL selector);
-static NSInteger RUINUserAgeType(id self, SEL selector);
-
 #define RUIN_AGE_HOOK(selector, types) \
-    { selector, types, ATOMIC_VAR_INIT(NULL), ATOMIC_VAR_INIT(0), ATOMIC_VAR_INIT(RUINAgeHookPending) }
+    { selector, types, ATOMIC_VAR_INIT(0), ATOMIC_VAR_INIT(RUINAgeHookPending) }
 
 // Current LINE exposes the local guard pair on NLAgeVerificationManager's metaclass.
 static RUINAgeHook gAgeNecessaryHook = RUIN_AGE_HOOK("ageVerificationIsNecessary", "B16@0:8");
@@ -55,9 +51,9 @@ static BOOL RUINTargetMatches(void)
 %hook RUINAgeNecessaryTarget
 + (BOOL)ageVerificationIsNecessary
 {
-    IMP original = (IMP)&%orig;
-    if (original) atomic_store_explicit(&gAgeNecessaryHook.original, original, memory_order_release);
-    return RUINAgeVerificationIsNecessary(self, _cmd);
+    atomic_fetch_add_explicit(&gAgeNecessaryHook.calls, 1, memory_order_relaxed);
+    if ([NSUserDefaults.standardUserDefaults boolForKey:RUINBypassAgeVerificationDefaultsKey]) return NO;
+    return %orig;
 }
 %end
 %end
@@ -66,9 +62,9 @@ static BOOL RUINTargetMatches(void)
 %hook RUINAgeTypeTarget
 + (NSInteger)userAgeType
 {
-    IMP original = (IMP)&%orig;
-    if (original) atomic_store_explicit(&gUserAgeTypeHook.original, original, memory_order_release);
-    return RUINUserAgeType(self, _cmd);
+    atomic_fetch_add_explicit(&gUserAgeTypeHook.calls, 1, memory_order_relaxed);
+    if ([NSUserDefaults.standardUserDefaults boolForKey:RUINBypassAgeVerificationDefaultsKey]) return 1;
+    return %orig;
 }
 %end
 %end
@@ -89,7 +85,6 @@ static void RUINInstallAgeHook(Class target, RUINAgeHook *hook)
     IMP original = method_getImplementation(method);
     if (!original) { atomic_store(&hook->status, RUINAgeHookInstallFailed); return; }
 
-    atomic_store_explicit(&hook->original, original, memory_order_release);
     if (hook == &gAgeNecessaryHook) {
         %init(RUINAgeNecessary, RUINAgeNecessaryTarget = target);
     } else if (hook == &gUserAgeTypeHook) {
@@ -105,8 +100,12 @@ void RUINInstallAgeVerification(void)
 {
     os_unfair_lock_lock(&gAgeInstallLock);
     if (!RUINTargetMatches()) {
-        atomic_store(&gAgeNecessaryHook.status, RUINAgeHookVersionGated);
-        atomic_store(&gUserAgeTypeHook.status, RUINAgeHookVersionGated);
+        // Keep successful initialization latched even if diagnostics later run
+        // under a mismatching bundle context; a Logos group must not re-init.
+        if (atomic_load(&gAgeNecessaryHook.status) != RUINAgeHookInstalled)
+            atomic_store(&gAgeNecessaryHook.status, RUINAgeHookVersionGated);
+        if (atomic_load(&gUserAgeTypeHook.status) != RUINAgeHookInstalled)
+            atomic_store(&gUserAgeTypeHook.status, RUINAgeHookVersionGated);
         os_unfair_lock_unlock(&gAgeInstallLock);
         return;
     }
@@ -114,22 +113,6 @@ void RUINInstallAgeVerification(void)
     RUINInstallAgeHook(target, &gAgeNecessaryHook);
     RUINInstallAgeHook(target, &gUserAgeTypeHook);
     os_unfair_lock_unlock(&gAgeInstallLock);
-}
-
-static BOOL RUINAgeVerificationIsNecessary(id self, SEL selector)
-{
-    atomic_fetch_add_explicit(&gAgeNecessaryHook.calls, 1, memory_order_relaxed);
-    if ([NSUserDefaults.standardUserDefaults boolForKey:RUINBypassAgeVerificationDefaultsKey]) return NO;
-    IMP original = atomic_load_explicit(&gAgeNecessaryHook.original, memory_order_acquire);
-    return original ? ((BOOL (*)(id, SEL))original)(self, selector) : NO;
-}
-
-static NSInteger RUINUserAgeType(id self, SEL selector)
-{
-    atomic_fetch_add_explicit(&gUserAgeTypeHook.calls, 1, memory_order_relaxed);
-    if ([NSUserDefaults.standardUserDefaults boolForKey:RUINBypassAgeVerificationDefaultsKey]) return 1;
-    IMP original = atomic_load_explicit(&gUserAgeTypeHook.original, memory_order_acquire);
-    return original ? ((NSInteger (*)(id, SEL))original)(self, selector) : 0;
 }
 
 static NSString *RUINAgeHookStatusName(RUINAgeHookStatus status)

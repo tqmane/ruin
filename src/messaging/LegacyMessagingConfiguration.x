@@ -1,5 +1,6 @@
 %config(generator=internal);
 
+#import "MessagingPrivateAPI.h"
 #import "LegacyMessagingConfiguration.h"
 #import <objc/runtime.h>
 #import <stdatomic.h>

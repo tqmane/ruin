@@ -12,6 +12,9 @@
 // LINE 26.16.0's default availableMenus implementation invokes these scalar
 // witnesses with metadata in x0, conformance in x1 and borrowed self in x20.
 // It then generates both its menu array and index map itself.
+// These are Swift protocol witness slots, not Objective-C methods expressible
+// with Logos %hook. This typed adapter stays in RUIN.dylib and only rebinds
+// runtime data pointers; it never rewrites the IPA or executable instructions.
 typedef uint8_t (*NativeGetter)(const void *, const void *,
     void * __attribute__((swift_context))) __attribute__((swiftcall));
 static NativeGetter originals[23];
