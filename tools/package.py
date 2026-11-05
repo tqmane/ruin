@@ -11,7 +11,7 @@ import shlex
 import shutil
 import subprocess
 import tempfile
-from patch_theme_persistence import SOURCE_HASH, apply_to_file as enable_secondary_theme_persistence
+from macho_integrity import RUIN_LOAD_PATH, verify_packaged, verify_source
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -78,9 +78,8 @@ def main():
         raise ValueError('--bundle-id must not be empty.')
     bundle_id = a.bundle_id if a.bundle_id is not None else original_bundle_id
     binary = app / info['CFBundleExecutable']
-    if hashlib.sha256(binary.read_bytes()).hexdigest() != SOURCE_HASH:
-        raise ValueError('Source executable does not match the researched LINE 26.16.0 build.')
-    persistence_patch = enable_secondary_theme_persistence(binary)
+    original_executable = binary.read_bytes()
+    verify_source(original_executable)
     # Extension signing/hosting has not yet been validated with this profile.
     for name in ('PlugIns', 'Extensions', 'Watch', 'SC_Info', '_MASReceipt'):
         shutil.rmtree(app / name, ignore_errors=True)
@@ -95,7 +94,6 @@ def main():
     info['RUINSigningApplicationIdentifier'] = signing_app_id
     info['RUINSignedTeamIdentifier'] = ent['com.apple.developer.team-identifier']
     info['RUINPushEnvironment'] = ent.get('aps-environment', 'unavailable')
-    info['RUINSecondaryThemePersistencePatch'] = persistence_patch
     info['RUINAppGroupMap'] = dict(zip([
         'group.com.linecorp.line', 'group.com.linecorp.Line.encrypted.app',
         'group.share.com.linecorp.line', 'group.com.linecorp.Line.encrypted.share',
@@ -114,7 +112,10 @@ def main():
     shutil.copy2(a.dylib, frameworks / 'RUIN.dylib')
     os.chmod(frameworks / 'RUIN.dylib', 0o755)
     run(ROOT / 'build/insert_dylib', '--inplace', '--all-yes', '--strip-codesig',
-        '@executable_path/Frameworks/RUIN.dylib', binary)
+        RUIN_LOAD_PATH, binary)
+    # Feature behavior lives in RUIN.dylib. Only loading and signing metadata
+    # may change; the app's code, constants and Swift metadata stay byte-exact.
+    verify_packaged(original_executable, binary.read_bytes())
     ent_path = ROOT / 'build/entitlements.plist'
     ent_path.write_bytes(plistlib.dumps(ent))
     password = a.password_file.read_text().strip()
@@ -163,6 +164,7 @@ def main():
                 sign(framework)
             sign(app, main_app=True)
             run('codesign', '--verify', '--deep', '--strict', '--verbose=2', app)
+            verify_packaged(original_executable, binary.read_bytes())
         finally:
             try:
                 run('security', 'list-keychains', '-d', 'user', '-s', *original_search_list, capture=True)

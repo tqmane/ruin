@@ -6,7 +6,7 @@ from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
 binary = Path(sys.argv[1])
-source = (root / "src/interface/InterfaceFeatures.m").read_text()
+source = (root / "src/interface/InterfaceFeatures.x").read_text()
 header = (root / "src/interface/InterfaceFeatures.h").read_text()
 shopping_controller = "_TtC17LineTWCommerceTab27TWCommerceTabViewController"
 

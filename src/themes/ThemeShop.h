@@ -16,6 +16,10 @@ NS_ASSUME_NONNULL_BEGIN
  */
 FOUNDATION_EXPORT void RUINOpenThemeShop(UIViewController *source);
 
+/** Install the exact-build stylesheet persistence adapter at dylib startup. */
+FOUNDATION_EXPORT void RUINInstallThemePersistenceAdapter(void);
+FOUNDATION_EXPORT NSDictionary<NSString *, id> *RUINThemePersistenceDiagnostics(void);
+
 /** Fixed capability/status codes and request counters; no account or product data. */
 FOUNDATION_EXPORT NSDictionary<NSString *, id> *RUINThemeShopDiagnostics(void);
 

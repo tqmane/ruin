@@ -1,0 +1,35 @@
+name: Validate RUIN
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  portable:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Preprocess Logos and check packaging integrity
+        run: make -j4 check-portable
+
+  apple:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build arm64 iOS dylib
+        run: make -j4 all
+      - name: Run macOS host fixtures
+        run: make -j4 check-host
+      - name: Check dylib architecture and dependencies
+        run: |
+          lipo -verify_arch arm64 build/RUIN.dylib
+          otool -L build/RUIN.dylib
+          if otool -L build/RUIN.dylib | grep -Ei 'substrate|libhooker'; then
+            echo 'RUIN must not require an external hook runtime.'
+            exit 1
+          fi
