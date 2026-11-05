@@ -266,7 +266,19 @@ void RUINInstallReadBoundary(void) {
         SEL selector = sel_registerName("readUpToMessageIDSynced");
         Method method = class_getInstanceMethod(cls, selector);
         IMP current = method ? method_getImplementation(method) : NULL;
-        if (current && current == [installedImplementations[name] pointerValue]) continue;
+        NSValue *installed = installedImplementations[name];
+        if (installed) {
+            // A later swizzler may retain our entry in its original chain.
+            // Rebinding that same entry to a new original would also change
+            // the old chain and lose this class's getter. Successful class
+            // bindings stay immutable; a native replacement is left in place.
+            if (current != installed.pointerValue) installedBoundaries[name] = @"accessor_changed_after_install";
+            else {
+                RUINBoundaryAccessorState *state = objc_getAssociatedObject(cls, &boundaryAccessorStateKey);
+                installedBoundaries[name] = state.original ? @"installed_original_accessor" : @"installed_coredata_accessor";
+            }
+            continue;
+        }
         if (method && strcmp(method_getTypeEncoding(method), "q16@0:8") && strcmp(method_getTypeEncoding(method), "q@:")) {
             installedBoundaries[name] = @"encoding_mismatch"; continue;
         }

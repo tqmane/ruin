@@ -28,7 +28,7 @@ make check-host
 make check
 ```
 
-`make check-host` はmacOS上で合成フィクスチャを使うテストを実行します。`make logos` と `make check-portable` はLinuxでも実行でき、すべてのLogosソースを警告もエラーとして処理し、パッケージの整合性チェックを検証します。GitHub Actionsはこれらに加え、arm64向けiOS dylibのビルドと依存ライブラリの確認を実行します。
+`make check-host` はmacOS上で合成フィクスチャを使うテストを実行します。`make logos` と `make check-portable` はLinuxでも実行でき、すべてのLogosソースを警告もエラーとして処理し、パッケージの整合性チェックを検証します。`make check-packaging` は自前の小さなiOS実行ファイルを生成し、実際の `insert_dylib` とAppleのアドホック署名を通して整合性を確認します。証明書や元IPAは必要ありません。GitHub Actionsはこれらに加え、arm64向けiOS dylibのビルドと依存ライブラリの確認を実行します。
 
 `make check` のネイティブモデル検証には、`build/unsigned/Payload/LINE.app/` の対象アプリと、ローカルに取得済みの着せかえアーカイブを使用します。別の場所にある場合は `LINE_APP=... THEME_ARCHIVE=...` を指定します。未取得の環境では、対応するチェックが必要な入力パスを表示して停止します。IPA、証明書・プロビジョニングプロファイル・パスワードはリポジトリへ保存しません。
 
@@ -48,7 +48,7 @@ Objective-Cメソッドのフックは `.x` のLogos `%hook` / `%orig` で記述
 
 タブ・フォントの既存Swiftプロトコルwitness table補正は、Objective-CメソッドではないためLogosの対象外です。型を検証する既存のSwift呼出規約付きアダプターをdylib内に残し、実行時のデータポインタだけを差し替えます。これらもIPA内のファイルや実行命令は変更しません。
 
-サイドロードIPAを作る際は、dylibをロードする `LC_LOAD_DYLIB` の追加と、署名・Bundle IDなどのパッケージ用メタデータ更新を行います。パッケージ処理はロードコマンド追加後と署名後に、既存のMach-Oセクションすべてのヘッダ・内容が元と一致することを検証し、不一致ならIPAを出力しません。次のコマンドでも読み取り専用で照合できます。
+サイドロードIPAを作る際は、dylibをロードする `LC_LOAD_DYLIB` の追加と、署名・Bundle IDなどのパッケージ用メタデータ更新を行います。パッケージ処理はロードコマンド追加後と署名後に、既存のMach-Oセクションすべてのヘッダ・内容が元と一致することを検証します。既存ロードコマンド、メモリ保護属性、署名以外の `__LINKEDIT` も照合し、追加依存や許可していない変更があればIPAを出力しません。次のコマンドでも読み取り専用で照合できます。
 
 ```sh
 python3 tools/macho_integrity.py original.ipa --packaged dist/RUIN-LINE-26.16.0.ipa

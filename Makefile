@@ -6,19 +6,22 @@ PERL ?= perl
 LOGOS := vendor/logos/bin/logos.pl
 LOGOS_SOURCES := $(sort $(wildcard src/*/*.x))
 LOGOS_GENERATED := $(LOGOS_SOURCES:%.x=build/logos/%.m)
-LOGOS_DEPS := $(wildcard vendor/logos/bin/*.pl vendor/logos/bin/lib/*.pm vendor/logos/bin/lib/Logos/*.pm vendor/logos/bin/lib/Logos/Generator/*/*.pm vendor/logos/bin/lib/Logos/Patch/Source/*.pm)
+LOGOS_DEPS := $(wildcard vendor/logos/bin/*.pl vendor/logos/bin/lib/*.pm vendor/logos/bin/lib/Logos/*.pm vendor/logos/bin/lib/Logos/Generator/*.pm vendor/logos/bin/lib/Logos/Generator/*/*.pm vendor/logos/bin/lib/Logos/Patch/Source/*.pm)
 # Host fixtures compile the same generated hooks as the iOS dylib.
 source = $(if $(filter $(1:.m=.x),$(LOGOS_SOURCES)),build/logos/$(1),$(1))
 CFLAGS = -arch arm64 -isysroot $(SDK) -miphoneos-version-min=18.0 -fobjc-arc -fblocks -Wall -Wextra -O2
 SOURCES := $(sort $(wildcard src/*/*.m))
 OBJECTS := $(SOURCES:%.m=build/%.o) $(LOGOS_SOURCES:%.x=build/%.o) build/fishhook.o build/SwiftFields.o
 
-.PHONY: all check check-host check-portable check-fixtures logos clean
+.PHONY: all check check-host check-portable check-packaging check-fixtures logos clean
 all: build/RUIN.dylib build/insert_dylib
 logos: $(LOGOS_GENERATED)
-check: check-fixtures
+check: check-fixtures check-packaging
 check-portable: logos
 	python3 -m unittest discover -s tests -p 'test_*.py' -v
+
+check-packaging: build/insert_dylib
+	python3 tests/check_packaging_tools.py
 
 # These two integration checks require private, locally supplied fixtures.
 LINE_APP ?= build/unsigned/Payload/LINE.app
@@ -32,9 +35,10 @@ check-fixtures: check-host build/check_native_theme_registration build/check_nat
 	./build/check_native_theme_registration "$(LINE_APP)/LineShopThemeRepository-Resources.bundle/Theme.momd/Theme 2.mom"
 	./build/check_native_theme_install "$(THEME_ARCHIVE)"
 
-check-host: check-portable build/check_client_version_advertisement build/check_local_appearance build/check_legacy_messaging_configuration build/check_native_font
+HOST_FIXTURES := build/check_client_version_advertisement build/check_local_appearance build/check_legacy_messaging_configuration build/check_native_font build/check_native_tab_availability build/check_read_range_codec build/check_native_range_queue build/check_features build/check_history build/check_swift_fields build/check_boundary build/check_unsend build/check_read_users build/check_unsend_operation build/check_mid build/check_reply build/check_marker_ui build/check_theme_shop build/check_readers_sheet build/check_native_title build/check_gif build/check_theme_store_download build/check_theme_version build/check_theme_store_resolver build/emit_theme_store_images build/check_native_theme_images build/check_theme_apply_event build/check_native_theme_registration build/check_native_theme_install build/check_native_theme_local_projection build/check_native_theme_local_policy build/check_native_theme_receipt build/check_native_theme_validation build/check_native_read_positions build/check_local_notifications
+$(HOST_FIXTURES): $(wildcard src/*/*.h)
 
-check-host: build/check_native_tab_availability build/check_read_range_codec build/check_native_range_queue build/check_features build/check_history build/check_swift_fields build/check_boundary build/check_unsend build/check_read_users build/check_unsend_operation build/check_mid build/check_reply build/check_marker_ui build/check_theme_shop build/check_readers_sheet build/check_native_title build/check_gif build/check_theme_store_download build/check_theme_version build/check_theme_store_resolver build/emit_theme_store_images build/check_native_theme_images build/check_theme_apply_event build/check_native_theme_registration build/check_native_theme_install build/check_native_theme_local_projection build/check_native_theme_local_policy build/check_native_theme_receipt build/check_native_theme_validation build/check_native_read_positions build/check_local_notifications
+check-host: check-portable $(HOST_FIXTURES)
 	@set -e; for fixture in $(filter build/%,$^); do codesign --force --sign - "$$fixture"; done
 	./build/check_native_tab_availability
 	./build/check_read_range_codec

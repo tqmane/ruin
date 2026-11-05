@@ -21,8 +21,14 @@ extern void RUINBoundaryTestNativeCaller(BOOL value);
 // is bound to runtime-created Core Data subclasses. Also exercise an original
 // that calls a different receiver before returning through its own superclass.
 static NSUInteger chainBaseCalls, chainACalls, chainBCalls;
+static NSUInteger chainWrapperCalls;
+static IMP chainWrapperOriginal;
 static __weak ManagedChat *chainNestedReceiver;
 static long long chainNestedResult;
+static long long ChainExternalWrapper(id object, SEL selector) {
+    chainWrapperCalls++;
+    return ((long long (*)(id, SEL))chainWrapperOriginal)(object, selector) + 3;
+}
 @interface RUINBoundaryChainBase : ManagedChat @end
 @implementation RUINBoundaryChainBase
 - (int64_t)readUpToMessageIDSynced {
@@ -101,6 +107,23 @@ static void CheckAccessorChains(NSManagedObjectContext *context, NSUserDefaults 
         [[b primitiveValueForKey:@"readUpToMessageIDSynced"] longLongValue] == 30,
         @"dynamic accessor projection changed persisted fields");
     [defaults setBool:NO forKey:RUINReadControlEnabledDefaultsKey]; RUINInstallFeatures();
+    // Another swizzler keeps the old RUIN entry as its original. Retrying our
+    // installer must neither overwrite that wrapper nor mutate the original
+    // retained by the already-published RUIN entry.
+    Method bMethod = class_getInstanceMethod(RUINBoundaryChainB.class, getter);
+    chainWrapperOriginal = method_setImplementation(bMethod, (IMP)ChainExternalWrapper);
+    @try {
+        RUINInstallReadBoundary();
+        Require(method_getImplementation(bMethod) == (IMP)ChainExternalWrapper &&
+            [RUINReadBoundaryDiagnostics()[@"accessors"][@"RUINBoundaryChainB"] isEqual:@"accessor_changed_after_install"],
+            @"retry replaced a later swizzler's accessor chain");
+        chainBCalls = chainBaseCalls = chainWrapperCalls = 0;
+        Require(b.readUpToMessageIDSynced == 35 && chainBCalls == 1 && chainBaseCalls == 1 && chainWrapperCalls == 1,
+            @"retry changed the original retained by an existing RUIN entry");
+    } @finally {
+        method_setImplementation(bMethod, chainWrapperOriginal);
+        RUINInstallReadBoundary();
+    }
 }
 int main(int argc, const char **argv) { @autoreleasepool {
     BOOL early = argc > 1 && strcmp(argv[1], "early") == 0;

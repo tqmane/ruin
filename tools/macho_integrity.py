@@ -9,7 +9,7 @@ import zipfile
 SOURCE_SHA256 = 'e1ad61171b021566f4a318c93ba1260747bfb220c81a79d5a80121311787d6ad'
 RUIN_LOAD_PATH = '@executable_path/Frameworks/RUIN.dylib'
 MH_MAGIC_64, CPU_TYPE_ARM64, MH_EXECUTE = 0xFEEDFACF, 0x0100000C, 2
-LC_SEGMENT_64, LC_LOAD_DYLIB = 0x19, 0xC
+LC_SEGMENT_64, LC_LOAD_DYLIB, LC_SYMTAB, LC_CODE_SIGNATURE = 0x19, 0xC, 0x2, 0x1D
 ZEROFILL_TYPES = {0x1, 0xC, 0x12}
 
 
@@ -17,12 +17,7 @@ def _name(raw):
     return raw.split(b'\0', 1)[0].decode('ascii')
 
 
-def sections(data):
-    """Return layout and content hashes, including constants and Swift metadata.
-
-    The load-command area and __LINKEDIT code signature may change when adding
-    RUIN's dependency and signing. Existing sections may not change at all.
-    """
+def _commands(data):
     if len(data) < 32:
         raise ValueError('Truncated Mach-O header.')
     magic, cpu, subtype, filetype, count, command_size, flags, reserved = struct.unpack_from('<8I', data)
@@ -31,8 +26,7 @@ def sections(data):
     end = 32 + command_size
     if end > len(data) or count > command_size // 8:
         raise ValueError('Invalid Mach-O load-command bounds.')
-    result = {}
-    dependencies = []
+    commands = []
     cursor = 32
     for _ in range(count):
         if cursor + 8 > end:
@@ -40,19 +34,36 @@ def sections(data):
         command, size = struct.unpack_from('<II', data, cursor)
         if size < 8 or size % 8 or cursor + size > end:
             raise ValueError('Invalid Mach-O load-command size.')
+        commands.append((command, bytes(data[cursor:cursor + size])))
+        cursor += size
+    if cursor != end:
+        raise ValueError('Invalid Mach-O command table.')
+    return (cpu, subtype, filetype, flags, reserved), commands, end
+
+
+def sections(data):
+    """Return unchanged section headers/hashes and ordinary dylib dependencies."""
+    header, commands, end = _commands(data)
+    result = {}
+    dependencies = []
+    for command, raw_command in commands:
+        size = len(raw_command)
+        # All offsets below are relative to the current load command.
+        cursor = 0
+        command_data = raw_command
         if command == LC_SEGMENT_64:
             if size < 72:
                 raise ValueError('Truncated segment command.')
-            segment = _name(data[cursor + 8:cursor + 24])
-            section_count = struct.unpack_from('<I', data, cursor + 64)[0]
+            segment = _name(command_data[cursor + 8:cursor + 24])
+            section_count = struct.unpack_from('<I', command_data, cursor + 64)[0]
             if 72 + section_count * 80 != size:
                 raise ValueError('Invalid section table size.')
             for index in range(section_count):
                 pos = cursor + 72 + index * 80
-                section = _name(data[pos:pos + 16])
-                owner = _name(data[pos + 16:pos + 32])
-                address, length, offset = struct.unpack_from('<QQI', data, pos + 32)
-                section_flags = struct.unpack_from('<I', data, pos + 64)[0]
+                section = _name(command_data[pos:pos + 16])
+                owner = _name(command_data[pos + 16:pos + 32])
+                address, length, offset = struct.unpack_from('<QQI', command_data, pos + 32)
+                section_flags = struct.unpack_from('<I', command_data, pos + 64)[0]
                 key = (segment, section)
                 if owner != segment or key in result:
                     raise ValueError('Invalid or duplicate Mach-O section.')
@@ -62,27 +73,55 @@ def sections(data):
                         raise ValueError('Invalid Mach-O section file range.')
                     digest = hashlib.sha256(memoryview(data)[offset:offset + length]).hexdigest()
                 # Preserve the entire section header, not just the file bytes.
-                result[key] = (data[pos:pos + 80], digest)
+                result[key] = (command_data[pos:pos + 80], digest)
         elif command == LC_LOAD_DYLIB:
             if size < 24:
                 raise ValueError('Truncated dylib load command.')
-            offset = struct.unpack_from('<I', data, cursor + 8)[0]
+            offset = struct.unpack_from('<I', command_data, cursor + 8)[0]
             if offset < 24 or offset >= size:
                 raise ValueError('Invalid dylib name offset.')
-            raw = data[cursor + offset:cursor + size]
+            raw = command_data[cursor + offset:cursor + size]
             if b'\0' not in raw:
                 raise ValueError('Unterminated dylib name.')
             dependencies.append(raw.split(b'\0', 1)[0].decode('utf-8'))
-        cursor += size
-    if cursor != end or ('__TEXT', '__text') not in result:
+    if ('__TEXT', '__text') not in result:
         raise ValueError('Invalid command table or missing executable section.')
-    return (cpu, subtype, filetype, flags, reserved), result, dependencies
+    return header, result, dependencies
 
 
 def verify_source(data):
     if hashlib.sha256(data).hexdigest() != SOURCE_SHA256:
         raise ValueError('Source executable does not match the unmodified LINE 26.16.0 build.')
     sections(data)
+
+
+def _signing_layout(data, commands, command_end):
+    """Locate the sole trailing signature; everything before it is immutable."""
+    linkedit = [raw for command, raw in commands
+                if command == LC_SEGMENT_64 and _name(raw[8:24]) == '__LINKEDIT']
+    signatures = [raw for command, raw in commands if command == LC_CODE_SIGNATURE]
+    if len(linkedit) != 1 or len(signatures) > 1:
+        raise ValueError('Expected one __LINKEDIT segment and at most one code signature.')
+    segment = linkedit[0]
+    vm_size, file_offset, file_size = struct.unpack_from('<QQQ', segment, 32)
+    if file_offset < command_end or file_offset + file_size != len(data) or vm_size < file_size:
+        raise ValueError('Invalid final __LINKEDIT segment range.')
+    prefix_end = len(data)
+    if signatures:
+        if len(signatures[0]) != 16:
+            raise ValueError('Invalid code-signature command.')
+        offset, size = struct.unpack_from('<II', signatures[0], 8)
+        if not size or offset < file_offset or offset + size != len(data):
+            raise ValueError('Code signature must occupy the end of __LINKEDIT.')
+        prefix_end = offset
+    return segment, prefix_end, bool(signatures)
+
+
+def _ruin_load_command():
+    name = RUIN_LOAD_PATH.encode() + b'\0'
+    size = (24 + len(name) + 7) & ~7
+    # Exactly the command produced by the pinned insert_dylib tool.
+    return struct.pack('<6I', LC_LOAD_DYLIB, size, 24, 0, 0, 0) + name.ljust(size - 24, b'\0')
 
 
 def verify_packaged(original, packaged):
@@ -92,6 +131,58 @@ def verify_packaged(original, packaged):
         raise ValueError('Packaging changed an existing LINE Mach-O section; refusing the IPA.')
     if RUIN_LOAD_PATH in original_deps or dependencies != original_deps + [RUIN_LOAD_PATH]:
         raise ValueError('Expected exactly one added RUIN dylib dependency.')
+    _, old_commands, old_command_end = _commands(original)
+    _, new_commands, new_command_end = _commands(packaged)
+    old_linkedit, prefix_end, old_signed = _signing_layout(original, old_commands, old_command_end)
+    new_linkedit, new_prefix_end, new_signed = _signing_layout(packaged, new_commands, new_command_end)
+
+    # Only a new trailing signature (plus its <=15-byte alignment padding) may
+    # change file length. An unsigned intermediate ends exactly at the old one.
+    if (new_prefix_end < prefix_end or new_prefix_end - prefix_end > 15 or
+            (not new_signed and new_prefix_end != prefix_end) or
+            any(packaged[prefix_end:new_prefix_end])):
+        raise ValueError('Packaging changed the non-signature __LINKEDIT extent.')
+    old_vm_size = struct.unpack_from('<Q', old_linkedit, 32)[0]
+    new_vm_size, _, new_file_size = struct.unpack_from('<QQQ', new_linkedit, 32)
+    allowed_vm_sizes = {old_vm_size, (new_file_size + 0xFFF) & ~0xFFF,
+                        (new_file_size + 0x3FFF) & ~0x3FFF}
+    if new_vm_size not in allowed_vm_sizes:
+        raise ValueError('Unexpected __LINKEDIT virtual size change.')
+
+    old_fixed = [(command, raw) for command, raw in old_commands if command != LC_CODE_SIGNATURE]
+    new_fixed = [(command, raw) for command, raw in new_commands if command != LC_CODE_SIGNATURE]
+    if len(new_fixed) != len(old_fixed) + 1 or new_fixed[-1] != (LC_LOAD_DYLIB, _ruin_load_command()):
+        raise ValueError('Unexpected load-command addition or removal; only RUIN is allowed.')
+    for (old_kind, old), (new_kind, new) in zip(old_fixed, new_fixed):
+        if old_kind != new_kind or len(old) != len(new):
+            raise ValueError('Packaging changed an existing load command.')
+        if old == new:
+            continue
+        if old_kind == LC_SEGMENT_64 and _name(old[8:24]) == '__LINKEDIT':
+            # File offset, VM address, protections, flags and sections stay exact.
+            old = old[:32] + b'\0' * 8 + old[40:48] + b'\0' * 8 + old[56:]
+            new = new[:32] + b'\0' * 8 + new[40:48] + b'\0' * 8 + new[56:]
+        elif old_kind == LC_SYMTAB and len(old) == 24 and old_signed:
+            string_offset, string_size = struct.unpack_from('<II', old, 16)
+            padding = prefix_end - (string_offset + string_size)
+            new_string_size = struct.unpack_from('<I', new, 20)[0]
+            # insert_dylib extends the string table over the existing zero pad
+            # before stripping the signature; no other symbol-table edit is OK.
+            if (0 <= padding <= 16 and new_string_size == string_size + padding and
+                    not any(original[string_offset + string_size:prefix_end])):
+                new = new[:20] + old[20:24]
+        if old != new:
+            raise ValueError('Packaging changed an existing load command.')
+
+    if new_command_end > old_command_end and any(original[old_command_end:new_command_end]):
+        raise ValueError('RUIN load command would overwrite non-padding bytes.')
+    # This also covers __LINKEDIT fixups, exports, symbol tables and inter-section
+    # bytes that section hashing alone cannot protect. No executable is written.
+    body_start = max(old_command_end, new_command_end)
+    if (prefix_end < body_start or len(packaged) < prefix_end or
+            hashlib.sha256(memoryview(original)[body_start:prefix_end]).digest() !=
+            hashlib.sha256(memoryview(packaged)[body_start:prefix_end]).digest()):
+        raise ValueError('Packaging changed non-signature Mach-O bytes (including __LINKEDIT).')
     return len(original_sections)
 
 

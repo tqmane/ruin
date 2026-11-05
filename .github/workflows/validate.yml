@@ -25,9 +25,11 @@ jobs:
         run: make -j4 all
       - name: Run macOS host fixtures
         run: make -j4 check-host
+      - name: Verify real injection and signing on a synthetic executable
+        run: make check-packaging
       - name: Check dylib architecture and dependencies
         run: |
-          lipo -verify_arch arm64 build/RUIN.dylib
+          lipo build/RUIN.dylib -verify_arch arm64
           otool -L build/RUIN.dylib
           if otool -L build/RUIN.dylib | grep -Ei 'substrate|libhooker'; then
             echo 'RUIN must not require an external hook runtime.'
