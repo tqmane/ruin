@@ -1,0 +1,139 @@
+#import <Foundation/Foundation.h>
+
+#define RUIN_LOCAL_NOTIFICATIONS_HOST_CHECK 1
+#import "../src/platform/LocalNotifications.m"
+
+#include <assert.h>
+#include <stdio.h>
+
+static NSDate *At(NSTimeInterval seconds)
+{
+    return [NSDate dateWithTimeIntervalSince1970:seconds];
+}
+
+static NSDictionary *Snapshot(void)
+{
+    return @{@"store":@"store-A", @"kind":@"talk", @"chat":@"chat-1", @"message":@"msg-1",
+        @"title":@"友だち", @"body":@"hello", @"timestampMs":@990000, @"contentType":@1,
+        @"isOutgoing":@NO, @"muted":@NO};
+}
+
+static RUINLocalSnapshotDisposition Decide(NSDictionary *snapshot, BOOL enabled, BOOL background,
+    BOOL active, NSDate *activation, NSDate *cutoff, NSDate *now,
+    NSMutableArray<NSString *> *recent, NSMutableSet<NSString *> *recentSet, NSString **digest)
+{
+    return RUINLocalPrepareSnapshot(snapshot, enabled, background, active, activation, cutoff, now,
+        recent, recentSet, digest, NULL, NULL);
+}
+
+static BOOL Rejected(NSDictionary *snapshot, NSDate *activation, NSDate *cutoff, NSDate *now)
+{
+    return Decide(snapshot, YES, YES, YES, activation, cutoff, now,
+        [NSMutableArray array], [NSMutableSet set], NULL) == RUINLocalSnapshotRejected;
+}
+
+int main(void)
+{
+    @autoreleasepool {
+        assert([kRUINLocalGenericBody isEqual:@"新着メッセージを受信しました"]);
+        assert([kRUINLocalAttachmentBody isEqual:@"添付ファイルを受信しました"]);
+        NSDate *activation = At(900), *cutoff = At(950), *now = At(1000);
+        NSDictionary *valid = Snapshot();
+        NSString *digest = nil;
+
+        assert(Decide(valid, YES, YES, YES, activation, cutoff, now,
+            [NSMutableArray array], [NSMutableSet set], &digest) == RUINLocalSnapshotShouldNotify);
+        assert(digest.length == 64);
+        assert(Decide(valid, NO, YES, YES, activation, cutoff, now,
+            [NSMutableArray array], [NSMutableSet set], NULL) == RUINLocalSnapshotRejected);
+        assert(Decide(valid, YES, YES, NO, activation, cutoff, now,
+            [NSMutableArray array], [NSMutableSet set], NULL) == RUINLocalSnapshotRejected);
+
+        NSMutableArray<NSString *> *recent = [NSMutableArray array];
+        NSMutableSet<NSString *> *recentSet = [NSMutableSet set];
+        assert(Decide(valid, YES, NO, YES, activation, cutoff, now, recent, recentSet, NULL) ==
+            RUINLocalSnapshotSeenWithoutNotification);
+        assert(Decide(valid, YES, YES, YES, activation, cutoff, now, recent, recentSet, NULL) ==
+            RUINLocalSnapshotDuplicate);
+
+        recent = [NSMutableArray array]; recentSet = [NSMutableSet set];
+        NSMutableDictionary *muted = [valid mutableCopy];
+        muted[@"message"] = @"muted-message"; muted[@"muted"] = @YES;
+        assert(Decide(muted, YES, YES, YES, activation, cutoff, now, recent, recentSet, NULL) ==
+            RUINLocalSnapshotSeenWithoutNotification);
+        NSMutableDictionary *unmutedUpdate = [muted mutableCopy]; unmutedUpdate[@"muted"] = @NO;
+        assert(Decide(unmutedUpdate, YES, YES, YES, activation, cutoff, now, recent, recentSet, NULL) ==
+            RUINLocalSnapshotDuplicate);
+
+        NSMutableDictionary *caseData = [valid mutableCopy]; caseData[@"isOutgoing"] = @YES;
+        assert(Rejected(caseData, activation, cutoff, now));
+        caseData = [valid mutableCopy]; caseData[@"muted"] = @1;
+        assert(Rejected(caseData, activation, cutoff, now));
+        caseData = [valid mutableCopy]; caseData[@"muted"] = [NSNull null];
+        assert(Rejected(caseData, activation, cutoff, now));
+        caseData = [valid mutableCopy]; caseData[@"isOutgoing"] = @1;
+        assert(Rejected(caseData, activation, cutoff, now));
+
+        caseData = [valid mutableCopy]; caseData[@"timestampMs"] = @899999;
+        assert(Rejected(caseData, activation, cutoff, now));
+        caseData = [valid mutableCopy]; caseData[@"timestampMs"] = @949999;
+        assert(Rejected(caseData, activation, cutoff, now));
+        caseData = [valid mutableCopy]; caseData[@"timestampMs"] = @1061000;
+        assert(Rejected(caseData, activation, cutoff, now));
+        caseData = [valid mutableCopy]; caseData[@"timestampMs"] = @399000;
+        assert(Rejected(caseData, At(100), At(100), now));
+        caseData = [valid mutableCopy]; caseData[@"timestampMs"] = @"990000";
+        assert(Rejected(caseData, activation, cutoff, now));
+        caseData = [valid mutableCopy]; caseData[@"timestampMs"] = @NO;
+        assert(Rejected(caseData, activation, cutoff, now));
+        caseData = [valid mutableCopy]; caseData[@"timestampMs"] = @990000.5;
+        assert(Rejected(caseData, activation, cutoff, now));
+        caseData = [valid mutableCopy]; caseData[@"timestampMs"] = @(NAN);
+        assert(Rejected(caseData, activation, cutoff, now));
+        caseData = [valid mutableCopy]; [caseData removeObjectForKey:@"contentType"];
+        assert(Rejected(caseData, activation, cutoff, now));
+        caseData = [valid mutableCopy]; caseData[@"contentType"] = @1.5;
+        assert(Rejected(caseData, activation, cutoff, now));
+
+        caseData = [valid mutableCopy]; [caseData removeObjectForKey:@"message"];
+        assert(Rejected(caseData, activation, cutoff, now));
+        caseData = [valid mutableCopy]; caseData[@"title"] = @42;
+        assert(Rejected(caseData, activation, cutoff, now));
+        caseData = [valid mutableCopy]; caseData[@"body"] = [NSNull null];
+        assert(Rejected(caseData, activation, cutoff, now));
+        caseData = [valid mutableCopy]; caseData[@"body"] = @"";
+        NSString *fallback = nil;
+        assert(RUINLocalEvaluateSnapshot(caseData, YES, YES, activation, cutoff, now,
+            NULL, NULL, &fallback, NULL, NULL));
+        assert([fallback isEqual:kRUINLocalAttachmentBody]);
+        caseData[@"contentType"] = @0;
+        assert(RUINLocalEvaluateSnapshot(caseData, YES, YES, activation, cutoff, now,
+            NULL, NULL, &fallback, NULL, NULL));
+        assert([fallback isEqual:kRUINLocalGenericBody]);
+
+        BOOL observedEnabled = NO, wasEnabled = NO;
+        NSDate *enableCutoff = RUINLocalEnableCutoff(&observedEnabled, &wasEnabled, nil, NO, At(900));
+        assert(!enableCutoff);
+        enableCutoff = RUINLocalEnableCutoff(&observedEnabled, &wasEnabled, enableCutoff, YES, At(995));
+        assert([enableCutoff isEqual:At(995)]);
+        assert(RUINLocalEnableCutoff(&observedEnabled, &wasEnabled, enableCutoff, YES, At(999)) == enableCutoff);
+        caseData = [valid mutableCopy]; caseData[@"timestampMs"] = @994000;
+        assert(Rejected(caseData, activation, enableCutoff, now));
+        caseData[@"timestampMs"] = @996000;
+        assert(Decide(caseData, YES, NO, YES, activation, enableCutoff, now,
+            [NSMutableArray array], [NSMutableSet set], NULL) == RUINLocalSnapshotSeenWithoutNotification);
+
+        caseData = [valid mutableCopy]; caseData[@"body"] = @"updated text"; caseData[@"timestampMs"] = @991000;
+        assert([RUINLocalIdentityDigest(caseData) isEqual:digest]);
+        assert(RUINLocalDigestIsValid(digest) && !RUINLocalDigestIsValid(@"invalid"));
+        recent = [NSMutableArray array]; recentSet = [NSMutableSet set];
+        assert(RUINLocalRememberDigest(recent, recentSet, digest, 2));
+        assert(!RUINLocalRememberDigest(recent, recentSet, digest, 2));
+        assert(RUINLocalRememberDigest(recent, recentSet, @"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", 2));
+        assert(RUINLocalRememberDigest(recent, recentSet, @"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", 2));
+        assert(recent.count == 2 && ![recentSet containsObject:digest]);
+
+        puts("local notification policy, enable cutoff, seen suppression, and bounded dedup checks passed");
+    }
+    return 0;
+}

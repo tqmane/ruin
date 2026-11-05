@@ -1,0 +1,7 @@
+build/
+dist/
+__pycache__/
+*.p12
+*.mobileprovision
+*.keychain-db
+password.txt

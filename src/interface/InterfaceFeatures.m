@@ -1,0 +1,1052 @@
+#import "InterfaceFeatures.h"
+
+#import <UIKit/UIKit.h>
+#import <objc/runtime.h>
+#import <stdatomic.h>
+#import <stdlib.h>
+#import <string.h>
+
+#import "Features.h"
+#import "NativeTabAvailability.h"
+#import "SwiftFields.h"
+extern NSDictionary *RUINNativeEntryDiagnostics(void);
+
+NSString * const RUINHideVOOMTabDefaultsKey = @"RUINInterfaceHideVOOMTab";
+NSString * const RUINHideWalletTabDefaultsKey = @"RUINInterfaceHideWalletTab";
+NSString * const RUINHideShoppingTabDefaultsKey = @"RUINInterfaceHideShoppingTab";
+NSString * const RUINHideNewsCallTabsDefaultsKey = @"RUINInterfaceHideNewsCallTabs";
+NSString * const RUINHideSettingsTabDefaultsKey = @"RUINInterfaceHideSettingsTab";
+NSString * const RUINStartupTabFixedDefaultsKey = @"RUINInterfaceStartupTabFixed";
+NSString * const RUINStartupTabDefaultsKey = @"RUINInterfaceStartupTab";
+NSString * const RUINHideAdsDefaultsKey = @"RUINInterfaceHideAds";
+NSString * const RUINHideRecommendationsDefaultsKey = @"RUINInterfaceHideRecommendations";
+NSString * const RUINHideVoiceInputDefaultsKey = @"RUINInterfaceHideVoiceInput";
+NSString * const RUINHideAgentIBarDefaultsKey = @"RUINInterfaceHideAgentIBar";
+
+NSString * const RUINInterfaceTabHome = @"home";
+NSString * const RUINInterfaceTabTalk = @"talk";
+NSString * const RUINInterfaceTabVOOM = @"voom";
+NSString * const RUINInterfaceTabWallet = @"wallet";
+NSString * const RUINInterfaceTabShopping = @"shopping";
+NSString * const RUINInterfaceTabNews = @"news";
+NSString * const RUINInterfaceTabCall = @"call";
+NSString * const RUINInterfaceTabSettings = @"settings";
+
+typedef enum {
+    RUINHookPending,
+    RUINHookVersionGated,
+    RUINHookMissingClass,
+    RUINHookMissingSelector,
+    RUINHookEncodingMismatch,
+    RUINHookClassTypeMismatch,
+    RUINHookInstallFailed,
+    RUINHookInstalled
+} RUINHookStatus;
+
+typedef struct {
+    const char *className;
+    const char *selectorName;
+    const char *encoding;
+    IMP replacement;
+    _Atomic(IMP) original;
+    atomic_uint_fast64_t calls;
+    atomic_int status;
+} RUINMethodHook;
+
+typedef enum {
+    RUINHideGroupAds,
+    RUINHideGroupRecommendations,
+    RUINHideGroupVoiceInput,
+    RUINHideGroupAgentI
+} RUINHideGroup;
+
+typedef struct {
+    const char *className;
+    RUINHideGroup group;
+    Class cls;
+    RUINMethodHook setHidden;
+    RUINMethodHook didMoveToWindow;
+} RUINViewTarget;
+
+static void RUINSetViewControllers(id self, SEL selector, NSArray *controllers);
+static void RUINSetViewControllersAnimated(id self, SEL selector, NSArray *controllers, BOOL animated);
+static void RUINStyledTabsViewDidLoad(id self, SEL selector);
+static void RUINStyledTabsViewDidAppear(id self, SEL selector, BOOL animated);
+static void RUINForceHidden(RUINViewTarget *target, id self, SEL selector, BOOL hidden);
+static void RUINViewDidMoveToWindow(RUINViewTarget *target, id self, SEL selector);
+static void RUINVoiceButtonLayout(id self, SEL selector);
+
+#define RUIN_HOOK(class_name, selector, types, function) \
+    { class_name, selector, types, (IMP)function, ATOMIC_VAR_INIT(NULL), \
+      ATOMIC_VAR_INIT(0), ATOMIC_VAR_INIT(RUINHookPending) }
+
+static RUINMethodHook gSetControllersHook = RUIN_HOOK(
+    "_TtC22LineSharedUIComponents22StyledTabBarController", "setViewControllers:",
+    "v24@0:8@16", RUINSetViewControllers);
+static RUINMethodHook gSetControllersAnimatedHook = RUIN_HOOK(
+    "_TtC22LineSharedUIComponents22StyledTabBarController", "setViewControllers:animated:",
+    "v28@0:8@16B24", RUINSetViewControllersAnimated);
+static RUINMethodHook gTabsViewDidLoadHook = RUIN_HOOK(
+    "_TtC22LineSharedUIComponents22StyledTabBarController", "viewDidLoad",
+    "v16@0:8", RUINStyledTabsViewDidLoad);
+static RUINMethodHook gTabsViewDidAppearHook = RUIN_HOOK(
+    "_TtC22LineSharedUIComponents22StyledTabBarController", "viewDidAppear:",
+    "v20@0:8B16", RUINStyledTabsViewDidAppear);
+static RUINMethodHook gVoiceButtonLayoutHook = RUIN_HOOK(
+    "_TtC15LineMessagingUI18ChatInputBarButton", "layoutSubviews",
+    "v16@0:8", RUINVoiceButtonLayout);
+
+#define RUIN_VIEW_TARGET(name, kind) \
+    { name, kind, Nil, \
+      RUIN_HOOK(name, "setHidden:", "v20@0:8B16", NULL), \
+      RUIN_HOOK(name, "didMoveToWindow", "v16@0:8", NULL) }
+
+// These names are exact Objective-C runtime names present in LINE 26.16.0.
+static RUINViewTarget gViewTargets[] = {
+    RUIN_VIEW_TARGET("_TtC11LineHomeTab22LADHomeBannerContainer", RUINHideGroupAds),
+    RUIN_VIEW_TARGET("_TtC13LineChatTabUI28ChatTabGoogleAdContainerView", RUINHideGroupAds),
+    RUIN_VIEW_TARGET("_TtC20LineAdFeatureSupport10AdVoomView", RUINHideGroupAds),
+    RUIN_VIEW_TARGET("_TtC20LineAdFeatureSupport21AdTimelineVideoAdView", RUINHideGroupAds),
+    RUIN_VIEW_TARGET("_TtC20LineAdFeatureSupport23AdTimelineMiniPopupCell", RUINHideGroupAds),
+    RUIN_VIEW_TARGET("_TtC20LineAdFeatureSupport30AdTimelineCarouselContentsCell", RUINHideGroupAds),
+    RUIN_VIEW_TARGET("_TtC20LineAdFeatureSupport22AdTimelineCarouselView", RUINHideGroupAds),
+    RUIN_VIEW_TARGET("_TtC20LineAdFeatureSupport29AdWalletBigBannerCarouselView", RUINHideGroupAds),
+    RUIN_VIEW_TARGET("_TtC20LineAdFeatureSupport37AdWalletBigBannerCarouselViewItemCell", RUINHideGroupAds),
+    RUIN_VIEW_TARGET("_TtC20LineAdFeatureSupport21AdWalletBigBannerView", RUINHideGroupAds),
+    RUIN_VIEW_TARGET("_TtC20LineAdFeatureSupport20AdWalletCarouselView", RUINHideGroupAds),
+    RUIN_VIEW_TARGET("_TtC20LineAdFeatureSupport28AdWalletCarouselViewItemCell", RUINHideGroupAds),
+    RUIN_VIEW_TARGET("_TtC20LineAdFeatureSupport18AdWalletInfeedView", RUINHideGroupAds),
+    RUIN_VIEW_TARGET("_TtC20LineAdFeatureSupport24AdWalletNativeBannerView", RUINHideGroupAds),
+    RUIN_VIEW_TARGET("_TtC20LineAdFeatureSupport12AdWalletView", RUINHideGroupAds),
+    RUIN_VIEW_TARGET("_TtC21LineLightsUISubsystem22VOOMVideoADContentCell", RUINHideGroupAds),
+
+    RUIN_VIEW_TARGET("_TtC11LineHomeTab25ContentRecommendationView", RUINHideGroupRecommendations),
+    RUIN_VIEW_TARGET("_TtC11LineHomeTab33FriendRecommendationTableViewCell", RUINHideGroupRecommendations),
+    RUIN_VIEW_TARGET("_TtC11LineHomeTab27RecommendAddFriendPanelView", RUINHideGroupRecommendations),
+    RUIN_VIEW_TARGET("_TtC11LineCallTab19RecentRecommendView", RUINHideGroupRecommendations),
+    RUIN_VIEW_TARGET("_TtC11LineCallTab19RecommendFriendView", RUINHideGroupRecommendations),
+    RUIN_VIEW_TARGET("_TtC17LineMessagingUIV225MessageRecommendationView", RUINHideGroupRecommendations),
+    RUIN_VIEW_TARGET("_TtC31LineSocialGraphUIFeatureSupport21RecommendedFriendView", RUINHideGroupRecommendations),
+
+    // Composer controls share this class; only its .audio kind is hidden.
+    RUIN_VIEW_TARGET("_TtC15LineMessagingUI18ChatInputBarButton", RUINHideGroupVoiceInput),
+    RUIN_VIEW_TARGET("_TtC17LineMessagingUIV216AITSChipMenuView", RUINHideGroupAgentI)
+};
+
+#undef RUIN_VIEW_TARGET
+#undef RUIN_HOOK
+
+static atomic_bool gTargetMatches = ATOMIC_VAR_INIT(false);
+static atomic_bool gHideAdsEnabled = ATOMIC_VAR_INIT(false);
+static atomic_bool gHideRecommendationsEnabled = ATOMIC_VAR_INIT(false);
+static atomic_bool gHideVoiceInputEnabled = ATOMIC_VAR_INIT(false);
+static atomic_bool gHideAgentIEnabled = ATOMIC_VAR_INIT(false);
+static CGSize (*gOriginalAgentIntrinsic)(id, SEL);
+static BOOL gAgentIntrinsicInstalled;
+static atomic_uint_fast64_t gVoiceKindRestorations;
+
+static CGSize RUINAgentIntrinsic(id object, SEL selector)
+{
+    CGSize size = gOriginalAgentIntrinsic(object, selector);
+    if (atomic_load(&gHideAgentIEnabled)) size.height = 0;
+    return size;
+}
+static atomic_int gStartupStatus = ATOMIC_VAR_INIT(0);
+static atomic_uint_fast64_t gTabReapplications = ATOMIC_VAR_INIT(0);
+static atomic_int gTabVisibilityStatus;
+static atomic_uint_fast64_t gNativeTabCount, gUIKitTabCount;
+static char gOriginalCompactTabsKey;
+static NSHashTable<UITabBarController *> *gTrackedTabControllers;
+static _Thread_local unsigned int gTabSetterDepth;
+static _Thread_local unsigned int gHiddenSetterDepth;
+static _Thread_local unsigned int gInternalHiddenUpdateDepth;
+
+static char gRequestedControllersKey;
+static char gStartupSelectionAppliedKey;
+static char gOriginalHiddenStateKey;
+
+typedef enum {
+    RUINTabUnknown,
+    RUINTabHomeKind,
+    RUINTabTalkKind,
+    RUINTabVOOMKind,
+    RUINTabWalletKind,
+    RUINTabShoppingKind,
+    RUINTabNewsKind,
+    RUINTabCallKind,
+    RUINTabSettingsKind
+} RUINTabKind;
+
+static NSString *RUINTargetStatusName(RUINHookStatus status)
+{
+    switch (status) {
+        case RUINHookVersionGated: return @"version_gated";
+        case RUINHookMissingClass: return @"missing_class";
+        case RUINHookMissingSelector: return @"missing_selector";
+        case RUINHookEncodingMismatch: return @"encoding_mismatch";
+        case RUINHookClassTypeMismatch: return @"class_type_mismatch";
+        case RUINHookInstallFailed: return @"install_failed";
+        case RUINHookInstalled: return @"installed";
+        default: return @"pending";
+    }
+}
+
+static BOOL RUINInfoStringEquals(NSDictionary *info, NSString *key, NSString *expected)
+{
+    id value = info[key];
+    return [value isKindOfClass:NSString.class] && [value isEqualToString:expected];
+}
+
+static BOOL RUINTargetMatches(void)
+{
+    NSBundle *bundle = NSBundle.mainBundle;
+    NSDictionary *info = bundle.infoDictionary ?: @{};
+    BOOL bundleMatches = [bundle.bundleIdentifier isEqualToString:RUINTargetBundleIdentifier] ||
+        RUINInfoStringEquals(info, @"RUINOriginalBundleIdentifier", RUINTargetBundleIdentifier);
+    return bundleMatches &&
+        RUINInfoStringEquals(info, @"CFBundleShortVersionString", RUINTargetVersion) &&
+        RUINInfoStringEquals(info, @"CFBundleVersion", RUINTargetBuild);
+}
+
+static Method RUINOwnMethod(Class cls, SEL selector)
+{
+    unsigned int count = 0;
+    Method *methods = class_copyMethodList(cls, &count);
+    Method found = NULL;
+    for (unsigned int index = 0; index < count; index++) {
+        if (method_getName(methods[index]) == selector) {
+            found = methods[index];
+            break;
+        }
+    }
+    free(methods);
+    return found;
+}
+
+static void RUINInstallMethodHook(Class cls, RUINMethodHook *hook)
+{
+    if (!cls) {
+        atomic_store(&hook->status, RUINHookMissingClass);
+        return;
+    }
+    if (atomic_load(&hook->status) == RUINHookInstalled) return;
+
+    SEL selector = sel_registerName(hook->selectorName);
+    Method method = class_getInstanceMethod(cls, selector);
+    if (!method) {
+        atomic_store(&hook->status, RUINHookMissingSelector);
+        return;
+    }
+    const char *encoding = method_getTypeEncoding(method);
+    if (!encoding || strcmp(encoding, hook->encoding) != 0) {
+        atomic_store(&hook->status, RUINHookEncodingMismatch);
+        return;
+    }
+
+    IMP original = method_getImplementation(method);
+    if (!original) {
+        atomic_store(&hook->status, RUINHookInstallFailed);
+        return;
+    }
+
+    Method ownMethod = RUINOwnMethod(cls, selector);
+    if (ownMethod) {
+        IMP replaced = method_setImplementation(ownMethod, hook->replacement);
+        if (!replaced) {
+            atomic_store(&hook->status, RUINHookInstallFailed);
+            return;
+        }
+        atomic_store_explicit(&hook->original, replaced, memory_order_release);
+        atomic_store(&hook->status, RUINHookInstalled);
+        return;
+    }
+
+    // Add an override on the verified concrete class; never swizzle UIKit's superclass.
+    if (class_addMethod(cls, selector, hook->replacement, encoding)) {
+        atomic_store_explicit(&hook->original, original, memory_order_release);
+        atomic_store(&hook->status, RUINHookInstalled);
+        return;
+    }
+
+    ownMethod = RUINOwnMethod(cls, selector);
+    if (!ownMethod) {
+        atomic_store(&hook->status, RUINHookInstallFailed);
+        return;
+    }
+    IMP replaced = method_setImplementation(ownMethod, hook->replacement);
+    if (!replaced) {
+        atomic_store(&hook->status, RUINHookInstallFailed);
+        return;
+    }
+    atomic_store_explicit(&hook->original, replaced, memory_order_release);
+    atomic_store(&hook->status, RUINHookInstalled);
+}
+
+static BOOL RUINIsUIViewSubclass(Class cls)
+{
+    for (Class cursor = cls; cursor; cursor = class_getSuperclass(cursor))
+        if (cursor == UIView.class) return YES;
+    return NO;
+}
+
+static void RUINMarkHooksVersionGated(void)
+{
+    RUINMethodHook *tabHooks[] = {
+        &gSetControllersHook, &gSetControllersAnimatedHook,
+        &gTabsViewDidLoadHook, &gTabsViewDidAppearHook
+    };
+    for (NSUInteger i = 0; i < sizeof(tabHooks) / sizeof(tabHooks[0]); i++)
+        if (atomic_load(&tabHooks[i]->status) != RUINHookInstalled)
+            atomic_store(&tabHooks[i]->status, RUINHookVersionGated);
+    if (atomic_load(&gVoiceButtonLayoutHook.status) != RUINHookInstalled)
+        atomic_store(&gVoiceButtonLayoutHook.status, RUINHookVersionGated);
+    for (NSUInteger i = 0; i < sizeof(gViewTargets) / sizeof(gViewTargets[0]); i++) {
+        RUINMethodHook *hooks[] = { &gViewTargets[i].setHidden, &gViewTargets[i].didMoveToWindow };
+        for (NSUInteger j = 0; j < 2; j++)
+            if (atomic_load(&hooks[j]->status) != RUINHookInstalled)
+                atomic_store(&hooks[j]->status, RUINHookVersionGated);
+    }
+}
+
+static void RUINInstallHooks(void)
+{
+    Class tabClass = objc_getClass(gSetControllersHook.className);
+    RUINMethodHook *tabHooks[] = {
+        &gSetControllersHook, &gSetControllersAnimatedHook,
+        &gTabsViewDidLoadHook, &gTabsViewDidAppearHook
+    };
+    for (NSUInteger i = 0; i < sizeof(tabHooks) / sizeof(tabHooks[0]); i++)
+        RUINInstallMethodHook(tabClass, tabHooks[i]);
+
+    if (!gTrackedTabControllers) gTrackedTabControllers = [NSHashTable weakObjectsHashTable];
+    for (NSUInteger i = 0; i < sizeof(gViewTargets) / sizeof(gViewTargets[0]); i++) {
+        RUINViewTarget *target = &gViewTargets[i];
+        target->cls = objc_getClass(target->className);
+        if (!target->cls) {
+            atomic_store(&target->setHidden.status, RUINHookMissingClass);
+            atomic_store(&target->didMoveToWindow.status, RUINHookMissingClass);
+            continue;
+        }
+        if (!RUINIsUIViewSubclass(target->cls)) {
+            atomic_store(&target->setHidden.status, RUINHookClassTypeMismatch);
+            atomic_store(&target->didMoveToWindow.status, RUINHookClassTypeMismatch);
+            continue;
+        }
+        // Each IMP carries its owner so inherited hooks keep the correct original.
+        if (!target->setHidden.replacement)
+            target->setHidden.replacement = imp_implementationWithBlock(^(id object, BOOL hidden) {
+                RUINForceHidden(target, object, @selector(setHidden:), hidden);
+            });
+        if (!target->didMoveToWindow.replacement)
+            target->didMoveToWindow.replacement = imp_implementationWithBlock(^(id object) {
+                RUINViewDidMoveToWindow(target, object, @selector(didMoveToWindow));
+            });
+        RUINInstallMethodHook(target->cls, &target->setHidden);
+        RUINInstallMethodHook(target->cls, &target->didMoveToWindow);
+        if (target->group == RUINHideGroupVoiceInput)
+            RUINInstallMethodHook(target->cls, &gVoiceButtonLayoutHook);
+        if (target->group == RUINHideGroupAgentI && !gAgentIntrinsicInstalled) {
+            Method size = class_getInstanceMethod(target->cls, @selector(intrinsicContentSize));
+            if (size && !strcmp(method_getTypeEncoding(size), "{CGSize=dd}16@0:8")) {
+                gOriginalAgentIntrinsic = (void *)method_getImplementation(size);
+                if (!class_addMethod(target->cls, @selector(intrinsicContentSize), (IMP)RUINAgentIntrinsic, "{CGSize=dd}16@0:8"))
+                    method_setImplementation(size, (IMP)RUINAgentIntrinsic);
+                gAgentIntrinsicInstalled = YES;
+            }
+        }
+    }
+}
+
+static RUINViewTarget *RUINViewTargetForObject(id object)
+{
+    for (Class actualClass = object_getClass(object); actualClass; actualClass = class_getSuperclass(actualClass))
+        for (NSUInteger i = 0; i < sizeof(gViewTargets) / sizeof(gViewTargets[0]); i++)
+            if (gViewTargets[i].cls && actualClass == gViewTargets[i].cls) return &gViewTargets[i];
+    return NULL;
+}
+
+static BOOL RUINIsHideGroupEnabled(RUINHideGroup group)
+{
+    switch (group) {
+        case RUINHideGroupAds: return atomic_load_explicit(&gHideAdsEnabled, memory_order_relaxed);
+        case RUINHideGroupRecommendations: return atomic_load_explicit(&gHideRecommendationsEnabled, memory_order_relaxed);
+        case RUINHideGroupVoiceInput: return atomic_load_explicit(&gHideVoiceInputEnabled, memory_order_relaxed);
+        case RUINHideGroupAgentI: return atomic_load_explicit(&gHideAgentIEnabled, memory_order_relaxed);
+    }
+    return NO;
+}
+
+static BOOL RUINShouldHideView(RUINViewTarget *target, id view)
+{
+    if (!RUINIsHideGroupEnabled(target->group)) return NO;
+    if (target->group != RUINHideGroupVoiceInput) return YES;
+    // The class, stored field and payloadless enum are pinned to LINE26.16.
+    // No image/title matching: the other composer buttons use this class too.
+    if (![RUINCopySwiftFieldTypeName(view, "kind") isEqualToString:@"LineMessagingUIV2.ChatInputBarButtonKind"])
+        return NO;
+    return [RUINCopySwiftEnumCaseName(view, "kind") isEqualToString:@"audio"];
+}
+
+static void RUINHideView(UIView *view)
+{
+    if (!objc_getAssociatedObject(view, &gOriginalHiddenStateKey))
+        objc_setAssociatedObject(view, &gOriginalHiddenStateKey, @(view.hidden), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    gInternalHiddenUpdateDepth++;
+    view.hidden = YES;
+    gInternalHiddenUpdateDepth--;
+    RUINViewTarget *target = RUINViewTargetForObject(view);
+    if (target && target->group == RUINHideGroupAgentI) {
+        [view invalidateIntrinsicContentSize]; [view.superview setNeedsLayout];
+    }
+}
+
+static void RUINRestoreView(UIView *view)
+{
+    NSNumber *original = objc_getAssociatedObject(view, &gOriginalHiddenStateKey);
+    if (!original) return;
+    gInternalHiddenUpdateDepth++;
+    view.hidden = original.boolValue;
+    gInternalHiddenUpdateDepth--;
+    objc_setAssociatedObject(view, &gOriginalHiddenStateKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    RUINViewTarget *target = RUINViewTargetForObject(view);
+    if (target && target->group == RUINHideGroupAgentI) {
+        [view invalidateIntrinsicContentSize]; [view.superview setNeedsLayout];
+    }
+}
+
+static void RUINForceHidden(RUINViewTarget *target, id self, SEL selector, BOOL hidden)
+{
+    atomic_fetch_add_explicit(&target->setHidden.calls, 1, memory_order_relaxed);
+    IMP original = atomic_load_explicit(&target->setHidden.original, memory_order_acquire);
+    if (!original) return;
+
+    if (gHiddenSetterDepth++ || gInternalHiddenUpdateDepth) {
+        ((void (*)(id, SEL, BOOL))original)(self, selector, hidden);
+        gHiddenSetterDepth--;
+        return;
+    }
+    if (!RUINShouldHideView(target, self)) {
+        objc_setAssociatedObject(self, &gOriginalHiddenStateKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        ((void (*)(id, SEL, BOOL))original)(self, selector, hidden);
+        gHiddenSetterDepth--;
+        return;
+    }
+
+    objc_setAssociatedObject(self, &gOriginalHiddenStateKey, @(hidden), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    ((void (*)(id, SEL, BOOL))original)(self, selector, YES);
+    gHiddenSetterDepth--;
+}
+
+static void RUINViewDidMoveToWindow(RUINViewTarget *target, id self, SEL selector)
+{
+    atomic_fetch_add_explicit(&target->didMoveToWindow.calls, 1, memory_order_relaxed);
+    IMP original = atomic_load_explicit(&target->didMoveToWindow.original, memory_order_acquire);
+    if (original) ((void (*)(id, SEL))original)(self, selector);
+    if (RUINShouldHideView(target, self)) RUINHideView((UIView *)self);
+    else RUINRestoreView((UIView *)self);
+}
+
+static void RUINVoiceButtonLayout(id self, SEL selector)
+{
+    atomic_fetch_add(&gVoiceButtonLayoutHook.calls, 1);
+    IMP original = atomic_load(&gVoiceButtonLayoutHook.original);
+    if (original) ((void (*)(id, SEL))original)(self, selector);
+    RUINViewTarget *target = RUINViewTargetForObject(self);
+    if (!target || target->group != RUINHideGroupVoiceInput) return;
+    // Native composer updates can change .audio into .send after setHidden:.
+    // Recheck the settled role and restore LINE's requested visibility.
+    if (RUINShouldHideView(target, self)) {
+        if (![(UIView *)self isHidden]) RUINHideView(self);
+    } else {
+        if (objc_getAssociatedObject(self, &gOriginalHiddenStateKey))
+            atomic_fetch_add(&gVoiceKindRestorations, 1);
+        RUINRestoreView(self);
+    }
+}
+
+static void RUINRefreshViewTree(UIView *view)
+{
+    RUINViewTarget *target = RUINViewTargetForObject(view);
+    if (target) {
+        if (RUINShouldHideView(target, view)) RUINHideView(view);
+        else RUINRestoreView(view);
+    }
+    for (UIView *child in view.subviews) RUINRefreshViewTree(child);
+}
+
+static void RUINRefreshVisibleViews(void)
+{
+    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if (![scene isKindOfClass:UIWindowScene.class]) continue;
+        for (UIWindow *window in ((UIWindowScene *)scene).windows) RUINRefreshViewTree(window);
+    }
+}
+
+static NSString *RUINTabIdentifier(RUINTabKind kind)
+{
+    switch (kind) {
+        case RUINTabHomeKind: return RUINInterfaceTabHome;
+        case RUINTabTalkKind: return RUINInterfaceTabTalk;
+        case RUINTabVOOMKind: return RUINInterfaceTabVOOM;
+        case RUINTabWalletKind: return RUINInterfaceTabWallet;
+        case RUINTabShoppingKind: return RUINInterfaceTabShopping;
+        case RUINTabNewsKind: return RUINInterfaceTabNews;
+        case RUINTabCallKind: return RUINInterfaceTabCall;
+        case RUINTabSettingsKind: return RUINInterfaceTabSettings;
+        default: return nil;
+    }
+}
+
+static RUINTabKind RUINKindForIdentifier(NSString *identifier)
+{
+    if ([identifier isEqualToString:RUINInterfaceTabHome]) return RUINTabHomeKind;
+    if ([identifier isEqualToString:RUINInterfaceTabTalk]) return RUINTabTalkKind;
+    if ([identifier isEqualToString:RUINInterfaceTabVOOM]) return RUINTabVOOMKind;
+    if ([identifier isEqualToString:RUINInterfaceTabWallet]) return RUINTabWalletKind;
+    if ([identifier isEqualToString:RUINInterfaceTabShopping]) return RUINTabShoppingKind;
+    if ([identifier isEqualToString:RUINInterfaceTabNews]) return RUINTabNewsKind;
+    if ([identifier isEqualToString:RUINInterfaceTabCall]) return RUINTabCallKind;
+    if ([identifier isEqualToString:RUINInterfaceTabSettings]) return RUINTabSettingsKind;
+    return RUINTabUnknown;
+}
+
+static BOOL RUINControllerHasClass(UIViewController *controller, const char * const *names, size_t count)
+{
+    for (size_t i = 0; i < count; i++) {
+        Class cls = objc_getClass(names[i]);
+        if (cls && [controller isKindOfClass:cls]) return YES;
+    }
+    return NO;
+}
+
+static RUINTabKind RUINKindForControllerClass(UIViewController *controller)
+{
+    static const char * const home[] = {
+        "_TtC11LineHomeTab23FriendTabViewController",
+        "_TtC8LineHome18HomeViewController", "HomeViewController"
+    };
+    static const char * const talk[] = {
+        "_TtC13LineChatTabUI25ChatTabPageViewController",
+        "_TtC13LineChatTabUI24ChatSubTabViewController",
+        "_TtC11LineChatTab20ChatFolderController",
+        "_TtC13LineChatTabUI23ChatFolderTabController",
+        "LineChatTabController", "ChatFolderController"
+    };
+    static const char * const voom[] = {
+        "_TtC12LineTimeline25TimelineTabViewController",
+        "_TtC4LINE31VoomSecondDepthTabBarController", "TimelineTabViewController"
+    };
+    static const char * const wallet[] = {
+        "_TtC10LineWallet20WalletViewController", "WalletViewController"
+    };
+    static const char * const shopping[] = {
+        "_TtC17LineTWCommerceTab27TWCommerceTabViewController"
+    };
+    static const char * const news[] = {
+        "_TtC14LineNewsRowTab24NewsRowTabViewController", "NewsRowTabViewController",
+        "LINE.NewsMainViewController"
+    };
+    static const char * const call[] = {
+        "_TtC11LineCallTab28CallTabRecentsViewController", "CallTabRecentsViewController"
+    };
+    static const char * const settings[] = {
+        "_TtC4LINE22SettingsViewController", "SettingsViewController"
+    };
+    if (RUINControllerHasClass(controller, home, sizeof(home) / sizeof(home[0]))) return RUINTabHomeKind;
+    if (RUINControllerHasClass(controller, talk, sizeof(talk) / sizeof(talk[0]))) return RUINTabTalkKind;
+    if (RUINControllerHasClass(controller, voom, sizeof(voom) / sizeof(voom[0]))) return RUINTabVOOMKind;
+    if (RUINControllerHasClass(controller, wallet, sizeof(wallet) / sizeof(wallet[0]))) return RUINTabWalletKind;
+    if (RUINControllerHasClass(controller, shopping, sizeof(shopping) / sizeof(shopping[0]))) return RUINTabShoppingKind;
+    if (RUINControllerHasClass(controller, news, sizeof(news) / sizeof(news[0]))) return RUINTabNewsKind;
+    if (RUINControllerHasClass(controller, call, sizeof(call) / sizeof(call[0]))) return RUINTabCallKind;
+    if (RUINControllerHasClass(controller, settings, sizeof(settings) / sizeof(settings[0]))) return RUINTabSettingsKind;
+    return RUINTabUnknown;
+}
+
+static RUINTabKind RUINKindForTitle(NSString *title)
+{
+    if ([title isEqualToString:@"ホーム"]) return RUINTabHomeKind;
+    if ([title isEqualToString:@"トーク"]) return RUINTabTalkKind;
+    if ([title isEqualToString:@"VOOM"]) return RUINTabVOOMKind;
+    if ([title isEqualToString:@"ウォレット"]) return RUINTabWalletKind;
+    if ([title isEqualToString:@"ニュース"]) return RUINTabNewsKind;
+    if ([title isEqualToString:@"通話"]) return RUINTabCallKind;
+    if ([title isEqualToString:@"設定"]) return RUINTabSettingsKind;
+    return RUINTabUnknown;
+}
+
+static RUINTabKind RUINKindForTabController(UIViewController *controller)
+{
+    RUINTabKind kind = RUINKindForTitle(controller.tabBarItem.title ?: controller.title ?: @"");
+    if (kind != RUINTabUnknown) return kind;
+
+    UIViewController *content = controller;
+    while ([content isKindOfClass:UINavigationController.class] &&
+           ((UINavigationController *)content).viewControllers.count > 0) {
+        content = ((UINavigationController *)content).viewControllers.firstObject;
+    }
+    kind = RUINKindForControllerClass(content);
+    if (kind != RUINTabUnknown) return kind;
+    return RUINKindForTitle(content.tabBarItem.title ?: content.title ?: @"");
+}
+
+static BOOL RUINShouldHideTab(RUINTabKind kind)
+{
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    switch (kind) {
+        case RUINTabVOOMKind: return [defaults boolForKey:RUINHideVOOMTabDefaultsKey];
+        case RUINTabWalletKind: return [defaults boolForKey:RUINHideWalletTabDefaultsKey];
+        case RUINTabShoppingKind: return [defaults boolForKey:RUINHideShoppingTabDefaultsKey];
+        case RUINTabNewsKind:
+        case RUINTabCallKind: return [defaults boolForKey:RUINHideNewsCallTabsDefaultsKey];
+        case RUINTabSettingsKind:
+            return ([RUINNativeEntryDiagnostics()[@"homeHookInstalled"] boolValue] ||
+                [RUINNativeEntryDiagnostics()[@"friendHomeHookInstalled"] boolValue]) &&
+                [defaults boolForKey:RUINHideSettingsTabDefaultsKey];
+        default: return NO;
+    }
+}
+
+static NSArray *RUINFilteredControllers(NSArray *requested)
+{
+    if (![requested isKindOfClass:NSArray.class]) return requested;
+    NSMutableArray *filtered = [NSMutableArray arrayWithCapacity:requested.count];
+    for (id object in requested) {
+        if (![object isKindOfClass:UIViewController.class]) {
+            [filtered addObject:object];
+            continue;
+        }
+        RUINTabKind kind = RUINKindForTabController((UIViewController *)object);
+        // Home and Talk are mandatory whenever LINE supplied them.
+        if (!RUINShouldHideTab(kind)) [filtered addObject:object];
+    }
+    return [filtered copy];
+}
+
+static void RUINRegisterTabController(UITabBarController *controller)
+{
+    if (!gTrackedTabControllers) gTrackedTabControllers = [NSHashTable weakObjectsHashTable];
+    [gTrackedTabControllers addObject:controller];
+}
+
+static void RUINRecordRequestedControllers(UITabBarController *controller, NSArray *requested)
+{
+    RUINRegisterTabController(controller);
+    if (!requested) return;
+
+    // LINE can resubmit the already-filtered list while rebuilding its tab UI.
+    // Keep the prior full request in that case so a later refresh can restore it.
+    NSArray *saved = objc_getAssociatedObject(controller, &gRequestedControllersKey);
+    if (saved && [controller.viewControllers isEqualToArray:requested] &&
+        [RUINFilteredControllers(saved) isEqualToArray:requested]) return;
+    objc_setAssociatedObject(controller, &gRequestedControllersKey, [requested copy], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
+static UIViewController *RUINFallbackController(NSArray *controllers)
+{
+    for (NSNumber *kindValue in @[@(RUINTabHomeKind), @(RUINTabTalkKind)]) {
+        RUINTabKind wanted = (RUINTabKind)kindValue.integerValue;
+        for (UIViewController *controller in controllers)
+            if (RUINKindForTabController(controller) == wanted) return controller;
+    }
+    return [controllers.firstObject isKindOfClass:UIViewController.class] ? controllers.firstObject : nil;
+}
+
+static void RUINKeepSelectionValid(UITabBarController *controller, NSArray *filtered, UIViewController *previous)
+{
+    UIViewController *selected = [filtered containsObject:previous] ? previous : nil;
+    if (!selected && ![filtered containsObject:controller.selectedViewController])
+        selected = RUINFallbackController(filtered);
+    if (selected && controller.selectedViewController != selected)
+        controller.selectedViewController = selected;
+}
+
+static void RUINApplyStartupSelection(UITabBarController *controller, NSArray *controllers)
+{
+    if ([objc_getAssociatedObject(controller, &gStartupSelectionAppliedKey) boolValue]) return;
+    objc_setAssociatedObject(controller, &gStartupSelectionAppliedKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    if (![defaults boolForKey:RUINStartupTabFixedDefaultsKey]) {
+        atomic_store(&gStartupStatus, 1); // disabled
+        return;
+    }
+    RUINTabKind wanted = RUINKindForIdentifier([defaults stringForKey:RUINStartupTabDefaultsKey] ?: @"");
+    if (wanted == RUINTabUnknown) {
+        atomic_store(&gStartupStatus, 3); // invalid selection
+        return;
+    }
+    for (UIViewController *candidate in controllers) {
+        if (RUINKindForTabController(candidate) == wanted) {
+            controller.selectedViewController = candidate;
+            atomic_store(&gStartupStatus, 2); // applied
+            return;
+        }
+    }
+    atomic_store(&gStartupStatus, 4); // unavailable or hidden
+}
+
+static void RUINApplyRequestedControllers(UITabBarController *controller, BOOL allowStartup)
+{
+    // LINE's own navigation/notification code indexes the original controller
+    // array. Never remove or reorder it: filter only UIKit's compact tab UI.
+    NSArray *native = [controller.viewControllers copy] ?: @[];
+    BOOL nativeGeneration = [RUINNativeTabAvailabilityDiagnostics()[@"status"] intValue] == 5;
+    NSArray *allowed = nativeGeneration ? native : RUINFilteredControllers(native);
+    NSArray<UITab *> *tabs = controller.tabs;
+    atomic_store(&gNativeTabCount, native.count);
+    atomic_store(&gUIKitTabCount, tabs.count);
+    RUINRegisterTabController(controller);
+    objc_setAssociatedObject(controller, &gRequestedControllersKey, native, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    id saved = objc_getAssociatedObject(controller, &gOriginalCompactTabsKey);
+    if (allowed.count == native.count) {
+        if (saved) {
+            controller.compactTabIdentifiers = saved == NSNull.null ? nil : saved;
+            objc_setAssociatedObject(controller, &gOriginalCompactTabsKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            atomic_fetch_add(&gTabReapplications, 1);
+        }
+        atomic_store(&gTabVisibilityStatus, 1);
+        if (allowStartup) RUINApplyStartupSelection(controller, native);
+        return;
+    }
+    if (!tabs.count || tabs.count != native.count) {
+        // Keep LINE's existing tab view and renderer. This legacy layout needs
+        // a verified native visibility boundary; never replace its UI.
+        atomic_store(&gTabVisibilityStatus, 3);
+        if (allowStartup) RUINApplyStartupSelection(controller, native);
+        return;
+    }
+    NSMutableArray<NSString *> *identifiers = [NSMutableArray array];
+    NSMutableSet *seen = [NSMutableSet set];
+    NSArray *original = saved ? (saved == NSNull.null ? nil : saved) : controller.compactTabIdentifiers;
+    for (UITab *tab in tabs) {
+        UIViewController *view = tab.viewController;
+        if (![native containsObject:view] || !tab.identifier.length || [seen containsObject:tab.identifier]) {
+            atomic_store(&gTabVisibilityStatus, 4);
+            return;
+        }
+        [seen addObject:tab.identifier];
+        if ([allowed containsObject:view] && (!original || [original containsObject:tab.identifier]))
+            [identifiers addObject:tab.identifier];
+    }
+    if (!identifiers.count) { atomic_store(&gTabVisibilityStatus, 4); return; }
+    if (!saved) objc_setAssociatedObject(controller, &gOriginalCompactTabsKey,
+        original ?: NSNull.null, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    NSArray *previousIdentifiers = controller.compactTabIdentifiers;
+    if (![previousIdentifiers isEqualToArray:identifiers]) {
+        controller.compactTabIdentifiers = identifiers;
+        // The public compact filter must preserve LINE's entire native array.
+        if (![controller.viewControllers isEqualToArray:native]) {
+            controller.compactTabIdentifiers = previousIdentifiers;
+            atomic_store(&gTabVisibilityStatus, 5);
+            return;
+        }
+        atomic_fetch_add(&gTabReapplications, 1);
+    }
+    atomic_store(&gTabVisibilityStatus, 2);
+    RUINKeepSelectionValid(controller, allowed, controller.selectedViewController);
+    if (allowStartup) RUINApplyStartupSelection(controller, allowed);
+}
+
+static void RUINSetViewControllers(id self, SEL selector, NSArray *controllers)
+{
+    atomic_fetch_add_explicit(&gSetControllersHook.calls, 1, memory_order_relaxed);
+    IMP original = atomic_load_explicit(&gSetControllersHook.original, memory_order_acquire);
+    if (!original) return;
+    if (gTabSetterDepth++) {
+        ((void (*)(id, SEL, NSArray *))original)(self, selector, controllers);
+        gTabSetterDepth--;
+        return;
+    }
+
+    UITabBarController *tabs = (UITabBarController *)self;
+    RUINRecordRequestedControllers(tabs, controllers);
+    ((void (*)(id, SEL, NSArray *))original)(self, selector, controllers);
+    RUINApplyRequestedControllers(tabs, NO);
+    gTabSetterDepth--;
+}
+
+static void RUINSetViewControllersAnimated(id self, SEL selector, NSArray *controllers, BOOL animated)
+{
+    atomic_fetch_add_explicit(&gSetControllersAnimatedHook.calls, 1, memory_order_relaxed);
+    IMP original = atomic_load_explicit(&gSetControllersAnimatedHook.original, memory_order_acquire);
+    if (!original) return;
+    if (gTabSetterDepth++) {
+        ((void (*)(id, SEL, NSArray *, BOOL))original)(self, selector, controllers, animated);
+        gTabSetterDepth--;
+        return;
+    }
+
+    UITabBarController *tabs = (UITabBarController *)self;
+    RUINRecordRequestedControllers(tabs, controllers);
+    ((void (*)(id, SEL, NSArray *, BOOL))original)(self, selector, controllers, animated);
+    RUINApplyRequestedControllers(tabs, NO);
+    gTabSetterDepth--;
+}
+
+static void RUINStyledTabsViewDidLoad(id self, SEL selector)
+{
+    IMP original = atomic_load_explicit(&gTabsViewDidLoadHook.original, memory_order_acquire);
+    if (original) ((void (*)(id, SEL))original)(self, selector);
+    atomic_fetch_add_explicit(&gTabsViewDidLoadHook.calls, 1, memory_order_relaxed);
+    RUINRegisterTabController((UITabBarController *)self);
+    RUINApplyRequestedControllers((UITabBarController *)self, NO);
+}
+
+static void RUINStyledTabsViewDidAppear(id self, SEL selector, BOOL animated)
+{
+    IMP original = atomic_load_explicit(&gTabsViewDidAppearHook.original, memory_order_acquire);
+    if (original) ((void (*)(id, SEL, BOOL))original)(self, selector, animated);
+    atomic_fetch_add_explicit(&gTabsViewDidAppearHook.calls, 1, memory_order_relaxed);
+    RUINRegisterTabController((UITabBarController *)self);
+    RUINApplyRequestedControllers((UITabBarController *)self, YES);
+}
+
+static void RUINRefreshTrackedTabControllers(void)
+{
+    for (UITabBarController *controller in gTrackedTabControllers.allObjects)
+        RUINApplyRequestedControllers(controller, NO);
+}
+
+static void RUINDiscoverTabControllers(UIViewController *controller, NSHashTable *visited)
+{
+    if (!controller || [visited containsObject:controller]) return;
+    [visited addObject:controller];
+    Class styled = objc_getClass(gSetControllersHook.className);
+    if (styled && [controller isKindOfClass:styled] && [controller isKindOfClass:UITabBarController.class]) {
+        RUINRegisterTabController((UITabBarController *)controller);
+        RUINApplyRequestedControllers((UITabBarController *)controller, YES);
+    }
+    if (controller.presentedViewController) RUINDiscoverTabControllers(controller.presentedViewController, visited);
+    for (UIViewController *child in controller.childViewControllers) RUINDiscoverTabControllers(child, visited);
+}
+
+static void RUINDiscoverExistingTabs(void)
+{
+    NSHashTable *visited = [NSHashTable hashTableWithOptions:NSPointerFunctionsObjectPointerPersonality];
+    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if (![scene isKindOfClass:UIWindowScene.class]) continue;
+        for (UIWindow *window in ((UIWindowScene *)scene).windows)
+            RUINDiscoverTabControllers(window.rootViewController, visited);
+    }
+    id<UIApplicationDelegate> delegate = UIApplication.sharedApplication.delegate;
+    if ([delegate respondsToSelector:@selector(window)]) RUINDiscoverTabControllers(delegate.window.rootViewController, visited);
+}
+
+static void RUINLoadPreferences(void)
+{
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    atomic_store(&gHideAdsEnabled, [defaults boolForKey:RUINHideAdsDefaultsKey]);
+    atomic_store(&gHideRecommendationsEnabled, [defaults boolForKey:RUINHideRecommendationsDefaultsKey]);
+    atomic_store(&gHideVoiceInputEnabled, [defaults boolForKey:RUINHideVoiceInputDefaultsKey]);
+    atomic_store(&gHideAgentIEnabled, [defaults boolForKey:RUINHideAgentIBarDefaultsKey]);
+}
+
+static void RUINPerformInstallOrRefresh(void)
+{
+    if (!RUINTargetMatches()) {
+        atomic_store(&gTargetMatches, false);
+        RUINMarkHooksVersionGated();
+        return;
+    }
+    atomic_store(&gTargetMatches, true);
+    RUINInstallHooks();
+    RUINLoadPreferences();
+    RUINDiscoverExistingTabs();
+    RUINRefreshTrackedTabControllers();
+    RUINRefreshVisibleViews();
+}
+
+static void RUINOnMain(dispatch_block_t block)
+{
+    if (NSThread.isMainThread) block();
+    else dispatch_async(dispatch_get_main_queue(), block);
+}
+
+void RUINInstallInterfaceFeatures(void)
+{
+    RUINOnMain(^{ RUINPerformInstallOrRefresh(); });
+}
+
+void RUINRefreshInterfaceFeatures(void)
+{
+    RUINOnMain(^{ RUINPerformInstallOrRefresh(); });
+}
+
+static NSArray<NSString *> *RUINNativeTabIdentifiersOnMain(BOOL includeHiddenChoices)
+{
+    if (!atomic_load(&gTargetMatches)) return @[];
+    NSMutableSet<NSString *> *available = [NSMutableSet set];
+    for (UITabBarController *controller in gTrackedTabControllers.allObjects) {
+        NSArray *requested = objc_getAssociatedObject(controller, &gRequestedControllersKey) ?: controller.viewControllers;
+        NSMutableSet<NSString *> *controllerTabs = [NSMutableSet set];
+        for (UIViewController *item in requested) {
+            RUINTabKind kind = RUINKindForTabController(item);
+            NSString *identifier = RUINTabIdentifier(kind);
+            if (identifier) [controllerTabs addObject:identifier];
+        }
+        if (![controllerTabs containsObject:RUINInterfaceTabHome])
+            [controllerTabs removeObject:RUINInterfaceTabSettings];
+        [available unionSet:controllerTabs];
+    }
+    NSArray *canonical = @[RUINInterfaceTabHome, RUINInterfaceTabTalk, RUINInterfaceTabShopping,
+                           RUINInterfaceTabVOOM, RUINInterfaceTabWallet, RUINInterfaceTabNews,
+                           RUINInterfaceTabCall, RUINInterfaceTabSettings];
+    if (includeHiddenChoices && [available containsObject:RUINInterfaceTabHome] && [available containsObject:RUINInterfaceTabTalk])
+        [available addObjectsFromArray:RUINObservedNativeTabChoices()];
+    NSMutableArray *result = [NSMutableArray array];
+    for (NSString *identifier in canonical) if ([available containsObject:identifier]) [result addObject:identifier];
+    return [result copy];
+}
+
+NSArray<NSString *> *RUINNativeTabIdentifiers(void)
+{
+    if (NSThread.isMainThread) return RUINNativeTabIdentifiersOnMain(YES);
+    __block NSArray<NSString *> *result;
+    dispatch_sync(dispatch_get_main_queue(), ^{ result = RUINNativeTabIdentifiersOnMain(YES); });
+    return result ?: @[];
+}
+
+static NSArray<NSString *> *RUINAvailableTabsOnMain(void)
+{
+    BOOL nativeGeneration = [RUINNativeTabAvailabilityDiagnostics()[@"status"] intValue] == 5;
+    NSSet<NSString *> *native = [NSSet setWithArray:RUINNativeTabIdentifiersOnMain(!nativeGeneration)];
+    NSArray *startupChoices = @[RUINInterfaceTabHome, RUINInterfaceTabTalk, RUINInterfaceTabShopping, RUINInterfaceTabVOOM,
+                                RUINInterfaceTabWallet, RUINInterfaceTabNews, RUINInterfaceTabCall, RUINInterfaceTabSettings];
+    NSMutableArray<NSString *> *result = [NSMutableArray array];
+    for (NSString *identifier in startupChoices)
+        if ([native containsObject:identifier] && (nativeGeneration || !RUINShouldHideTab(RUINKindForIdentifier(identifier))))
+            [result addObject:identifier];
+    return [result copy];
+}
+
+NSArray<NSString *> *RUINAvailableTabs(void)
+{
+    if (NSThread.isMainThread) return RUINAvailableTabsOnMain();
+    __block NSArray<NSString *> *result;
+    dispatch_sync(dispatch_get_main_queue(), ^{ result = RUINAvailableTabsOnMain(); });
+    return result ?: @[];
+}
+
+static NSUInteger RUINInstalledViewTargetCount(RUINHideGroup group)
+{
+    NSUInteger count = 0;
+    for (NSUInteger i = 0; i < sizeof(gViewTargets) / sizeof(gViewTargets[0]); i++) {
+        RUINViewTarget *target = &gViewTargets[i];
+        if (target->group == group &&
+            atomic_load(&target->setHidden.status) == RUINHookInstalled &&
+            atomic_load(&target->didMoveToWindow.status) == RUINHookInstalled) count++;
+    }
+    return count;
+}
+
+static uint64_t RUINViewHookCalls(RUINHideGroup group)
+{
+    uint64_t calls = 0;
+    for (NSUInteger i = 0; i < sizeof(gViewTargets) / sizeof(gViewTargets[0]); i++) {
+        RUINViewTarget *target = &gViewTargets[i];
+        if (target->group != group) continue;
+        calls += atomic_load(&target->setHidden.calls) + atomic_load(&target->didMoveToWindow.calls);
+    }
+    return calls;
+}
+
+static NSDictionary<NSString *, NSNumber *> *RUINViewHookFailures(RUINHideGroup group)
+{
+    NSUInteger missingClasses = 0, missingSelectors = 0, encodingMismatches = 0;
+    NSUInteger classTypeMismatches = 0, installFailures = 0;
+    for (NSUInteger i = 0; i < sizeof(gViewTargets) / sizeof(gViewTargets[0]); i++) {
+        RUINViewTarget *target = &gViewTargets[i];
+        if (target->group != group) continue;
+        RUINMethodHook *hooks[] = { &target->setHidden, &target->didMoveToWindow };
+        for (NSUInteger j = 0; j < 2; j++) {
+            switch (atomic_load(&hooks[j]->status)) {
+                case RUINHookMissingClass: missingClasses++; break;
+                case RUINHookMissingSelector: missingSelectors++; break;
+                case RUINHookEncodingMismatch: encodingMismatches++; break;
+                case RUINHookClassTypeMismatch: classTypeMismatches++; break;
+                case RUINHookInstallFailed: installFailures++; break;
+                default: break;
+            }
+        }
+    }
+    return @{@"missingClasses": @(missingClasses), @"missingSelectors": @(missingSelectors),
+             @"encodingMismatches": @(encodingMismatches), @"classTypeMismatches": @(classTypeMismatches),
+             @"installFailures": @(installFailures)};
+}
+
+static NSString *RUINGroupStatus(RUINHideGroup group, BOOL enabled)
+{
+    if (!RUINTargetMatches()) return @"version_gated";
+    if (!atomic_load(&gTargetMatches)) return @"pending";
+    if (!enabled) return @"disabled";
+    NSUInteger installed = RUINInstalledViewTargetCount(group);
+    NSUInteger total = 0;
+    for (NSUInteger i = 0; i < sizeof(gViewTargets) / sizeof(gViewTargets[0]); i++)
+        if (gViewTargets[i].group == group) total++;
+    if (installed == total) return @"enabled_bounded_targets";
+    if (installed) return @"enabled_partial_targets";
+    return @"missing_verified_targets";
+}
+
+NSDictionary *RUINInterfaceDiagnostics(void)
+{
+    BOOL installedForTarget = atomic_load(&gTargetMatches);
+    BOOL targetMatches = installedForTarget || RUINTargetMatches();
+    BOOL gated = !targetMatches;
+    BOOL ads = atomic_load(&gHideAdsEnabled);
+    BOOL recommendations = atomic_load(&gHideRecommendationsEnabled);
+    BOOL voice = atomic_load(&gHideVoiceInputEnabled);
+    NSString *voiceStatus = gated ? @"version_gated" : !installedForTarget ? @"pending" :
+        (voice ? (RUINInstalledViewTargetCount(RUINHideGroupVoiceInput) ? @"enabled_exact_composer_audio_kind" : @"missing_composer_button") : @"disabled");
+    int startup = atomic_load(&gStartupStatus);
+    NSString *startupStatus = startup == 1 ? @"disabled" : startup == 2 ? @"applied" :
+        startup == 3 ? @"invalid_selection" : startup == 4 ? @"unavailable_or_hidden" : @"pending";
+    return @{
+        @"gate": gated ? @"version_gated" : installedForTarget ? @"matched" : @"pending",
+        @"tabs": @{
+            @"nativeAvailability":RUINNativeTabAvailabilityDiagnostics(),
+            @"setViewControllers": RUINTargetStatusName(atomic_load(&gSetControllersHook.status)),
+            @"setViewControllersAnimated": RUINTargetStatusName(atomic_load(&gSetControllersAnimatedHook.status)),
+            @"viewDidLoad": RUINTargetStatusName(atomic_load(&gTabsViewDidLoadHook.status)),
+            @"viewDidAppear": RUINTargetStatusName(atomic_load(&gTabsViewDidAppearHook.status)),
+            @"reloadPath": @"existing_native_tab_view_only",
+            @"customTabViewsAdded": @NO,
+            @"visibilityStatus": @(atomic_load(&gTabVisibilityStatus)),
+            @"nativeControllerCount": @(atomic_load(&gNativeTabCount)),
+            @"publicUITabCount": @(atomic_load(&gUIKitTabCount)),
+            @"reloadSelector": @"missing_verified_reload_selector",
+            @"setterCalls": @(atomic_load(&gSetControllersHook.calls) + atomic_load(&gSetControllersAnimatedHook.calls)),
+            @"reapplications": @(atomic_load(&gTabReapplications)),
+            @"startupStatus": startupStatus
+        },
+        @"ads": @{
+            @"status": RUINGroupStatus(RUINHideGroupAds, ads),
+            @"installedViewClasses": @(RUINInstalledViewTargetCount(RUINHideGroupAds)),
+            @"hookCalls": @(RUINViewHookCalls(RUINHideGroupAds)),
+            @"hookFailures": RUINViewHookFailures(RUINHideGroupAds)
+        },
+        @"recommendations": @{
+            @"status": RUINGroupStatus(RUINHideGroupRecommendations, recommendations),
+            @"installedViewClasses": @(RUINInstalledViewTargetCount(RUINHideGroupRecommendations)),
+            @"hookCalls": @(RUINViewHookCalls(RUINHideGroupRecommendations)),
+            @"hookFailures": RUINViewHookFailures(RUINHideGroupRecommendations)
+        },
+        @"voiceInput": @{
+            @"status": voiceStatus,
+            @"layoutHook": RUINTargetStatusName(atomic_load(&gVoiceButtonLayoutHook.status)),
+            @"layoutCalls": @(atomic_load(&gVoiceButtonLayoutHook.calls)),
+            @"kindRestorations": @(atomic_load(&gVoiceKindRestorations)),
+            @"installedViewClasses": @(RUINInstalledViewTargetCount(RUINHideGroupVoiceInput)),
+            @"hookCalls": @(RUINViewHookCalls(RUINHideGroupVoiceInput)),
+            @"hookFailures": RUINViewHookFailures(RUINHideGroupVoiceInput)
+        },
+        @"agentIBar": @{
+            @"enabled": @(atomic_load(&gHideAgentIEnabled)),
+            @"installedViewClasses": @(RUINInstalledViewTargetCount(RUINHideGroupAgentI)),
+            @"heightHookInstalled": @(gAgentIntrinsicInstalled),
+            @"hookCalls": @(RUINViewHookCalls(RUINHideGroupAgentI)),
+            @"hookFailures": RUINViewHookFailures(RUINHideGroupAgentI)
+        }
+    };
+}
