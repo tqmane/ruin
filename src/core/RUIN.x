@@ -49,7 +49,7 @@ extern NSDictionary *RUINKeychainSelfTest(void);
 extern void RUINInstallNativeEntry(void);
 extern NSDictionary *RUINNativeEntryDiagnostics(void);
 
-static NSString *const RUINVersion = @"0.2.63-dev";
+static NSString *const RUINVersion = @"0.3.0-dev";
 
 static UINavigationController *sSettingsNavigationController;
 static BOOL sSettingsPresentationInFlight;

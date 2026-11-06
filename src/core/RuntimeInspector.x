@@ -313,6 +313,10 @@ static NSArray *RUINLocalFeatureControllerMetadata(UIViewController *controller)
             @"viewModel.premiumService.benefitAvailabilityRepository",
             @"viewModel.premiumService.repository",
             @"viewModel.settingUsecase", @"viewModel.settingUsecase.premiumFontApplier",
+            @"viewModel.settingUsecase.sourceRepository.apiService",
+            @"viewModel.settingUsecase.configurationRepository",
+            @"viewModel.settingUsecase.currentFontIDRepository",
+            @"viewModel.isUpdatingFont", @"viewModel.hasEnteredPremiumFontSetting",
             @"viewModel.settingUsecase.premiumFontApplier.policy", @"viewModel.presentUsecase",
             @"viewModel.isPremiumFontEligible"];
     } else if ([className isEqual:@"LineSettingsUI.AppIconViewController"] ||
@@ -328,11 +332,47 @@ static NSArray *RUINLocalFeatureControllerMetadata(UIViewController *controller)
         if (fields.count > 48) fields = [fields subarrayWithRange:NSMakeRange(0, 48)];
         NSMutableDictionary *row = [@{@"path":path, @"type":type, @"fields":fields} mutableCopy];
         if ([type isEqual:@"Swift.Bool"] &&
-            ([path hasSuffix:@".isMuteSupported"] || [path hasSuffix:@".isPremiumFontEligible"])) {
+            ([path hasSuffix:@".isMuteSupported"] || [path hasSuffix:@".isPremiumFontEligible"] ||
+             [path hasSuffix:@".isUpdatingFont"] || [path hasSuffix:@".hasEnteredPremiumFontSetting"])) {
             id value = RUINCopySwiftField(controller, path.UTF8String);
             if ([value isKindOfClass:NSNumber.class]) row[@"value"] = @([value boolValue]);
         }
         [rows addObject:row];
+    }
+    return rows;
+}
+
+static NSArray *RUINFontStateGraph(UIViewController *controller) {
+    if (![RUINClassName(controller) isEqual:@"LineChatSettingsUI.PremiumFontSettingViewController"]) return @[];
+    NSMutableArray *queue = [NSMutableArray arrayWithArray:@[@"viewModel._selectedFontItem",
+        @"viewModel._shouldShowApplyButton", @"viewModel._toast", @"viewModel._ldsPopupConfiguration"]];
+    NSMutableArray *rows = [NSMutableArray array];
+    NSSet *children = [NSSet setWithArray:@[@"storage", @"_storage", @"publisher", @"subject",
+        @"currentValue", @"value", @"object", @"isPremiumFont", @"isSelected"]];
+    for (NSUInteger i = 0; i < queue.count && rows.count < 32; i++) {
+        NSString *path = queue[i];
+        if ([path componentsSeparatedByString:@"."].count > 8) continue;
+        NSString *type = RUINCopySwiftFieldTypeName(controller, path.UTF8String);
+        if (!type) continue;
+        NSArray *fields = RUINCopySwiftFieldInfo(controller, path.UTF8String) ?: @[];
+        NSMutableDictionary *row = [@{@"path":path, @"type":type, @"fields":fields} mutableCopy];
+        if ([type isEqual:@"Swift.Bool"]) row[@"value"] = RUINCopySwiftField(controller, path.UTF8String) ?: NSNull.null;
+        if ([type isEqual:@"LineChatSettingsUI.PremiumFontToast"]) {
+            NSString *messagePath = [path stringByAppendingString:@".message"];
+            id message = RUINCopySwiftField(controller, messagePath.UTF8String);
+            if ([message isKindOfClass:NSString.class] && [message length] <= 512) {
+                NSRegularExpression *privateText = [NSRegularExpression regularExpressionWithPattern:
+                    @"https?://\\S+|[A-Za-z0-9_+/=-]{32,}" options:NSRegularExpressionCaseInsensitive error:NULL];
+                row[@"message"] = [privateText stringByReplacingMatchesInString:message options:0
+                    range:NSMakeRange(0, [message length]) withTemplate:@"<redacted>"];
+            }
+        }
+        [rows addObject:row];
+        for (NSDictionary *field in fields) {
+            NSString *name = field[@"name"];
+            if ([children containsObject:name] && queue.count < 48)
+                [queue addObject:[path stringByAppendingFormat:@".%@", name]];
+        }
     }
     return rows;
 }
@@ -355,6 +395,7 @@ static void RUINAppendController(UIViewController *controller, NSUInteger depth,
         @"viewInteractionEnabled":@(controller.viewIfLoaded.userInteractionEnabled),
         @"readControllerMetadata":RUINReadControllerMetadata(controller),
         @"localFeatureMetadata":RUINLocalFeatureControllerMetadata(controller),
+        @"fontState":RUINFontStateGraph(controller),
         @"themeControllerMetadata":RUINThemeControllerMetadata(controller)}];
 
     if (controller.presentedViewController)
