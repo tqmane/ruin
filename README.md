@@ -18,9 +18,9 @@ RUINは、iOS版LINE向けの非公式機能拡張パッケージです。公式
 | :---: | :---: |
 | <img src="docs/screenshots/ruin-settings.png" width="320" alt="RUIN Settings" /> | <img src="docs/screenshots/local-font.png" width="320" alt="Local Font" /> |
 
-| メッセージ長押しメニュー (既読者一覧) | |
+| メッセージ長押しメニュー | ミュート送信 |
 | :---: | :---: |
-| <img src="docs/screenshots/chat-menu.png" width="320" alt="Chat Menu" /> | |
+| <img src="docs/screenshots/chat-menu.png" alt="メッセージ長押しメニュー" width="320" /> | <img src="docs/screenshots/mute-send.png" alt="ミュート送信" width="320" /> |
 
 ※掲載スクリーンショットは、作業担当者が公開前にプライバシー検査（目視確認）を実施した実機キャプチャです。
 ※ホーム画面画像はプライバシー保護のため、友だちリストおよびグループリストを両方折りたたんだ状態で撮影しています。
@@ -71,6 +71,7 @@ LINE本来の標準UI構造および `TabView` をそのまま使用します。
 - **タブ管理**: 不要なネイティブタブを非表示にし、起動時に表示する初期タブを指定できます (ホーム・トーク等の必須タブは非表示にできません)。
 
 ### テーマ & カスタムフォント
+- RUIN設定の「ショップ」から公式ネイティブ画面を開き、スタンプの商品詳細や画像プレビューの閲覧に対応（※購入・プレゼント・権利付与は未検証）
 - **ネイティブ着せかえ**: 公式着せかえショップやマイ着せかえのローカル適用・再取得、ストアURLからのメタデータ取得に対応します (※サーバー側の購入権限を付与するものではありません)。
 - **ローカルカスタムフォント**:
   - 「RUIN設定」→「カスタムフォント」から、32MB以下の単一OTF/TTFファイルをiOS標準ファイル選択 (UIDocumentPicker) 経由でインポートできます。
@@ -197,6 +198,7 @@ python3 tools/package.py \
     - `RUIN-<version>-ios-arm64.dylib`
     - 配布用DEBパッケージ
     - `RUIN-<version>-manual-injection.zip`
+    - `RUIN-ThirdPartyNotices.txt`：同梱・利用しているサードパーティ製ソフトウェアのライセンス表記
     - `SHA256SUMS`
   - タグpush時はGitHub Releaseへ自動添付され、手動実行時はGitHub ActionsのArtifactsに保存されます。
 

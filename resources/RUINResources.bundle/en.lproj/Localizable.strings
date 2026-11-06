@@ -170,8 +170,14 @@ Unsent</string>
 	<string>Secondary Device Login</string>
 	<key>ショッピング</key>
 	<string>Shopping</string>
+	<key>ショップ</key>
+	<string>Shop</string>
 	<key>スタンプをGIFでコピー</key>
 	<string>Copy Sticker as GIF</string>
+	<key>スタンプショップ</key>
+	<string>Sticker Shop</string>
+	<key>スタンプショップを開けませんでした</key>
+	<string>Unable to open Sticker Shop</string>
 	<key>ストアURLからダウンロード</key>
 	<string>Download from Store URL</string>
 	<key>ストアURLから名前・商品ID・バージョンを取得</key>

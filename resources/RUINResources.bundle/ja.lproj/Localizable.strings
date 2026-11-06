@@ -170,8 +170,14 @@
 	<string>サブ端末ログイン</string>
 	<key>ショッピング</key>
 	<string>ショッピング</string>
+	<key>ショップ</key>
+	<string>ショップ</string>
 	<key>スタンプをGIFでコピー</key>
 	<string>スタンプをGIFでコピー</string>
+	<key>スタンプショップ</key>
+	<string>スタンプショップ</string>
+	<key>スタンプショップを開けませんでした</key>
+	<string>スタンプショップを開けませんでした</string>
 	<key>ストアURLからダウンロード</key>
 	<string>ストアURLからダウンロード</string>
 	<key>ストアURLから名前・商品ID・バージョンを取得</key>

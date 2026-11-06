@@ -299,7 +299,7 @@ static void RefreshFeatures(void) {
 - (NSArray<NSString *> *)aliasKeys { return [self.aliases.allKeys sortedArrayUsingSelector:@selector(compare:)]; }
 - (NSInteger)numberOfSectionsInTableView:(__unused UITableView *)tableView { return self.compatible ? 13 : 1; }
 - (NSString *)tableView:(__unused UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
-    return self.compatible ? @[RUINLocalizedString(@"バージョン"), RUINLocalizedString(@"既読の管理"), RUINLocalizedString(@"ID別のローカル表示名"), RUINLocalizedString(@"操作確認"), RUINLocalizedString(@"表示の管理"), RUINLocalizedString(@"タブの管理"), RUINLocalizedString(@"履歴・追加機能（開発中）"), RUINLocalizedString(@"サブ端末ログイン"), RUINLocalizedString(@"診断"), RUINLocalizedString(@"着せかえ"), RUINLocalizedString(@"ユーザー検索"), RUINLocalizedString(@"通知"), RUINLocalizedString(@"LINE機能（開発中）")][section] : RUINLocalizedString(@"診断");
+    return self.compatible ? @[RUINLocalizedString(@"バージョン"), RUINLocalizedString(@"既読の管理"), RUINLocalizedString(@"ID別のローカル表示名"), RUINLocalizedString(@"操作確認"), RUINLocalizedString(@"表示の管理"), RUINLocalizedString(@"タブの管理"), RUINLocalizedString(@"履歴・追加機能（開発中）"), RUINLocalizedString(@"サブ端末ログイン"), RUINLocalizedString(@"診断"), RUINLocalizedString(@"ショップ"), RUINLocalizedString(@"ユーザー検索"), RUINLocalizedString(@"通知"), RUINLocalizedString(@"LINE機能（開発中）")][section] : RUINLocalizedString(@"診断");
 }
 - (NSString *)tableView:(__unused UITableView *)tableView titleForFooterInSection:(NSInteger)section {
     if (!self.compatible) return RUINLocalizedString(@"このLINEビルドでは機能を有効にできません。");
@@ -327,7 +327,7 @@ static void RefreshFeatures(void) {
     if (!self.compatible) return 1;
     if (section == 2) return MAX((NSInteger)1, (NSInteger)self.aliasKeys.count);
     if (section == 1 || section == 3 || section == 5) return ToggleRows(section).count + 1;
-    if (section == 8) return 2;
+    if (section == 8 || section == 9) return 2;
     if (section == 12) return ToggleRows(12).count + 1;
     return MAX((NSInteger)1, (NSInteger)ToggleRows(section).count);
 }
@@ -346,7 +346,7 @@ static void RefreshFeatures(void) {
         cell.textLabel.text = RUINLocalizedString(@"MIDでプロフィールを開く");
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     } else if (path.section == 9) {
-        cell.textLabel.text = RUINLocalizedString(@"着せかえのダウンロード・保存一覧");
+        cell.textLabel.text = path.row == 0 ? RUINLocalizedString(@"着せかえのダウンロード・保存一覧") : RUINLocalizedString(@"スタンプショップ");
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     } else if (path.section == 0) {
         cell.textLabel.text = [NSString stringWithFormat:@"RUIN v%@", RUINVersion];
@@ -404,7 +404,8 @@ static void RefreshFeatures(void) {
     } else if (path.section == 10) {
         RUINOpenMIDLookup(self);
     } else if (path.section == 9) {
-        RUINOpenThemeSettings(self);
+        if (path.row == 0) RUINOpenThemeSettings(self);
+        else RUINOpenStickerShop(self);
     } else if (path.section == 2 && self.aliasKeys.count) {
         NSString *key = self.aliasKeys[path.row]; [self editLocalName:key alias:self.aliases[key]];
     } else if (path.section == 1 && (NSUInteger)path.row == ToggleRows(1).count) [self editReadExceptions];

@@ -170,8 +170,14 @@
 	<string>副设备登录</string>
 	<key>ショッピング</key>
 	<string>购物</string>
+	<key>ショップ</key>
+	<string>商店</string>
 	<key>スタンプをGIFでコピー</key>
 	<string>复制贴图为GIF</string>
+	<key>スタンプショップ</key>
+	<string>贴图小铺</string>
+	<key>スタンプショップを開けませんでした</key>
+	<string>无法打开贴图小铺</string>
 	<key>ストアURLからダウンロード</key>
 	<string>从商店URL下载</string>
 	<key>ストアURLから名前・商品ID・バージョンを取得</key>

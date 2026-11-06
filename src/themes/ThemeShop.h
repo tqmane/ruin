@@ -15,6 +15,7 @@ NS_ASSUME_NONNULL_BEGIN
  the native caller chain and plaintext read mode; it does not write account state.
  */
 FOUNDATION_EXPORT void RUINOpenThemeShop(UIViewController *source);
+FOUNDATION_EXPORT void RUINOpenStickerShop(UIViewController *source);
 
 /** Install the exact-build stylesheet persistence adapter at dylib startup. */
 FOUNDATION_EXPORT void RUINInstallThemePersistenceAdapter(void);

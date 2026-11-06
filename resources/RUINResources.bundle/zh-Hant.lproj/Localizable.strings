@@ -170,8 +170,14 @@
 	<string>附屬裝置登入</string>
 	<key>ショッピング</key>
 	<string>購物</string>
+	<key>ショップ</key>
+	<string>商店</string>
 	<key>スタンプをGIFでコピー</key>
 	<string>複製貼圖為GIF</string>
+	<key>スタンプショップ</key>
+	<string>貼圖小舖</string>
+	<key>スタンプショップを開けませんでした</key>
+	<string>無法開啟貼圖小舖</string>
 	<key>ストアURLからダウンロード</key>
 	<string>從商店URL下載</string>
 	<key>ストアURLから名前・商品ID・バージョンを取得</key>
