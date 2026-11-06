@@ -16,6 +16,21 @@ ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = "com.tqmane.ruin"
 INSTALL_DIR = "Library/MobileSubstrate/DynamicLibraries"
 DYLIB_INSTALL_NAME = "@rpath/RUIN.dylib"
+# Direct links reviewed for this build; new SDK dependencies require review.
+APPLE_DEPENDENCIES = {
+    f"/System/Library/Frameworks/{name}.framework/{name}"
+    for name in ("Foundation", "UIKit", "CoreText", "WebKit", "CoreGraphics",
+                 "Security", "CoreData", "ImageIO", "UniformTypeIdentifiers",
+                 "UserNotifications", "CoreFoundation")
+} | {
+    "/usr/lib/libsqlite3.dylib", "/usr/lib/libz.1.dylib",
+    "/usr/lib/libSystem.B.dylib", "/usr/lib/libobjc.A.dylib",
+} | {
+    f"{prefix}libswift{name}.dylib"
+    for prefix in ("/usr/lib/swift/", "@rpath/")
+    for name in ("Core", "CoreFoundation", "Dispatch", "ObjectiveC", "XPC",
+                 "_Builtin_float")
+}
 VERSION_RE = re.compile(
     r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
     r"(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?"
@@ -60,15 +75,7 @@ def dependencies_from_otool(output):
 
 def validate_dependencies(dependencies):
     for name in dependencies:
-        path = PurePosixPath(name)
-        lower_name = path.name.lower()
-        if "substrate" in lower_name or "libhooker" in lower_name:
-            raise ValueError(f"Unsupported external hook-runtime dependency: {name}")
-        if ".." in path.parts:
-            raise ValueError(f"Dependency escapes its system path: {name}")
-        is_system = name.startswith(("/System/Library/", "/usr/lib/"))
-        is_swift_runtime = re.fullmatch(r"@rpath/libswift[A-Za-z0-9_.-]*\.dylib", name)
-        if not is_system and not is_swift_runtime:
+        if name not in APPLE_DEPENDENCIES:
             raise ValueError(f"Dependency is not an Apple system or Swift runtime library: {name}")
 
 

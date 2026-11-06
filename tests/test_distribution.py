@@ -133,6 +133,10 @@ class DistributionTests(unittest.TestCase):
         output += "\t/opt/homebrew/lib/libexample.dylib (compatibility version 1.0.0)\n"
         with self.assertRaisesRegex(ValueError, "not an Apple system"):
             distribute.validate_dependencies(distribute.dependencies_from_otool(output))
+        for disguised in ("/usr/lib/libexample.dylib", "@rpath/libswiftExample.dylib",
+                          "/System/Library/Frameworks/Example.framework/Example"):
+            with self.subTest(dependency=disguised), self.assertRaises(ValueError):
+                distribute.validate_dependencies([disguised])
 
 
 if __name__ == "__main__":
