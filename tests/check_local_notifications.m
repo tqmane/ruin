@@ -35,8 +35,8 @@ static BOOL Rejected(NSDictionary *snapshot, NSDate *activation, NSDate *cutoff,
 int main(void)
 {
     @autoreleasepool {
-        assert([kRUINLocalGenericBody isEqual:@"新着メッセージを受信しました"]);
-        assert([kRUINLocalAttachmentBody isEqual:@"添付ファイルを受信しました"]);
+        assert([RUINLocalizedString(@"新着メッセージを受信しました") isEqual:@"新着メッセージを受信しました"]);
+        assert([RUINLocalizedString(@"添付ファイルを受信しました") isEqual:@"添付ファイルを受信しました"]);
         NSDate *activation = At(900), *cutoff = At(950), *now = At(1000);
         NSDictionary *valid = Snapshot();
         NSString *digest = nil;
@@ -105,11 +105,11 @@ int main(void)
         NSString *fallback = nil;
         assert(RUINLocalEvaluateSnapshot(caseData, YES, YES, activation, cutoff, now,
             NULL, NULL, &fallback, NULL, NULL));
-        assert([fallback isEqual:kRUINLocalAttachmentBody]);
+        assert([fallback isEqual:RUINLocalizedString(@"添付ファイルを受信しました")]);
         caseData[@"contentType"] = @0;
         assert(RUINLocalEvaluateSnapshot(caseData, YES, YES, activation, cutoff, now,
             NULL, NULL, &fallback, NULL, NULL));
-        assert([fallback isEqual:kRUINLocalGenericBody]);
+        assert([fallback isEqual:RUINLocalizedString(@"新着メッセージを受信しました")]);
 
         BOOL observedEnabled = NO, wasEnabled = NO;
         NSDate *enableCutoff = RUINLocalEnableCutoff(&observedEnabled, &wasEnabled, nil, NO, At(900));

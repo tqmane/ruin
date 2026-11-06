@@ -164,11 +164,20 @@ static UITableView *RUINFindTableView(UIView *view, NSUInteger *budget, NSUInteg
     return nil;
 }
 
+static BOOL RUINNativeMyThemesTitle(NSString *text) {
+    if (!text.length) return NO;
+    for (NSString *key in @[@"settings.theme.mine", @"settings.theme.goto.mine"]) {
+        NSString *title = [NSBundle.mainBundle localizedStringForKey:key value:@"マイ着せかえ" table:nil];
+        if ([text isEqual:title]) return YES;
+    }
+    return [text isEqual:@"マイ着せかえ"] || [text isEqual:@"My Themes"];
+}
+
 static BOOL RUINLabelContainsMyThemes(UIView *view)
 {
     if ([view isKindOfClass:UILabel.class]) {
         NSString *text = [(UILabel *)view text];
-        if ([text isEqual:@"マイ着せかえ"] || [text isEqual:@"My Themes"]) return YES;
+        if (RUINNativeMyThemesTitle(text)) return YES;
     }
     for (UIView *child in view.subviews) if (RUINLabelContainsMyThemes(child)) return YES;
     return NO;
@@ -211,9 +220,8 @@ static RUINNativeThemeSelectionResult RUINSelectNativeMyThemes(
     UITableViewCell *cell = [table cellForRowAtIndexPath:firstRow];
     if (!cell) return RUINNativeThemeSelectionPending;
     NSString *accessibilityLabel = cell.accessibilityLabel;
-    BOOL titleMatches = [cell.textLabel.text isEqual:@"マイ着せかえ"] ||
-        [cell.textLabel.text isEqual:@"My Themes"] ||
-        [accessibilityLabel isEqual:@"マイ着せかえ"] || [accessibilityLabel isEqual:@"My Themes"] ||
+    BOOL titleMatches = RUINNativeMyThemesTitle(cell.textLabel.text) ||
+        RUINNativeMyThemesTitle(accessibilityLabel) ||
         RUINLabelContainsMyThemes(cell.contentView);
     if (!titleMatches) {
         if (error) *error = RUINNativeThemeNavigationError(

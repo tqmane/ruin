@@ -1,5 +1,6 @@
 #import "MessagingPrivateAPI.h"
 #import "ReadersSheet.h"
+#import "../core/Localization.h"
 
 #import <CoreData/CoreData.h>
 #import <objc/message.h>
@@ -44,10 +45,10 @@ static NSString *RUINReaderDateLabel(NSDictionary *reader, NSDateFormatter *form
     long long read = (event || range) ? RUINReaderMilliseconds(reader[@"readAtMilliseconds"]) : 0;
     long long observed = RUINReaderMilliseconds(reader[@"observedAtMilliseconds"]);
     long long milliseconds = read ?: observed;
-    if (!milliseconds) return @"日時不明";
-    NSString *label = read ? (range ? @"既読日時（範囲情報）" : @"既読日時") : @"確認日時";
+    if (!milliseconds) return RUINLocalizedString(@"日時不明");
+    NSString *label = read ? (range ? RUINLocalizedString(@"既読日時（範囲情報）") : RUINLocalizedString(@"既読日時")) : RUINLocalizedString(@"確認日時");
     NSString *date = [formatter stringFromDate:[NSDate dateWithTimeIntervalSince1970:milliseconds / 1000.0]];
-    return date.length ? [NSString stringWithFormat:@"%@：%@", label, date] : @"日時不明";
+    return date.length ? [NSString stringWithFormat:(RUINLocalizedString(@"%@：%@") ?: @"%@：%@"), label, date] : RUINLocalizedString(@"日時不明");
 }
 
 static BOOL RUINReaderUserSchema(NSEntityDescription *entity)
@@ -247,10 +248,10 @@ static NSArray<NSManagedObjectContext *> *RUINReaderContexts(UIViewController *s
 - (void)viewDidLoad
 {
     [super viewDidLoad];
-    self.title = @"既読者一覧";
-    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"閉じる"
+    self.title = RUINLocalizedString(@"既読者一覧");
+    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:RUINLocalizedString(@"閉じる")
         style:UIBarButtonItemStyleDone target:self action:@selector(close)];
-    if (self.loader) self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"更新"
+    if (self.loader) self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:RUINLocalizedString(@"更新")
         style:UIBarButtonItemStylePlain target:self action:@selector(refreshReaders)];
     self.tableView.rowHeight = UITableViewAutomaticDimension;
     self.tableView.estimatedRowHeight = 82;
@@ -260,7 +261,7 @@ static NSArray<NSManagedObjectContext *> *RUINReaderContexts(UIViewController *s
     self.tableView.backgroundView = nil;
     if (!self.readers.count) {
         UILabel *empty = [UILabel new];
-        empty.text = @"記録はありません";
+        empty.text = RUINLocalizedString(@"記録はありません");
         empty.textAlignment = NSTextAlignmentCenter;
         empty.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
         empty.adjustsFontForContentSizeCategory = YES;
@@ -272,8 +273,8 @@ static NSArray<NSManagedObjectContext *> *RUINReaderContexts(UIViewController *s
     if (!self.started) { self.started = YES; [self refreshReaders]; }
 }
 - (NSString *)tableView:(__unused UITableView *)tableView titleForHeaderInSection:(__unused NSInteger)section {
-    if (self.loading) return @"既読情報を取得中…";
-    if (self.loadFailed) return @"既読情報を取得できませんでした。もう一度お試しください。";
+    if (self.loading) return RUINLocalizedString(@"既読情報を取得中…");
+    if (self.loadFailed) return RUINLocalizedString(@"既読情報を取得できませんでした。もう一度お試しください。");
     return nil;
 }
 - (void)refreshReaders {
@@ -322,7 +323,7 @@ static NSArray<NSManagedObjectContext *> *RUINReaderContexts(UIViewController *s
     UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"reader"];
     if (!cell) cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"reader"];
     NSDictionary *reader = self.readers[indexPath.row];
-    cell.textLabel.text = self.names[reader[@"readerID"]] ?: (self.resolving ? @"名前を確認中…" : @"名前不明");
+    cell.textLabel.text = self.names[reader[@"readerID"]] ?: (self.resolving ? RUINLocalizedString(@"名前を確認中…") : RUINLocalizedString(@"名前不明"));
     cell.textLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
     cell.textLabel.adjustsFontForContentSizeCategory = YES;
     cell.textLabel.numberOfLines = 0;
@@ -334,13 +335,13 @@ static NSArray<NSManagedObjectContext *> *RUINReaderContexts(UIViewController *s
     BOOL actionable = self.profileAction && [reader[@"readerID"] length];
     cell.accessoryType = actionable ? UITableViewCellAccessoryDisclosureIndicator : UITableViewCellAccessoryNone;
     cell.selectionStyle = actionable ? UITableViewCellSelectionStyleDefault : UITableViewCellSelectionStyleNone;
-    cell.accessibilityHint = actionable ? @"プロフィールを表示します" : nil;
+    cell.accessibilityHint = actionable ? RUINLocalizedString(@"プロフィールを表示します") : nil;
     return cell;
 }
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section
 {
     (void)tableView; (void)section;
-    return @"確認日時は、この端末が既読情報を確認した日時です。日時を特定できない記録は「日時不明」と表示します。";
+    return RUINLocalizedString(@"確認日時は、この端末が既読情報を確認した日時です。日時を特定できない記録は「日時不明」と表示します。");
 }
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
 {

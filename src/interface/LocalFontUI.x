@@ -2,6 +2,7 @@
 
 #import "LocalFont.h"
 #import "LocalFontUI.h"
+#import "../core/Localization.h"
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 @interface RUINLocalFontViewController : UITableViewController <UIDocumentPickerDelegate>
@@ -13,27 +14,27 @@
 }
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = @"カスタムフォント";
+    self.title = RUINLocalizedString(@"カスタムフォント");
 }
 - (NSInteger)tableView:(__unused UITableView *)tableView numberOfRowsInSection:(__unused NSInteger)section {
     return 2;
 }
 - (NSString *)tableView:(__unused UITableView *)tableView titleForFooterInSection:(__unused NSInteger)section {
-    return @"OTF/TTFファイルを適用します。変更後はトークを開き直すか、アプリを再起動してください。";
+    return RUINLocalizedString(@"OTF/TTFファイルを適用します。変更後はトークを開き直すか、アプリを再起動してください。");
 }
 - (UITableViewCell *)tableView:(__unused UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)path {
     UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
-    cell.textLabel.text = path.row == 0 ? @"フォントを選択" : @"標準に戻す";
+    cell.textLabel.text = path.row == 0 ? RUINLocalizedString(@"フォントを選択") : RUINLocalizedString(@"標準に戻す");
     if (path.row == 0) {
-        cell.detailTextLabel.text = RUINLocalFontName() ?: @"標準フォント";
+        cell.detailTextLabel.text = RUINLocalFontName() ?: RUINLocalizedString(@"標準フォント");
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     }
     return cell;
 }
 - (void)showResult:(NSString *)message {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"カスタムフォント"
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:RUINLocalizedString(@"カスタムフォント")
         message:message preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"OK") style:UIAlertActionStyleDefault handler:nil]];
     [self presentViewController:alert animated:YES completion:nil];
     [self.tableView reloadData];
 }
@@ -41,7 +42,7 @@
     [tableView deselectRowAtIndexPath:path animated:YES];
     if (path.row == 1) {
         RUINResetLocalFont();
-        [self showResult:@"標準フォントに戻しました。トークを開き直してください。"];
+        [self showResult:RUINLocalizedString(@"標準フォントに戻しました。トークを開き直してください。")];
         return;
     }
     UTType *otf = [UTType typeWithFilenameExtension:@"otf"];
@@ -56,8 +57,8 @@
     NSError *error = nil;
     BOOL imported = urls.count == 1 && RUINImportLocalFont(urls.firstObject, &error);
     [controller dismissViewControllerAnimated:YES completion:^{
-        [self showResult:imported ? @"フォントを適用しました。トークを開き直してください。" :
-            @"フォントを読み込めませんでした。OTF/TTFファイルを確認してください。"];
+        [self showResult:imported ? RUINLocalizedString(@"フォントを適用しました。トークを開き直してください。") :
+            RUINLocalizedString(@"フォントを読み込めませんでした。OTF/TTFファイルを確認してください。")];
     }];
 }
 @end

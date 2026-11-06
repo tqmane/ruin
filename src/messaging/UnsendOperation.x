@@ -4,6 +4,7 @@
 #import "UnsendOperation.h"
 #import "Features.h"
 #import "MessageHistory.h"
+#import "../core/Localization.h"
 #import <CoreData/CoreData.h>
 #import <TargetConditionals.h>
 #import <objc/runtime.h>
@@ -279,7 +280,7 @@ static BOOL RetainedMarker(NSDictionary *key, BOOL write) {
                 id value = [(id<RUINMessagingMessageFields>)message plaintext];
                 if ([value isKindOfClass:NSString.class] && [value length]) text = [value copy];
             }];
-            if (text) { atomic_fetch_add(&displayReturns, 1); return [text stringByAppendingString:@"\n取消済"]; }
+            if (text) { atomic_fetch_add(&displayReturns, 1); return [text stringByAppendingFormat:@"\n%@", RUINLocalizedString(@"取消済")]; }
         } @catch (__unused NSException *exception) { atomic_fetch_add(&observationErrors, 1); }
         return actual;
     } @finally { displayDepth--; }

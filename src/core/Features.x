@@ -20,6 +20,7 @@ NSString * const RUINLocalNamesByIdentityDefaultsKey = @"RUINLocalNamesByIdentit
 NSString * const RUINReadExceptionsDefaultsKey = @"RUINReadExceptions";
 NSString * const RUINMarkReadOnReplyDefaultsKey = @"RUINMarkReadOnReply";
 NSString * const RUINLocalLYPEnabledDefaultsKey = @"RUINLocalLYPEnabled";
+NSString * const RUINLegacyMessagingEnabledDefaultsKey = @"RUINLegacyMessagingEnabled";
 
 typedef enum {
     RUINHookPending,
