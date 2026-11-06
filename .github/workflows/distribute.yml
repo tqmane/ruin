@@ -1,0 +1,76 @@
+name: Build RUIN distribution
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  distribute:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Select and validate version
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            [[ "$GITHUB_REF_NAME" == v* ]] || { echo "Release tags must start with v." >&2; exit 1; }
+            ruin_version="${GITHUB_REF_NAME#v}"
+          else
+            ruin_version="$(cat VERSION)"
+          fi
+          python3 -c 'import sys; sys.path.insert(0, "tools"); from distribute import validate_version; validate_version(sys.argv[1])' "$ruin_version"
+          echo "value=$ruin_version" >> "$GITHUB_OUTPUT"
+
+      - name: Build arm64 dylib
+        env:
+          RUIN_VERSION: ${{ steps.version.outputs.value }}
+        run: make -j4 all RUIN_BUILD_VERSION="$RUIN_VERSION"
+
+      - name: Run existing macOS host fixtures
+        run: make -j4 check-host
+
+      - name: Verify packaging tools
+        run: make check-packaging
+
+      - name: Package and verify system dependencies
+        env:
+          RUIN_VERSION: ${{ steps.version.outputs.value }}
+        run: make dist RUIN_BUILD_VERSION="$RUIN_VERSION"
+
+      - name: Upload distribution artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ruin-${{ steps.version.outputs.value }}
+          path: |
+            dist/RUIN-${{ steps.version.outputs.value }}-ios-arm64.dylib
+            dist/com.tqmane.ruin_${{ steps.version.outputs.value }}_iphoneos-arm64.deb
+            dist/RUIN-${{ steps.version.outputs.value }}-manual-injection.zip
+            dist/RUIN-ThirdPartyNotices.txt
+            dist/SHA256SUMS
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Publish GitHub Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUIN_VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" \
+              --verify-tag --title "RUIN $GITHUB_REF_NAME" --generate-notes
+          fi
+          gh release upload "$GITHUB_REF_NAME" \
+            "dist/RUIN-${RUIN_VERSION}-ios-arm64.dylib" \
+            "dist/com.tqmane.ruin_${RUIN_VERSION}_iphoneos-arm64.deb" \
+            "dist/RUIN-${RUIN_VERSION}-manual-injection.zip" \
+            dist/RUIN-ThirdPartyNotices.txt dist/SHA256SUMS \
+            --clobber
