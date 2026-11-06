@@ -82,6 +82,7 @@ NSString *const RUINTargetBundleIdentifier = @"jp.naver.line";
 NSString *const RUINTargetVersion = @"26.16.0";
 NSString *const RUINTargetBuild = @"2026.1006.1718";
 NSString *const RUINLocalLYPEnabledDefaultsKey = @"RUINLocalLYPEnabled";
+NSString *const RUINLegacyMessagingEnabledDefaultsKey = @"RUINLegacyMessagingEnabled";
 #endif
 
 static BOOL RUINInfoStringEquals(NSDictionary *info, NSString *key, NSString *expected)
@@ -90,21 +91,32 @@ static BOOL RUINInfoStringEquals(NSDictionary *info, NSString *key, NSString *ex
     return [value isKindOfClass:NSString.class] && [value isEqualToString:expected];
 }
 
-static BOOL RUINClientVersionAdvertisementTargetMatches(void)
+static BOOL RUINClientVersionAdvertisementTargetMatchesMetadata(NSString *bundleIdentifier,
+                                                                 NSDictionary *info)
 {
-    NSBundle *bundle = NSBundle.mainBundle;
-    NSDictionary *info = bundle.infoDictionary ?: @{};
-    BOOL bundleMatches = [bundle.bundleIdentifier isEqualToString:RUINTargetBundleIdentifier] ||
+    BOOL bundleMatches = [bundleIdentifier isEqualToString:RUINTargetBundleIdentifier] ||
         RUINInfoStringEquals(info, @"RUINOriginalBundleIdentifier", RUINTargetBundleIdentifier);
     return bundleMatches &&
         RUINInfoStringEquals(info, @"CFBundleShortVersionString", RUINTargetVersion) &&
         RUINInfoStringEquals(info, @"CFBundleVersion", RUINTargetBuild);
 }
 
+static BOOL RUINClientVersionAdvertisementTargetMatches(void)
+{
+    NSBundle *bundle = NSBundle.mainBundle;
+    return RUINClientVersionAdvertisementTargetMatchesMetadata(bundle.bundleIdentifier,
+        bundle.infoDictionary ?: @{});
+}
+
+static BOOL RUINClientVersionAdvertisementEnabledForTarget(BOOL targetMatches, BOOL optionEnabled)
+{
+    return targetMatches && optionEnabled;
+}
+
 static BOOL RUINClientVersionAdvertisementEnabled(void)
 {
-    return RUINClientVersionAdvertisementTargetMatches() &&
-        [NSUserDefaults.standardUserDefaults boolForKey:RUINLocalLYPEnabledDefaultsKey];
+    return RUINClientVersionAdvertisementEnabledForTarget(RUINClientVersionAdvertisementTargetMatches(),
+        [NSUserDefaults.standardUserDefaults boolForKey:RUINLegacyMessagingEnabledDefaultsKey]);
 }
 
 static BOOL RUINIsDottedVersion(NSString *value, NSUInteger minimumParts, NSUInteger maximumParts)
@@ -406,7 +418,9 @@ static NSURLRequest *RUINRequestWithAdvertisedHeaders(id self, NSURLRequest *req
         NSDictionary *sessionHeaders = ((NSURLSession *)self).configuration.HTTPAdditionalHeaders ?: @{};
         NSDictionary *requestHeaders = request.allHTTPHeaderFields ?: @{};
         RUINObserveUserAgent(requestHeaders, sessionHeaders);
-        if (![NSUserDefaults.standardUserDefaults boolForKey:RUINLocalLYPEnabledDefaultsKey])
+        BOOL enabled = RUINClientVersionAdvertisementEnabledForTarget(targetMatches,
+            [NSUserDefaults.standardUserDefaults boolForKey:RUINLegacyMessagingEnabledDefaultsKey]);
+        if (!enabled)
             atomic_fetch_add(&gFlagOffRequests, 1);
         else {
             BOOL malformed = NO;
@@ -557,7 +571,7 @@ NSDictionary<NSString *, id> *RUINClientVersionAdvertisementDiagnostics(void)
     return @{
         @"status":[NSString stringWithUTF8String:RUINHookStatusName(atomic_load(&gHookStatus))] ?: @"pending",
         @"targetMatches26_16_0":@(targetMatches),
-        @"localLYPEnabled":@(enabled),
+        @"legacyMessagingEnabled":@(enabled),
         @"requestSessionClassMatched":@(atomic_load(&gRequestSessionClassMatched)),
         @"observedUAStyle":[NSString stringWithUTF8String:RUINObservedUAStyleName(atomic_load(&gObservedUAStyle))],
         @"containsCurrentVersion":@(atomic_load(&gUAContainsCurrentVersion)),
@@ -599,6 +613,16 @@ NSDictionary<NSString *, id> *RUINClientVersionAdvertisementDiagnostics(void)
 int main(void)
 {
     @autoreleasepool {
+        NSDictionary *targetInfo = @{@"RUINOriginalBundleIdentifier":RUINTargetBundleIdentifier,
+            @"CFBundleShortVersionString":RUINTargetVersion, @"CFBundleVersion":RUINTargetBuild};
+        BOOL targetMatches = RUINClientVersionAdvertisementTargetMatchesMetadata(@"injected.bundle", targetInfo);
+        assert(targetMatches);
+        NSDictionary *enabledOptions = @{RUINLegacyMessagingEnabledDefaultsKey:@YES,
+            RUINLocalLYPEnabledDefaultsKey:@NO};
+        BOOL enabled = RUINClientVersionAdvertisementEnabledForTarget(targetMatches,
+            [enabledOptions[RUINLegacyMessagingEnabledDefaultsKey] boolValue]);
+        assert(enabled && ![enabledOptions[RUINLocalLYPEnabledDefaultsKey] boolValue]);
+
         NSMutableURLRequest *fontRequest = [NSMutableURLRequest requestWithURL:
             [NSURL URLWithString:@"https://legy-jp.line-apps.com/EXT/talk/asset-meta-server/thrift/fontService"]];
         assert(RUINIsNativeFontRequest(fontRequest));
@@ -615,7 +639,8 @@ int main(void)
         };
         BOOL malformed = NO;
         BOOL buildVersionRewritten = NO;
-        NSDictionary *overrides = RUINClientVersionHeaderOverrides(requestHeaders, @{}, lineURL, YES, YES,
+        NSDictionary *overrides = RUINClientVersionHeaderOverrides(requestHeaders, @{}, lineURL,
+            targetMatches, enabled,
             &malformed, &buildVersionRewritten);
         assert(!malformed);
         assert([overrides[@"X-Line-Application"] isEqual:@"IOS\t15.16.1\tiPhone OS\t18.2.1"]);
@@ -627,37 +652,46 @@ int main(void)
         assert([requestHeaders[@"X-Line-Application"] isEqual:@"IOS\t26.16.0\tiPhone OS\t18.2.1"]);
 
         NSDictionary *lineUAHeaders = @{@"User-Agent":@"Line/26.16.0;BuildVersion: 2026.1006.1718; CFNetwork/3860"};
-        overrides = RUINClientVersionHeaderOverrides(lineUAHeaders, @{}, lineURL, YES, YES,
+        overrides = RUINClientVersionHeaderOverrides(lineUAHeaders, @{}, lineURL, targetMatches, enabled,
             &malformed, &buildVersionRewritten);
         assert([overrides[@"User-Agent"] isEqual:@"Line/15.16.1;BuildVersion: 2025.926.1805; CFNetwork/3860"]);
         assert(buildVersionRewritten);
 
         NSDictionary *iPadHeaders = @{@"X-Line-Application":@"IOSIPAD\t26.16.0\tiPhone OS\t18.2.1"};
-        overrides = RUINClientVersionHeaderOverrides(iPadHeaders, @{}, lineURL, YES, YES,
+        overrides = RUINClientVersionHeaderOverrides(iPadHeaders, @{}, lineURL, targetMatches, enabled,
             &malformed, &buildVersionRewritten);
         assert([overrides[@"X-Line-Application"] isEqual:@"IOSIPAD\t15.16.1\tiPhone OS\t18.2.1"]);
 
         NSDictionary *sessionDefaults = @{@"x-line-application":@"IOS\t26.16.0\tiPhone OS\t18.2.1"};
         NSDictionary *perRequest = @{@"Content-Type":@"application/x-thrift"};
-        overrides = RUINClientVersionHeaderOverrides(perRequest, sessionDefaults, lineURL, YES, YES,
+        overrides = RUINClientVersionHeaderOverrides(perRequest, sessionDefaults, lineURL, targetMatches, enabled,
             &malformed, &buildVersionRewritten);
         assert([overrides[@"x-line-application"] isEqual:@"IOS\t15.16.1\tiPhone OS\t18.2.1"]);
         assert(perRequest[@"X-Line-Application"] == nil);
         assert([sessionDefaults[@"x-line-application"] isEqual:@"IOS\t26.16.0\tiPhone OS\t18.2.1"]);
 
         NSURL *outsideURL = [NSURL URLWithString:@"https://legy-jp.line-apps.com.evil.test/S4"];
-        assert(RUINClientVersionHeaderOverrides(requestHeaders, @{}, outsideURL, YES, YES,
+        assert(RUINClientVersionHeaderOverrides(requestHeaders, @{}, outsideURL, targetMatches, enabled,
             &malformed, &buildVersionRewritten).count == 0);
-        assert(RUINClientVersionHeaderOverrides(requestHeaders, @{}, lineURL, YES, NO,
+        NSDictionary *lypOnlyOptions = @{RUINLegacyMessagingEnabledDefaultsKey:@NO,
+            RUINLocalLYPEnabledDefaultsKey:@YES};
+        BOOL legacyMessagingOff = RUINClientVersionAdvertisementEnabledForTarget(targetMatches,
+            [lypOnlyOptions[RUINLegacyMessagingEnabledDefaultsKey] boolValue]);
+        assert(!legacyMessagingOff && [lypOnlyOptions[RUINLocalLYPEnabledDefaultsKey] boolValue]);
+        assert(RUINClientVersionHeaderOverrides(requestHeaders, @{}, lineURL, targetMatches, legacyMessagingOff,
             &malformed, &buildVersionRewritten).count == 0);
-        assert(RUINClientVersionHeaderOverrides(requestHeaders, @{}, lineURL, NO, YES,
+        NSMutableDictionary *wrongTargetInfo = [targetInfo mutableCopy];
+        wrongTargetInfo[@"CFBundleVersion"] = @"wrong-build";
+        BOOL wrongTarget = RUINClientVersionAdvertisementTargetMatchesMetadata(@"injected.bundle", wrongTargetInfo);
+        assert(!wrongTarget);
+        assert(RUINClientVersionHeaderOverrides(requestHeaders, @{}, lineURL, wrongTarget, enabled,
             &malformed, &buildVersionRewritten).count == 0);
 
         NSDictionary *unknownUAHeaders = @{
             @"X-Line-Application":@"IOSIPAD\t26.16.0\tiPhone OS\t18.2.1",
             @"User-Agent":@"unknown-client/26.16.0 CFNetwork/3860.500.111.2.2"
         };
-        overrides = RUINClientVersionHeaderOverrides(unknownUAHeaders, @{}, lineURL, YES, YES,
+        overrides = RUINClientVersionHeaderOverrides(unknownUAHeaders, @{}, lineURL, targetMatches, enabled,
             &malformed, &buildVersionRewritten);
         assert(!malformed && [overrides[@"X-Line-Application"] isEqual:@"IOSIPAD\t15.16.1\tiPhone OS\t18.2.1"]);
         assert(overrides[@"User-Agent"] == nil);
@@ -666,7 +700,7 @@ int main(void)
             @"X-Line-Application":@"IOSIPAD\t26.16.0\tiPhone OS\t18.2.1",
             @"User-Agent":@"iphoneapp.line/26.16 (iPad; CPU iPhone OS 18.2.1; CFNetwork/3860)"
         };
-        overrides = RUINClientVersionHeaderOverrides(unparseableUAHeaders, @{}, lineURL, YES, YES,
+        overrides = RUINClientVersionHeaderOverrides(unparseableUAHeaders, @{}, lineURL, targetMatches, enabled,
             &malformed, &buildVersionRewritten);
         assert(!malformed && [overrides[@"X-Line-Application"] isEqual:@"IOSIPAD\t15.16.1\tiPhone OS\t18.2.1"]);
         assert(overrides[@"User-Agent"] == nil);
@@ -675,7 +709,7 @@ int main(void)
             @"X-Line-Application":@"IOSIPAD\t26.16.0\tiPhone OS\t18.2.1",
             @"User-Agent":@"iphoneapp.line/26.16.0\r\nX-Evil: 1"
         };
-        overrides = RUINClientVersionHeaderOverrides(malformedUAHeaders, @{}, lineURL, YES, YES,
+        overrides = RUINClientVersionHeaderOverrides(malformedUAHeaders, @{}, lineURL, targetMatches, enabled,
             &malformed, &buildVersionRewritten);
         assert(malformed && overrides.count == 0);
 
@@ -683,7 +717,7 @@ int main(void)
             @"X-Line-Application":@"IOS\tbad\tiPhone OS\t18.2.1",
             @"X-Line-Application-Version":@"26.16.0"
         };
-        overrides = RUINClientVersionHeaderOverrides(badHeaders, @{}, lineURL, YES, YES,
+        overrides = RUINClientVersionHeaderOverrides(badHeaders, @{}, lineURL, targetMatches, enabled,
             &malformed, &buildVersionRewritten);
         assert(malformed && overrides.count == 0);
 

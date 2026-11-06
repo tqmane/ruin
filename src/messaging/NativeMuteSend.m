@@ -31,7 +31,7 @@ NSDictionary<NSString *, id> *RUINNativeMuteSendDiagnostics(void)
 {
     BOOL targetMatches = RUINNativeMuteSendTargetMatches();
     BOOL enabled = targetMatches &&
-        [NSUserDefaults.standardUserDefaults boolForKey:RUINLocalLYPEnabledDefaultsKey];
+        [NSUserDefaults.standardUserDefaults boolForKey:RUINLegacyMessagingEnabledDefaultsKey];
     Class inputClass = targetMatches ? objc_getClass(kNativeMuteSendClass) : Nil;
     SEL selector = sel_registerName(kNativeMuteSendSelector);
     Method method = inputClass ? class_getInstanceMethod(inputClass, selector) : NULL;
@@ -50,25 +50,29 @@ NSDictionary<NSString *, id> *RUINNativeMuteSendDiagnostics(void)
         !decoderInstalled ? @"configurationDecoderUnavailable" :
         projected ? @"legacyConfigurationProjected" : @"awaitingNativeConfiguration";
     NSString *reason = !targetMatches ? @"The exact LINE bundle, version, or build did not match." :
-        !enabled ? @"The local RUIN LYP switch is off." :
+        !enabled ? @"The independent legacy-messaging option is off." :
         !inputClass ? @"The verified native send-button class is unavailable." :
         !method ? @"The verified native long-press selector is unavailable." :
         !longPressABIConfirmed ? @"The native long-press encoding differs from the verified build." :
         !decoderInstalled ? @"The native configuration decoder did not match its verified ABI." :
-        projected ? @"The native configuration selects the original LINE Labs mute-message path." :
-        @"Waiting for LINE to load its native configuration; restart after changing the local switch.";
+        projected ? @"Configuration is projected; effective flags are shown below. The native menu gate remains unverified." :
+        @"Waiting for LINE to load its native configuration; restart after changing the independent legacy-messaging option.";
 
     return @{
         @"status":status,
         @"reason":reason,
         @"targetMatches26_16_0":@(targetMatches),
-        @"localLYPEnabled":@(enabled),
+        @"legacyMessagingEnabled":@(enabled),
         @"nativeLongPressClass":[NSString stringWithUTF8String:kNativeMuteSendClass],
         @"nativeLongPressClassPresent":@(inputClass != Nil),
         @"nativeLongPressSelector":[NSString stringWithUTF8String:kNativeMuteSendSelector],
         @"nativeLongPressExpectedEncoding":[NSString stringWithUTF8String:kNativeMuteSendEncoding],
         @"nativeLongPressRuntimeEncoding":runtimeEncoding ?: (id)NSNull.null,
         @"nativeLongPressABIConfirmed":@(longPressABIConfirmed),
+        @"fetchedLabsSilentMessage":configuration[@"fetchedLabsSilentMessage"] ?: NSNull.null,
+        @"fetchedPremiumCommonMuteMessage":configuration[@"fetchedPremiumCommonMuteMessage"] ?: NSNull.null,
+        @"effectiveLabsSilentMessage":configuration[@"effectiveLabsSilentMessage"] ?: NSNull.null,
+        @"effectivePremiumCommonMuteMessage":configuration[@"effectivePremiumCommonMuteMessage"] ?: NSNull.null,
         @"nativeMenuViewModelPath":@"ChatViewController.chatViewModel.sendButtonLongPressViewModel",
         @"nativeMenuPolicyPath":@"SendButtonLongPressMenuViewModel.policy (SendButtonLongPressMenuPolicy)",
         @"nativeMenuPolicyFields":@[@"configurationService", @"generalSettingsService"],

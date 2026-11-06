@@ -50,6 +50,7 @@ def main():
     p.add_argument('--password-file', type=Path, required=True)
     p.add_argument('--udid', required=True)
     p.add_argument('--dylib', type=Path, default=ROOT / 'build/RUIN.dylib')
+    p.add_argument('--resources', type=Path, default=ROOT / 'resources/RUINResources.bundle')
     p.add_argument('--bundle-id', help='Optional CFBundleIdentifier override; signing entitlements remain profile-derived.')
     a = p.parse_args()
     profile = plistlib.loads(run('security', 'cms', '-D', '-i', a.profile, capture=True))
@@ -113,7 +114,16 @@ def main():
     frameworks = app / 'Frameworks'
     frameworks.mkdir(exist_ok=True)
     shutil.copy2(a.dylib, frameworks / 'RUIN.dylib')
-    shutil.copytree(ROOT / 'resources/RUINResources.bundle', app / 'RUINResources.bundle')
+    resources = a.resources.resolve()
+    if not resources.is_dir() or not (resources / 'Info.plist').is_file():
+        raise ValueError('RUINResources.bundle is required with the dylib.')
+    for resource in resources.rglob('*'):
+        if resource.is_symlink():
+            raise ValueError('Resource bundle must not contain symlinks.')
+    resource_info = plistlib.loads((resources / 'Info.plist').read_bytes())
+    if resource_info.get('CFBundleIdentifier') != 'com.tqmane.ruin.resources' or resource_info.get('CFBundleExecutable'):
+        raise ValueError('Expected the RUIN data-only resource bundle.')
+    shutil.copytree(resources, app / 'RUINResources.bundle')
     os.chmod(frameworks / 'RUIN.dylib', 0o755)
     run(ROOT / 'build/insert_dylib', '--inplace', '--all-yes', '--strip-codesig',
         RUIN_LOAD_PATH, binary)

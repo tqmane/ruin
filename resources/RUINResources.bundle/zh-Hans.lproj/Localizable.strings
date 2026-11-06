@@ -1,0 +1,542 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>
+一覧の更新に失敗しました。前回取得した内容を表示しています。</key>
+	<string>
+更新列表失败。正在显示上次获取的内容。</string>
+	<key>
+取消済</key>
+	<string>
+已撤回</string>
+	<key>%@を非表示</key>
+	<string>隐藏%@</string>
+	<key>%@：%@</key>
+	<string>%@：%@</string>
+	<key>%ld人</key>
+	<string>%ld人</string>
+	<key>%ld人のグループに送信しますか？</key>
+	<string>发送至%ld人的群组？</string>
+	<key>%lu件</key>
+	<string>%lu项</string>
+	<key>0以上の人数を入力してください。</key>
+	<string>请输入0或以上的人数。</string>
+	<key>1対1のトークで、既読非表示・トーク別の例外・返信時の切替を実機で確認済みです。グループやオープンチャット、手動で既読にする操作は検証中です。</key>
+	<string>已在实体设备上验证1对1聊天中的已读抑制、单聊例外及回复时切换功能。群聊、OpenChat以及手动标记已读仍在测试中。</string>
+	<key>1対1トークでの受信済みテキスト保持と「取消済」表示を確認済みです。添付ファイル・グループ・オープンチャットでの保持は検証中です。既読者一覧には、この端末で記録した名前と日時を表示します。</key>
+	<string>已验证1对1聊天中保留已接收文本及显示“已撤回”。附件、群聊和OpenChat的消息保留仍在测试中。已读成员列表显示在此设备上记录的名称和时间。</string>
+	<key>1対1・グループトークの新着のみ通知します。アプリ停止中の即時受信には対応していません。</key>
+	<string>仅通知1对1和群聊的新消息。不支持应用关闭时的即时接收。</string>
+	<key>Agent-iバーを非表示</key>
+	<string>隐藏Agent-i栏</string>
+	<key>GIFでコピー</key>
+	<string>复制为GIF</string>
+	<key>GIFをコピーできませんでした</key>
+	<string>无法复制GIF</string>
+	<key>ID別のローカル表示名</key>
+	<string>按ID设置的本地显示名称</string>
+	<key>ID別の表示名を追加</key>
+	<string>添加按ID设置的显示名称</string>
+	<key>LINE STOREの着せかえURLを入力してください。</key>
+	<string>请输入LINE STORE主题URL。</string>
+	<key>LINEが保存している記録です。現在の適用状態とファイルの存在は確認していません。</key>
+	<string>这是LINE保存的记录。未确认当前的生效状态和文件是否存在。</string>
+	<key>LINEにプロフィール表示を要求しました。見つからない場合や表示できない場合は、MIDと通信状態を確認してください。</key>
+	<string>已请求LINE显示个人资料。若未找到或无法显示，请检查MID和网络连接。</string>
+	<key>LINEに着せかえショップの表示を要求しましたが、受け付けられませんでした。</key>
+	<string>已请求LINE显示主题小铺，但未被接受。</string>
+	<key>LINEのタブを検出した後に選択できます。</key>
+	<string>在检测到LINE标签页后可供选择。</string>
+	<key>LINEのマイ着せかえに追加すると、選択して適用できます。</key>
+	<string>添加到LINE我的主题后即可选择并应用。</string>
+	<key>LINEの着せかえショップを開く</key>
+	<string>打开LINE主题小铺</string>
+	<key>LINEの着せかえ記録を取得できません</key>
+	<string>无法获取LINE主题记录</string>
+	<key>LINEの着せかえ記録（%lu）</key>
+	<string>LINE主题记录（%lu）</string>
+	<key>LINEを一度完全に終了して開き直してください。次回起動時から選んだログイン方法になります。</key>
+	<string>请彻底关闭LINE并重新打开。下次启动时将生效所选的登录方式。</string>
+	<key>LINE機能（開発中）</key>
+	<string>LINE功能（开发中）</string>
+	<key>MIDでプロフィールを開く</key>
+	<string>通过MID打开个人资料</string>
+	<key>MIDをコピー</key>
+	<string>复制MID</string>
+	<key>MID検索</key>
+	<string>MID搜索</string>
+	<key>MID（u＋32桁の半角英数字）</key>
+	<string>MID（u＋32位半角英数字）</string>
+	<key>OK</key>
+	<string>确定</string>
+	<key>OTF/TTFファイルを適用します。変更後はトークを開き直すか、アプリを再起動してください。</key>
+	<string>应用OTF/TTF文件。更改后请重新打开聊天或重启应用。</string>
+	<key>RUIN TEST private-original-sentinel
+取消済</key>
+	<string>RUIN TEST private-original-sentinel
+已撤回</string>
+	<key>RUIN TEST silent original
+取消済</key>
+	<string>RUIN TEST silent original
+已撤回</string>
+	<key>RUINReadUsersForMessage runs only after the user selects 既読者一覧</key>
+	<string>RUINReadUsersForMessage runs only after the user selects 已读成员列表</string>
+	<key>RUINのランタイム、互換性、機能診断のJSON</key>
+	<string>RUIN运行环境、兼容性及功能诊断JSON</string>
+	<key>RUINの設定と診断</key>
+	<string>RUIN设置与诊断</string>
+	<key>RUIN設定</key>
+	<string>RUIN设置</string>
+	<key>chat:MID または squareChat:MID をカンマ区切りで入力します。空欄で全て解除します。</key>
+	<string>请输入以逗号分隔的chat:MID或squareChat:MID。留空以全部清除。</string>
+	<key>iPad扱いでサブ端末ログイン</key>
+	<string>作为iPad副设备登录</string>
+	<key>iPad扱いのサブ端末モード</key>
+	<string>iPad副设备模式</string>
+	<key>「%@」と「%@」を同時に非表示にできません。</key>
+	<string>不能同时隐藏“%@”和“%@”。</string>
+	<key>「%@」の表示名をこの端末だけ変更します。空欄で解除し、旧表示名ルールもこのIDには適用しません。</key>
+	<string>仅在此设备上更改“%@”的显示名称。留空以清除，旧显示名称规则也不会应用于此ID。</string>
+	<key>「u」に続く32桁の半角数字・a〜f（小文字）を入力してください。</key>
+	<string>请输入“u”后接32位数字和a~f（小写字母）。</string>
+	<key>おすすめ欄を非表示</key>
+	<string>隐藏推荐栏</string>
+	<key>お使いのLINEのバージョンではMID検索を利用できません。</key>
+	<string>您当前的LINE版本不支持MID搜索。</string>
+	<key>このLINEバージョンでは、この画面からのダウンロードを利用できません。</key>
+	<string>此LINE版本不支持从此屏幕下载。</string>
+	<key>このLINEバージョンでは着せかえショップへの移動を利用できません。</key>
+	<string>此LINE版本不支持前往主题小铺。</string>
+	<key>このLINEバージョンでは着せかえ一覧を取得できません。</key>
+	<string>此LINE版本无法获取主题列表。</string>
+	<key>このLINEビルドでは機能を有効にできません。</key>
+	<string>在此LINE内部版本中无法启用功能。</string>
+	<key>このトーク</key>
+	<string>此聊天</string>
+	<key>このトークだけ既読制御を切り替えます</key>
+	<string>仅切换此聊天的已读控制</string>
+	<key>このトークの既読抑制を有効にする</key>
+	<string>启用此聊天的已读抑制</string>
+	<key>このトークを既読抑制の例外にする</key>
+	<string>将此聊天设为已读抑制的例外</string>
+	<key>このファイルで利用できる共有先が見つかりませんでした。</key>
+	<string>未找到适用于此文件的共享目标。</string>
+	<key>このファイルのプレビューには対応していません。共有メニューからファイルを操作できます。</key>
+	<string>不支持预览此文件。可以通过共享菜单操作此文件。</string>
+	<key>この環境ではLINEの着せかえ記録を取得できません。</key>
+	<string>在此环境下无法获取LINE主题记录。</string>
+	<key>この端末での表示名</key>
+	<string>此设备上的显示名称</string>
+	<key>この端末で表示する名前</key>
+	<string>在此设备上显示的名称</string>
+	<key>この端末の別名</key>
+	<string>此设备的别名</string>
+	<key>てすたーず</key>
+	<string>测试者们</string>
+	<key>てすたーず (2)</key>
+	<string>测试者们 (2)</string>
+	<key>アプリの動作に必要なタブは、常に表示されます。</key>
+	<string>应用运行所需的标签页将始终显示。</string>
+	<key>アプリアイコンを変更できませんでした。</key>
+	<string>无法更改应用图标。</string>
+	<key>アプリアイコン等は「ローカルLYP」、24時間までの送信取消とミュート送信は別スイッチで設定します（変更後はLINEを再起動）。ミュート送信は入力確定後、送信ボタンを約2秒長押しします。</key>
+	<string>应用图标等功能在“本地LYP”中设置，24小时撤回与静音消息由独立开关设置（更改后请重启LINE）。静音消息请在确认输入后长按发送按钮约2秒。</string>
+	<key>インターネットに接続されていません。接続を確認して、もう一度お試しください。</key>
+	<string>未连接到互联网。请检查网络连接后重试。</string>
+	<key>ウォレット</key>
+	<string>钱包</string>
+	<key>オンにする</key>
+	<string>开启</string>
+	<key>カスタムフォント</key>
+	<string>自定义字体</string>
+	<key>カメラの確認</key>
+	<string>相机确认</string>
+	<key>カメラをオンにしますか？</key>
+	<string>是否开启相机？</string>
+	<key>カメラをオンにする前に確認</key>
+	<string>开启相机前确认</string>
+	<key>キャッシュの名前</key>
+	<string>缓存名称</string>
+	<key>キャンセル</key>
+	<string>取消</string>
+	<key>グループへの送信確認</key>
+	<string>群组发送确认</string>
+	<key>グループ人数を確認できません。送信しますか？</key>
+	<string>无法确认群组人数。是否发送？</string>
+	<key>サブ端末では、現在のメイン端末でQRコードを読み取り、ログインを承認します。</key>
+	<string>在副设备上，需使用当前主设备扫描二维码以批准登录。</string>
+	<key>サブ端末ログイン</key>
+	<string>副设备登录</string>
+	<key>ショッピング</key>
+	<string>购物</string>
+	<key>ショップ</key>
+	<string>商店</string>
+	<key>スタンプをGIFでコピー</key>
+	<string>复制贴图为GIF</string>
+	<key>スタンプショップ</key>
+	<string>贴图小铺</string>
+	<key>スタンプショップを開けませんでした</key>
+	<string>无法打开贴图小铺</string>
+	<key>ストアURLからダウンロード</key>
+	<string>从商店URL下载</string>
+	<key>ストアURLから名前・商品ID・バージョンを取得</key>
+	<string>从商店URL获取名称、商品ID和版本</string>
+	<key>ストアURLから着せかえ情報を取得してダウンロードできます。名前・商品ID・バージョンの手入力も可能です。</key>
+	<string>可从商店URL获取主题信息并下载，也可手动输入名称、商品ID和版本。</string>
+	<key>ストア情報を取得できませんでした。URLと通信状況を確認してください。</key>
+	<string>无法获取商店信息。请检查URL和网络连接。</string>
+	<key>ストア情報を取得中…</key>
+	<string>正在获取商店信息…</string>
+	<key>タップして理由を確認</key>
+	<string>轻点以查看原因</string>
+	<key>タブの管理</key>
+	<string>管理标签页</string>
+	<key>ダウンロード</key>
+	<string>下载</string>
+	<key>ダウンロードした着せかえは、マイ着せかえを開くと一覧に表示されます。選択して適用できます。</key>
+	<string>下载的主题将在打开“我的主题”时显示在列表中。您可以选择并应用。</string>
+	<key>ダウンロードを完了できませんでした</key>
+	<string>无法完成下载</string>
+	<key>ダウンロードを開始できませんでした</key>
+	<string>无法开始下载</string>
+	<key>ダウンロード・ファイル確認中…</key>
+	<string>正在检查下载与文件…</string>
+	<key>ダウンロード設定と現在の処理状況を確認してください。</key>
+	<string>请检查下载设置和当前处理状态。</string>
+	<key>トーク</key>
+	<string>聊天</string>
+	<key>トークの識別IDを確認してください。</key>
+	<string>请检查聊天识别ID。</string>
+	<key>ニュース</key>
+	<string>新闻</string>
+	<key>バージョン</key>
+	<string>版本</string>
+	<key>バージョン（例：V1.30）</key>
+	<string>版本（例：V1.30）</string>
+	<key>バージョン（例：V1.30）または配信番号を入力してください。</key>
+	<string>请输入版本（例：V1.30）或分发编号。</string>
+	<key>ファイルが見つからないか、ファイルの構造確認に失敗しました。一覧を更新してください。</key>
+	<string>文件未找到或验证文件结构失败。请刷新列表。</string>
+	<key>ファイルを保存しました</key>
+	<string>文件已保存</string>
+	<key>ファイルを保存しました。マイ着せかえを開いて、着せかえを選択して適用できます。</key>
+	<string>文件已保存。打开“我的主题”即可选择并应用主题。</string>
+	<key>ファイルを取得して保存します。LINEへの追加・適用はこの操作では行いません。</key>
+	<string>获取并保存文件。此操作不会添加到 LINE 或在 LINE 中应用。</string>
+	<key>ファイルを確認中…</key>
+	<string>正在检查文件…</string>
+	<key>ファイルを開けませんでした</key>
+	<string>无法打开文件</string>
+	<key>フォントを読み込めませんでした。OTF/TTFファイルを確認してください。</key>
+	<string>无法加载字体。请检查 OTF/TTF 文件。</string>
+	<key>フォントを適用しました。トークを開き直してください。</key>
+	<string>字体已应用。请重新打开聊天。</string>
+	<key>フォントを選択</key>
+	<string>选择字体</string>
+	<key>プレビュー</key>
+	<string>预览</string>
+	<key>プレビューを表示できませんでした</key>
+	<string>无法显示预览</string>
+	<key>プロフィールを表示</key>
+	<string>查看个人资料</string>
+	<key>プロフィールを表示します</key>
+	<string>显示个人资料</string>
+	<key>プロフィールを開けませんでした</key>
+	<string>无法打开个人资料</string>
+	<key>プロフィールを開けませんでした。MIDと通信状態を確認し、もう一度お試しください。</key>
+	<string>无法打开个人资料。请检查 MID 和网络连接后重试。</string>
+	<key>ホーム</key>
+	<string>主页</string>
+	<key>マイ着せかえ</key>
+	<string>我的主题</string>
+	<key>マイ着せかえに追加</key>
+	<string>添加到“我的主题”</string>
+	<key>マイ着せかえを開く</key>
+	<string>打开“我的主题”</string>
+	<key>マイ着せかえを開けませんでした</key>
+	<string>无法打开“我的主题”</string>
+	<key>ミュート送信と送信取消期限はアプリ再起動後に反映されます。アプリアイコンはLINE設定から変更できます。</key>
+	<string>无声消息和撤回期限将在重启应用后生效。应用图标可在 LINE 设置中更改。</string>
+	<key>ユーザー・グループ・オープンチャットの識別IDで照合します。表示名を空にすると解除します。一覧への反映にはアプリの再起動が必要です。</key>
+	<string>通过用户、群组和 OpenChat 的识别ID进行匹配。将显示名称留空即可取消。需要重启应用才能反映到列表中。</string>
+	<key>ユーザー検索</key>
+	<string>搜索用户</string>
+	<key>ランタイム・機能診断</key>
+	<string>运行时与功能诊断</string>
+	<key>ルールはありません（＋で追加）</key>
+	<string>无规则（点击 + 添加）</string>
+	<key>ログイン方法</key>
+	<string>登录方式</string>
+	<key>ログイン方法を切り替えました</key>
+	<string>已切换登录方式</string>
+	<key>ローカルLYP機能</key>
+	<string>本地 LYP 功能</string>
+	<key>ローカル表示名</key>
+	<string>本地显示名称</string>
+	<key>ローカル表示名を設定</key>
+	<string>设置本地显示名称</string>
+	<key>ローカル設定・診断</key>
+	<string>本地设置与诊断</string>
+	<key>一覧の更新に失敗しました。前回取得した内容を表示しています。</key>
+	<string>更新列表失败。正在显示上次获取的内容。</string>
+	<key>一覧を取得できませんでした</key>
+	<string>无法获取列表</string>
+	<key>一覧を更新できませんでした</key>
+	<string>无法刷新列表</string>
+	<key>一覧を読み込み中…</key>
+	<string>正在加载列表…</string>
+	<key>不明なエラー</key>
+	<string>未知错误</string>
+	<key>保存</key>
+	<string>保存</string>
+	<key>保存完了</key>
+	<string>保存完成</string>
+	<key>保存済みファイルの場所を確認できませんでした。</key>
+	<string>无法确认已保存文件的位置。</string>
+	<key>保存済みファイルはありません</key>
+	<string>没有已保存的文件</string>
+	<key>保存済みファイル（%lu）</key>
+	<string>已保存文件（%lu）</string>
+	<key>保有</key>
+	<string>已拥有</string>
+	<key>全体の既読抑制はオフです。例外設定は保存されます</key>
+	<string>全局已读抑制已关闭。例外设置已保存</string>
+	<key>全機能の対応表</key>
+	<string>全部功能兼容表</string>
+	<key>共有メニューを表示できませんでした</key>
+	<string>无法显示共享菜单</string>
+	<key>共有・ほかのアプリで開く</key>
+	<string>共享 / 在其他应用中打开</string>
+	<key>処理を完了できませんでした。</key>
+	<string>无法完成处理。</string>
+	<key>処理中</key>
+	<string>处理中</string>
+	<key>利用期限内</key>
+	<string>有效期内</string>
+	<key>利用期限切れの記録</key>
+	<string>已过期记录</string>
+	<key>利用状況は未確認</key>
+	<string>使用情况未确认</string>
+	<key>取得できませんでした</key>
+	<string>无法获取</string>
+	<key>取消済</key>
+	<string>已撤回</string>
+	<key>名前</key>
+	<string>名称</string>
+	<key>名前のない着せかえ</key>
+	<string>未命名主题</string>
+	<key>名前は改行を含めず、256文字以内で入力してください。</key>
+	<string>请输入不含换行且在 256 个字符以内的名称。</string>
+	<key>名前を入力してください。</key>
+	<string>请输入名称。</string>
+	<key>名前を確認中…</key>
+	<string>正在检查名称…</string>
+	<key>名前・商品ID・バージョンを指定</key>
+	<string>指定名称、商品ID与版本</string>
+	<key>名前・商品ID・バージョン番号を入力してください。</key>
+	<string>请输入名称、商品ID和版本号。</string>
+	<key>名前不明</key>
+	<string>名称未知</string>
+	<key>商品ID</key>
+	<string>商品ID</string>
+	<key>商品ID: %@
+バージョン: %@
+%@
+
+LINEの保存記録です。現在の適用状態は確認していません。</key>
+	<string>商品ID: %@
+版本: %@
+%@
+
+此为 LINE 的保存记录。未确认当前的应用状态。</string>
+	<key>商品ID: %@
+バージョン: %@%@</key>
+	<string>商品ID: %@
+版本: %@%@</string>
+	<key>商品IDには半角英数字・ハイフン・アンダースコア・ピリオドを使えます。</key>
+	<string>商品ID可以使用半角英数字、连字符、下划线和句点。</string>
+	<key>商品IDは6〜128文字で入力してください。</key>
+	<string>请输入 6 到 128 个字符的商品ID。</string>
+	<key>変更はログアウト後、ログイン画面の「ログイン」長押しで行います。切り替え後はアプリの再起動が必要です。</key>
+	<string>更改需在退出登录后，长按登录界面中的“登录”进行。切换后需要重启应用。</string>
+	<key>変更後はトーク画面を開き直してください。</key>
+	<string>更改后请重新打开聊天界面。</string>
+	<key>履歴・追加機能（開発中）</key>
+	<string>历史记录与附加功能（开发中）</string>
+	<key>年齢確認をスキップ</key>
+	<string>跳过年龄验证</string>
+	<key>広告を非表示</key>
+	<string>隐藏广告</string>
+	<key>手動でファイルをダウンロード</key>
+	<string>手动下载文件</string>
+	<key>操作確認</key>
+	<string>确认操作</string>
+	<key>新着のローカル通知</key>
+	<string>新的本地通知</string>
+	<key>新着メッセージを受信しました</key>
+	<string>收到新消息</string>
+	<key>既存の別名</key>
+	<string>现有别名</string>
+	<key>既読の例外</key>
+	<string>已读例外</string>
+	<key>既読の管理</key>
+	<string>已读管理</string>
+	<key>既読を隠す</key>
+	<string>隐藏已读</string>
+	<key>既読情報を取得できませんでした。もう一度お試しください。</key>
+	<string>无法获取已读信息。请重试。</string>
+	<key>既読情報を取得中…</key>
+	<string>正在获取已读信息…</string>
+	<key>既読日時</key>
+	<string>已读时间</string>
+	<key>既読日時（範囲情報）</key>
+	<string>已读时间（范围信息）</string>
+	<key>既読日時（範囲情報）：</key>
+	<string>已读时间（范围信息）：</string>
+	<key>既読日時：2023/11/15 07:13:20</key>
+	<string>已读时间：2023/11/15 07:13:20</string>
+	<key>既読範囲を記録</key>
+	<string>记录已读范围</string>
+	<key>既読者一覧</key>
+	<string>已读成员列表</string>
+	<key>日時不明</key>
+	<string>时间未知</string>
+	<key>更新</key>
+	<string>更新</string>
+	<key>未確認</key>
+	<string>未确认</string>
+	<key>未設定</key>
+	<string>未设置</string>
+	<key>検索するMID</key>
+	<string>要搜索的MID</string>
+	<key>検索するとLINE内でプロフィールを開きます。友だち追加やメッセージ送信は行いません。</key>
+	<string>搜索将在LINE内打开个人资料。不会添加好友或发送消息。</string>
+	<key>標準で利用可能</key>
+	<string>默认可用</string>
+	<key>標準に戻す</key>
+	<string>恢复默认</string>
+	<key>標準フォント</key>
+	<string>默认字体</string>
+	<key>標準フォントに戻しました。トークを開き直してください。</key>
+	<string>已恢复为默认字体。请重新打开聊天。</string>
+	<key>正しいLINE STOREの着せかえURLを入力してください。</key>
+	<string>请输入有效的LINE STORE主题URL。</string>
+	<key>添付ファイルを受信しました</key>
+	<string>收到附件</string>
+	<key>現在利用可能なタブのみ設定できます。「ホーム」と「トーク」は非表示にできません。%@変更はアプリの再起動後に反映されます。</key>
+	<string>只能设置当前可用的标签页。“主页”和“聊天”无法隐藏。%@更改将在重启应用后生效。</string>
+	<key>画面を閉じて、もう一度お試しください。ダウンロードしたファイルは保存されています。</key>
+	<string>请关闭页面并重试。已下载的文件已保存。</string>
+	<key>着せかえ</key>
+	<string>主题</string>
+	<key>着せかえのダウンロードを有効にする</key>
+	<string>启用主题下载</string>
+	<key>着せかえのダウンロード・保存一覧</key>
+	<string>已下载与保存的主题</string>
+	<key>着せかえショップ</key>
+	<string>主题小铺</string>
+	<key>着せかえショップを開けませんでした</key>
+	<string>无法打开主题小铺</string>
+	<key>着せかえファイルをダウンロード</key>
+	<string>下载主题文件</string>
+	<key>着せかえ・スタンプGIF・MID検索なども全機能対応の対象です。未完成の項目を対応済みとは表示しません。</key>
+	<string>主题、贴图GIF、MID搜索等均在全功能支持范围内。未完成的项目不会显示为已支持。</string>
+	<key>着せかえ一覧を取得できませんでした。</key>
+	<string>无法获取主题列表。</string>
+	<key>着せかえ一覧を更新</key>
+	<string>刷新主题列表</string>
+	<key>着せかえ記録はありません</key>
+	<string>暂无主题记录</string>
+	<key>確認</key>
+	<string>确认</string>
+	<key>確認したいユーザーのMIDを1件入力してください。MIDは「u」で始まる33文字の識別子です。LINE IDとは異なります。</key>
+	<string>请输入要查询的用户的MID。MID是以“u”开头的33位标识符，不同于LINE ID。</string>
+	<key>確認日時</key>
+	<string>确认时间</string>
+	<key>確認日時は、この端末が既読情報を確認した日時です。日時を特定できない記録は「日時不明」と表示します。</key>
+	<string>确认时间是指此设备确认已读信息的时间。无法确定时间的记录将显示为“时间未知”。</string>
+	<key>確認日時：</key>
+	<string>确认时间：</string>
+	<key>確認日時：2023/11/15 07:13:30</key>
+	<string>确认时间：2023/11/15 07:13:30</string>
+	<key>種別:MID</key>
+	<string>类型: MID</string>
+	<key>種別と識別IDを確認してください。</key>
+	<string>请确认类型与标识ID。</string>
+	<key>種別は user:、chat:、group:、squareChat: のいずれかです。表示名を空にすると解除します。</key>
+	<string>类型须为 user:、chat:、group:、squareChat: 之一。留空显示名称即可解除。</string>
+	<key>端末内の別名</key>
+	<string>设备内别名</string>
+	<key>終了</key>
+	<string>结束</string>
+	<key>自分の名前</key>
+	<string>我的名字</string>
+	<key>自分を含むグループ人数。0は人数指定なし。</key>
+	<string>包含自己在内的群组人数。0为不指定人数。</string>
+	<key>表示の管理</key>
+	<string>显示管理</string>
+	<key>表示名を編集</key>
+	<string>编辑显示名称</string>
+	<key>記録はありません</key>
+	<string>暂无记录</string>
+	<key>設定</key>
+	<string>设置</string>
+	<key>診断</key>
+	<string>诊断</string>
+	<key>診断をJSONに変換できませんでした: %@</key>
+	<string>无法将诊断转换为JSON: %@</string>
+	<key>起動時に開くタブ</key>
+	<string>启动时打开的标签页</string>
+	<key>起動時のタブを固定</key>
+	<string>固定启动标签页</string>
+	<key>返信時に既読をつける</key>
+	<string>回复时标记已读</string>
+	<key>送信</key>
+	<string>发送</string>
+	<key>送信の確認</key>
+	<string>发送确认</string>
+	<key>送信先の種類を確認できません。送信しますか？</key>
+	<string>无法确认发送对象类型。是否发送？</string>
+	<key>送信取消された本文を保持</key>
+	<string>保留已撤回消息正文</string>
+	<key>送信取消延長・ミュート</key>
+	<string>延长撤回·无声消息</string>
+	<key>送信確認の最低人数</key>
+	<string>发送确认最少人数</string>
+	<key>送信確認を行う最低人数は、自分を含むグループ人数です。0は人数指定なし。通話・送信の一部の入口はまだ検証中です。</key>
+	<string>进行发送确认的最少人数为包含自己在内的群组人数。0为不指定人数。部分通话与发送入口仍在验证中。</string>
+	<key>通信がタイムアウトしました。時間をおいて、もう一度お試しください。</key>
+	<string>通信超时。请稍后再试。</string>
+	<key>通信が中止されました。</key>
+	<string>通信已中止。</string>
+	<key>通信が途中で切断されました。接続を確認して、もう一度お試しください。</key>
+	<string>通信意外中断。请检查连接后重试。</string>
+	<key>通常のiPhoneモード</key>
+	<string>标准iPhone模式</string>
+	<key>通常のiPhoneログイン</key>
+	<string>标准iPhone登录</string>
+	<key>通常通り既読をつけるトーク</key>
+	<string>正常发送已读的聊天</string>
+	<key>通知</key>
+	<string>通知</string>
+	<key>通話</key>
+	<string>通话</string>
+	<key>通話の確認</key>
+	<string>通话确认</string>
+	<key>通話を終了しますか？</key>
+	<string>是否结束通话？</string>
+	<key>通話を開始しますか？</key>
+	<string>是否发起通话？</string>
+	<key>通話終了の確認</key>
+	<string>结束通话确认</string>
+	<key>通話開始の確認</key>
+	<string>发起通话确认</string>
+	<key>閉じる</key>
+	<string>关闭</string>
+	<key>開始</key>
+	<string>开始</string>
+	<key>音声入力ボタンを非表示</key>
+	<string>隐藏语音输入按钮</string>
+</dict>
+</plist>

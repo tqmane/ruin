@@ -65,6 +65,7 @@ int main(void)
 
 #else
 
+#import "../core/Localization.h"
 #import <UIKit/UIKit.h>
 #import <objc/message.h>
 #import <objc/runtime.h>
@@ -189,7 +190,7 @@ static void RUINShowLocalIconError(UIViewController *owner, NSString *message)
     if (!owner || !owner.isViewLoaded || owner.presentedViewController) return;
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:nil
         message:message preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"OK") style:UIAlertActionStyleDefault handler:nil]];
     [owner presentViewController:alert animated:YES completion:nil];
 }
 
@@ -272,7 +273,7 @@ static BOOL RUINApplyLocalIconName(NSString *modelName, UIViewController *owner,
 {
     if (!UIApplication.sharedApplication.supportsAlternateIcons) {
         atomic_fetch_add_explicit(&gApplyFailures, 1, memory_order_relaxed);
-        RUINShowLocalIconError(owner, @"アプリアイコンを変更できませんでした。");
+        RUINShowLocalIconError(owner, RUINLocalizedString(@"アプリアイコンを変更できませんでした。"));
         return YES;
     }
 
@@ -295,7 +296,7 @@ static BOOL RUINApplyLocalIconName(NSString *modelName, UIViewController *owner,
             } else {
                 atomic_fetch_add_explicit(&gApplyFailures, 1, memory_order_relaxed);
                 if (weakController)
-                    RUINShowLocalIconError(weakController, @"アプリアイコンを変更できませんでした。");
+                    RUINShowLocalIconError(weakController, RUINLocalizedString(@"アプリアイコンを変更できませんでした。"));
             }
         });
     }];

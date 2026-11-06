@@ -1,4 +1,5 @@
 #import "NativeThemeWorkflow.h"
+#import "../core/Localization.h"
 #import "NativeThemeNavigation.h"
 #import "NativeThemeInstall.h"
 #import "NativeThemeRegistration.h"
@@ -187,10 +188,10 @@ void RUINOpenDownloadedThemes(UIViewController *owner)
     RUINInstallNativeThemeWorkflow();
     RUINOpenNativeMyThemes(owner, ^(NSError *error) {
         if (!error) return;
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"マイ着せかえを開けませんでした"
-            message:@"画面を閉じて、もう一度お試しください。ダウンロードしたファイルは保存されています。"
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:RUINLocalizedString(@"マイ着せかえを開けませんでした")
+            message:RUINLocalizedString(@"画面を閉じて、もう一度お試しください。ダウンロードしたファイルは保存されています。")
             preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:@"閉じる" style:UIAlertActionStyleCancel handler:nil]];
+        [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"閉じる") style:UIAlertActionStyleCancel handler:nil]];
         if (owner.viewIfLoaded.window && !owner.presentedViewController) [owner presentViewController:alert animated:YES completion:nil];
     });
 }

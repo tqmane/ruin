@@ -4,6 +4,7 @@
 #import "ThemeVersion.h"
 #import "ThemeStoreResolver.h"
 #import "NativeThemeWorkflow.h"
+#import "../core/Localization.h"
 
 // Main-queue state keeps an in-progress UI download visible after reopening.
 static NSNotificationName const RUINThemeUIDownloadChanged = @"app.ruin.themeui.downloadChanged";
@@ -28,7 +29,7 @@ static NSString *RUINThemeUIName(NSDictionary *record)
 {
     NSString *name = RUINThemeUIString(record[@"name"]);
     if (!name.length) name = RUINThemeUIString(record[@"productID"]);
-    if (!name.length) name = @"名前のない着せかえ";
+    if (!name.length) name = RUINLocalizedString(@"名前のない着せかえ");
     if (name.length > 256) name = [name substringWithRange:[name rangeOfComposedCharacterSequencesForRange:NSMakeRange(0, 256)]];
     return name;
 }
@@ -37,7 +38,7 @@ static NSString *RUINThemeUIVersion(NSDictionary *record)
 {
     NSString *version = RUINThemeUIString(record[@"versionString"]);
     if (!version.length) version = RUINThemeUIString(record[@"version"]);
-    return version.length ? version : @"未確認";
+    return version.length ? version : RUINLocalizedString(@"未確認");
 }
 
 static NSURL *RUINThemeUIArchiveURL(NSDictionary *record)
@@ -51,11 +52,11 @@ static NSURL *RUINThemeUIArchiveURL(NSDictionary *record)
 
 static NSString *RUINThemeUINativeStatus(NSDictionary *record)
 {
-    if (RUINThemeUIFlag(record[@"owned"])) return @"保有";
-    if (RUINThemeUIFlag(record[@"grantedByDefault"])) return @"標準で利用可能";
+    if (RUINThemeUIFlag(record[@"owned"])) return RUINLocalizedString(@"保有");
+    if (RUINThemeUIFlag(record[@"grantedByDefault"])) return RUINLocalizedString(@"標準で利用可能");
     NSDate *expiry = [record[@"validUntil"] isKindOfClass:[NSDate class]] ? record[@"validUntil"] : nil;
-    if (expiry) return expiry.timeIntervalSinceNow > 0 ? @"利用期限内" : @"利用期限切れの記録";
-    return @"利用状況は未確認";
+    if (expiry) return expiry.timeIntervalSinceNow > 0 ? RUINLocalizedString(@"利用期限内") : RUINLocalizedString(@"利用期限切れの記録");
+    return RUINLocalizedString(@"利用状況は未確認");
 }
 
 static NSError *RUINThemeUIError(NSString *message)
@@ -66,18 +67,18 @@ static NSError *RUINThemeUIError(NSString *message)
 
 static NSString *RUINThemeUIInputError(NSString *name, NSString *productID, NSString *version)
 {
-    if (!name.length) return @"名前を入力してください。";
+    if (!name.length) return RUINLocalizedString(@"名前を入力してください。");
     if (name.length > 256 || [name rangeOfCharacterFromSet:NSCharacterSet.controlCharacterSet].location != NSNotFound)
-        return @"名前は改行を含めず、256文字以内で入力してください。";
+        return RUINLocalizedString(@"名前は改行を含めず、256文字以内で入力してください。");
     if (productID.length < 6 || productID.length > 128)
-        return @"商品IDは6〜128文字で入力してください。";
+        return RUINLocalizedString(@"商品IDは6〜128文字で入力してください。");
     for (NSUInteger i = 0; i < productID.length; i++) {
         unichar c = [productID characterAtIndex:i];
         if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') ||
               (c >= 'A' && c <= 'Z') || c == '-' || c == '_' || c == '.'))
-            return @"商品IDには半角英数字・ハイフン・アンダースコア・ピリオドを使えます。";
+            return RUINLocalizedString(@"商品IDには半角英数字・ハイフン・アンダースコア・ピリオドを使えます。");
     }
-    if (!RUINThemeDownloadVersion(version)) return @"バージョン（例：V1.30）または配信番号を入力してください。";
+    if (!RUINThemeDownloadVersion(version)) return RUINLocalizedString(@"バージョン（例：V1.30）または配信番号を入力してください。");
     return nil;
 }
 
@@ -110,7 +111,7 @@ static NSString *RUINThemeUITrim(NSString *value)
     if (self) {
         _archives = @[];
         _nativeRecords = @[];
-        self.title = @"着せかえ";
+        self.title = RUINLocalizedString(@"着せかえ");
         self.hidesBottomBarWhenPushed = YES;
     }
     return self;
@@ -122,7 +123,7 @@ static NSString *RUINThemeUITrim(NSString *value)
     self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeNever;
     self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc]
         initWithBarButtonSystemItem:UIBarButtonSystemItemRefresh target:self action:@selector(reloadCatalog)];
-    self.navigationItem.rightBarButtonItem.accessibilityLabel = @"着せかえ一覧を更新";
+    self.navigationItem.rightBarButtonItem.accessibilityLabel = RUINLocalizedString(@"着せかえ一覧を更新");
     self.tableView.rowHeight = UITableViewAutomaticDimension;
     self.tableView.estimatedRowHeight = 76;
     self.refreshControl = [UIRefreshControl new];
@@ -183,7 +184,7 @@ static NSString *RUINThemeUITrim(NSString *value)
     }
     [self updateAvailability];
     if (!self.catalogAvailable) {
-        self.catalogError = RUINThemeUIError(@"このLINEバージョンでは着せかえ一覧を取得できません。");
+        self.catalogError = RUINThemeUIError(RUINLocalizedString(@"このLINEバージョンでは着せかえ一覧を取得できません。"));
         [self.refreshControl endRefreshing];
         [self reloadRows];
         return;
@@ -201,7 +202,7 @@ static NSString *RUINThemeUITrim(NSString *value)
                 if (RUINThemeUIArchiveURL(record)) [archives addObject:record];
                 else if ([record[@"sourceEntity"] isEqual:@"OwnedThemeProduct"]) [nativeRecords addObject:record];
             }
-            NSError *resultError = catalog ? nil : (error ?: RUINThemeUIError(@"着せかえ一覧を取得できませんでした。"));
+            NSError *resultError = catalog ? nil : (error ?: RUINThemeUIError(RUINLocalizedString(@"着せかえ一覧を取得できませんでした。")));
             dispatch_async(dispatch_get_main_queue(), ^{
                 typeof(self) owner = weakSelf;
                 if (!owner) return;
@@ -243,26 +244,26 @@ static NSString *RUINThemeUITrim(NSString *value)
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section
 {
-    if (section == 0) return @"ダウンロード";
-    if (section == 1) return [NSString stringWithFormat:@"保存済みファイル（%lu）", (unsigned long)self.archives.count];
-    if (section == 3) return @"着せかえショップ";
-    return [NSString stringWithFormat:@"LINEの着せかえ記録（%lu）", (unsigned long)self.nativeRecords.count];
+    if (section == 0) return RUINLocalizedString(@"ダウンロード");
+    if (section == 1) return [NSString stringWithFormat:(RUINLocalizedString(@"保存済みファイル（%lu）") ?: @"保存済みファイル（%lu）"), (unsigned long)self.archives.count];
+    if (section == 3) return RUINLocalizedString(@"着せかえショップ");
+    return [NSString stringWithFormat:(RUINLocalizedString(@"LINEの着せかえ記録（%lu）") ?: @"LINEの着せかえ記録（%lu）"), (unsigned long)self.nativeRecords.count];
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section
 {
     if (section == 3) return nil;
     if (section == 0) {
-        if (!self.downloadAvailable) return @"このLINEバージョンでは、この画面からのダウンロードを利用できません。";
-        return @"ストアURLから着せかえ情報を取得してダウンロードできます。名前・商品ID・バージョンの手入力も可能です。";
+        if (!self.downloadAvailable) return RUINLocalizedString(@"このLINEバージョンでは、この画面からのダウンロードを利用できません。");
+        return RUINLocalizedString(@"ストアURLから着せかえ情報を取得してダウンロードできます。名前・商品ID・バージョンの手入力も可能です。");
     }
     NSString *note = section == 1
-        ? @"ダウンロードした着せかえは、マイ着せかえを開くと一覧に表示されます。選択して適用できます。"
+        ? RUINLocalizedString(@"ダウンロードした着せかえは、マイ着せかえを開くと一覧に表示されます。選択して適用できます。")
         : (self.nativeCatalogAvailable
-            ? @"LINEが保存している記録です。現在の適用状態とファイルの存在は確認していません。"
-            : @"この環境ではLINEの着せかえ記録を取得できません。");
+            ? RUINLocalizedString(@"LINEが保存している記録です。現在の適用状態とファイルの存在は確認していません。")
+            : RUINLocalizedString(@"この環境ではLINEの着せかえ記録を取得できません。"));
     if (self.catalogError && self.hasCatalog)
-        note = [note stringByAppendingString:@"\n一覧の更新に失敗しました。前回取得した内容を表示しています。"];
+        note = [note stringByAppendingFormat:@"\n%@", RUINLocalizedString(@"一覧の更新に失敗しました。前回取得した内容を表示しています。")];
     return note;
 }
 
@@ -286,7 +287,7 @@ static NSString *RUINThemeUITrim(NSString *value)
     BOOL spinning = NO;
 
     if (path.section == 0 && path.row == 0) {
-        cell.textLabel.text = @"着せかえのダウンロードを有効にする";
+        cell.textLabel.text = RUINLocalizedString(@"着せかえのダウンロードを有効にする");
         UISwitch *toggle = [UISwitch new];
         toggle.on = [NSUserDefaults.standardUserDefaults boolForKey:RUINThemeShopDownloadEnabledDefaultsKey];
         toggle.enabled = self.downloadAvailable && !gThemeUIDownloading;
@@ -294,41 +295,41 @@ static NSString *RUINThemeUITrim(NSString *value)
         [toggle addTarget:self action:@selector(downloadEnabledChanged:) forControlEvents:UIControlEventValueChanged];
         cell.accessoryView = toggle;
     } else if (path.section == 0 && path.row == 1) {
-        cell.textLabel.text = @"ストアURLからダウンロード";
-        cell.detailTextLabel.text = @"ストアURLから名前・商品ID・バージョンを取得";
+        cell.textLabel.text = RUINLocalizedString(@"ストアURLからダウンロード");
+        cell.detailTextLabel.text = RUINLocalizedString(@"ストアURLから名前・商品ID・バージョンを取得");
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         cell.userInteractionEnabled = self.canDownload;
         cell.textLabel.textColor = self.canDownload ? UIColor.labelColor : UIColor.secondaryLabelColor;
         cell.selectionStyle = self.canDownload ? UITableViewCellSelectionStyleDefault : UITableViewCellSelectionStyleNone;
     } else if (path.section == 0 && path.row == 2) {
-        cell.textLabel.text = @"名前・商品ID・バージョンを指定";
-        cell.detailTextLabel.text = @"手動でファイルをダウンロード";
+        cell.textLabel.text = RUINLocalizedString(@"名前・商品ID・バージョンを指定");
+        cell.detailTextLabel.text = RUINLocalizedString(@"手動でファイルをダウンロード");
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         cell.userInteractionEnabled = self.canDownload;
         cell.textLabel.textColor = self.canDownload ? UIColor.labelColor : UIColor.secondaryLabelColor;
         cell.selectionStyle = self.canDownload ? UITableViewCellSelectionStyleDefault : UITableViewCellSelectionStyleNone;
     } else if (path.section == 0 && self.catalogError && path.row == 3 + (self.hasDownloadStatus ? 1 : 0)) {
-        cell.textLabel.text = @"一覧を更新できませんでした";
-        cell.detailTextLabel.text = @"タップして理由を確認";
+        cell.textLabel.text = RUINLocalizedString(@"一覧を更新できませんでした");
+        cell.detailTextLabel.text = RUINLocalizedString(@"タップして理由を確認");
         cell.textLabel.textColor = UIColor.systemRedColor;
         cell.selectionStyle = UITableViewCellSelectionStyleDefault;
     } else if (path.section == 0) {
         spinning = gThemeUIDownloading || self.checkingArchive;
         if (gThemeUIDownloading) {
-            cell.textLabel.text = @"ダウンロード・ファイル確認中…";
+            cell.textLabel.text = RUINLocalizedString(@"ダウンロード・ファイル確認中…");
             cell.detailTextLabel.text = gThemeUIDownloadName;
-        } else if (self.checkingArchive) cell.textLabel.text = @"ファイルを確認中…";
+        } else if (self.checkingArchive) cell.textLabel.text = RUINLocalizedString(@"ファイルを確認中…");
         else if (gThemeUIDownloadError) {
-            cell.textLabel.text = @"ダウンロードを完了できませんでした";
-            cell.detailTextLabel.text = @"タップして理由を確認";
+            cell.textLabel.text = RUINLocalizedString(@"ダウンロードを完了できませんでした");
+            cell.detailTextLabel.text = RUINLocalizedString(@"タップして理由を確認");
             cell.textLabel.textColor = UIColor.systemRedColor;
             cell.selectionStyle = UITableViewCellSelectionStyleDefault;
         } else {
-            cell.textLabel.text = @"ファイルを保存しました";
+            cell.textLabel.text = RUINLocalizedString(@"ファイルを保存しました");
             cell.detailTextLabel.text = gThemeUIDownloadName;
         }
     } else if (path.section == 3) {
-        cell.textLabel.text = @"LINEの着せかえショップを開く";
+        cell.textLabel.text = RUINLocalizedString(@"LINEの着せかえショップを開く");
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         cell.selectionStyle = UITableViewCellSelectionStyleDefault;
     } else {
@@ -336,7 +337,7 @@ static NSString *RUINThemeUITrim(NSString *value)
         if (records.count) {
             NSDictionary *record = records[path.row];
             cell.textLabel.text = RUINThemeUIName(record);
-            cell.detailTextLabel.text = [NSString stringWithFormat:@"商品ID: %@\nバージョン: %@%@",
+            cell.detailTextLabel.text = [NSString stringWithFormat:(RUINLocalizedString(@"商品ID: %@\nバージョン: %@%@") ?: @"商品ID: %@\nバージョン: %@%@"),
                 RUINThemeUIString(record[@"productID"]), RUINThemeUIVersion(record),
                 path.section == 2 ? [@" · " stringByAppendingString:RUINThemeUINativeStatus(record)] : @""];
             cell.accessoryType = path.section == 1 ? UITableViewCellAccessoryDisclosureIndicator : UITableViewCellAccessoryDetailButton;
@@ -344,19 +345,19 @@ static NSString *RUINThemeUITrim(NSString *value)
             cell.selectionStyle = cell.userInteractionEnabled ? UITableViewCellSelectionStyleDefault : UITableViewCellSelectionStyleNone;
         } else {
             spinning = self.catalogLoading;
-            if (self.catalogLoading) cell.textLabel.text = @"一覧を読み込み中…";
+            if (self.catalogLoading) cell.textLabel.text = RUINLocalizedString(@"一覧を読み込み中…");
             else if (self.catalogError) {
-                cell.textLabel.text = @"一覧を取得できませんでした";
-                cell.detailTextLabel.text = @"タップして理由を確認";
+                cell.textLabel.text = RUINLocalizedString(@"一覧を取得できませんでした");
+                cell.detailTextLabel.text = RUINLocalizedString(@"タップして理由を確認");
                 cell.selectionStyle = UITableViewCellSelectionStyleDefault;
-            } else if (path.section == 2 && !self.nativeCatalogAvailable) cell.textLabel.text = @"LINEの着せかえ記録を取得できません";
-            else cell.textLabel.text = path.section == 1 ? @"保存済みファイルはありません" : @"着せかえ記録はありません";
+            } else if (path.section == 2 && !self.nativeCatalogAvailable) cell.textLabel.text = RUINLocalizedString(@"LINEの着せかえ記録を取得できません");
+            else cell.textLabel.text = path.section == 1 ? RUINLocalizedString(@"保存済みファイルはありません") : RUINLocalizedString(@"着せかえ記録はありません");
             cell.textLabel.textColor = UIColor.secondaryLabelColor;
         }
     }
     if (spinning) {
         UIActivityIndicatorView *indicator = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
-        indicator.accessibilityLabel = @"処理中";
+        indicator.accessibilityLabel = RUINLocalizedString(@"処理中");
         [indicator startAnimating];
         cell.accessoryView = indicator;
     }
@@ -373,19 +374,19 @@ static NSString *RUINThemeUITrim(NSString *value)
 {
     if (!self.isVisible) return;
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:@"閉じる" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"閉じる") style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:alert animated:YES completion:nil];
 }
 
 - (void)showError:(NSError *)error title:(NSString *)title
 {
-    NSString *message = error.localizedDescription ?: @"処理を完了できませんでした。";
+    NSString *message = error.localizedDescription ?: RUINLocalizedString(@"処理を完了できませんでした。");
     if ([error.domain isEqualToString:NSURLErrorDomain]) {
         switch (error.code) {
-            case NSURLErrorNotConnectedToInternet: message = @"インターネットに接続されていません。接続を確認して、もう一度お試しください。"; break;
-            case NSURLErrorTimedOut: message = @"通信がタイムアウトしました。時間をおいて、もう一度お試しください。"; break;
-            case NSURLErrorNetworkConnectionLost: message = @"通信が途中で切断されました。接続を確認して、もう一度お試しください。"; break;
-            case NSURLErrorCancelled: message = @"通信が中止されました。"; break;
+            case NSURLErrorNotConnectedToInternet: message = RUINLocalizedString(@"インターネットに接続されていません。接続を確認して、もう一度お試しください。"); break;
+            case NSURLErrorTimedOut: message = RUINLocalizedString(@"通信がタイムアウトしました。時間をおいて、もう一度お試しください。"); break;
+            case NSURLErrorNetworkConnectionLost: message = RUINLocalizedString(@"通信が途中で切断されました。接続を確認して、もう一度お試しください。"); break;
+            case NSURLErrorCancelled: message = RUINLocalizedString(@"通信が中止されました。"); break;
             default: break;
         }
     }
@@ -399,14 +400,14 @@ static NSString *RUINThemeUITrim(NSString *value)
     if (path.section == 0) {
         if (path.row == 1) [self showStoreURLPrompt];
         else if (path.row == 2) [self showDownloadPrompt];
-        else if (self.catalogError && path.row == 3 + (self.hasDownloadStatus ? 1 : 0)) [self showError:self.catalogError title:@"一覧を更新できませんでした"];
+        else if (self.catalogError && path.row == 3 + (self.hasDownloadStatus ? 1 : 0)) [self showError:self.catalogError title:RUINLocalizedString(@"一覧を更新できませんでした")];
         else if (path.row == 3 && gThemeUIDownloadError && !gThemeUIDownloading && !self.checkingArchive)
-            [self showError:gThemeUIDownloadError title:@"ダウンロードを完了できませんでした"];
+            [self showError:gThemeUIDownloadError title:RUINLocalizedString(@"ダウンロードを完了できませんでした")];
         return;
     }
     NSArray<NSDictionary *> *records = path.section == 1 ? self.archives : self.nativeRecords;
     if (!records.count) {
-        if (self.catalogError && !self.catalogLoading) [self showError:self.catalogError title:@"一覧を取得できませんでした"];
+        if (self.catalogError && !self.catalogLoading) [self showError:self.catalogError title:RUINLocalizedString(@"一覧を取得できませんでした")];
         return;
     }
     NSDictionary *record = records[path.row];
@@ -421,7 +422,7 @@ static NSString *RUINThemeUITrim(NSString *value)
 
 - (void)showNativeRecord:(NSDictionary *)record
 {
-    [self showMessage:[NSString stringWithFormat:@"商品ID: %@\nバージョン: %@\n%@\n\nLINEの保存記録です。現在の適用状態は確認していません。",
+    [self showMessage:[NSString stringWithFormat:(RUINLocalizedString(@"商品ID: %@\nバージョン: %@\n%@\n\nLINEの保存記録です。現在の適用状態は確認していません。") ?: @"商品ID: %@\nバージョン: %@\n%@\n\nLINEの保存記録です。現在の適用状態は確認していません。"),
         RUINThemeUIString(record[@"productID"]), RUINThemeUIVersion(record), RUINThemeUINativeStatus(record)]
         title:RUINThemeUIName(record)];
 }
@@ -429,8 +430,8 @@ static NSString *RUINThemeUITrim(NSString *value)
 - (void)showStoreURLPrompt
 {
     if (!self.canDownload) return;
-    UIAlertController *prompt = [UIAlertController alertControllerWithTitle:@"ストアURLからダウンロード"
-        message:@"LINE STOREの着せかえURLを入力してください。" preferredStyle:UIAlertControllerStyleAlert];
+    UIAlertController *prompt = [UIAlertController alertControllerWithTitle:RUINLocalizedString(@"ストアURLからダウンロード")
+        message:RUINLocalizedString(@"LINE STOREの着せかえURLを入力してください。") preferredStyle:UIAlertControllerStyleAlert];
     [prompt addTextFieldWithConfigurationHandler:^(UITextField *field) {
         field.placeholder = @"https://store.line.me/themeshop/product/…";
         field.keyboardType = UIKeyboardTypeURL;
@@ -438,25 +439,25 @@ static NSString *RUINThemeUITrim(NSString *value)
         field.autocapitalizationType = UITextAutocapitalizationTypeNone;
     }];
     __weak UIAlertController *weakPrompt = prompt;
-    [prompt addAction:[UIAlertAction actionWithTitle:@"キャンセル" style:UIAlertActionStyleCancel handler:nil]];
-    UIAlertAction *download = [UIAlertAction actionWithTitle:@"ダウンロード" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+    [prompt addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"キャンセル") style:UIAlertActionStyleCancel handler:nil]];
+    UIAlertAction *download = [UIAlertAction actionWithTitle:RUINLocalizedString(@"ダウンロード") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
         NSString *URLText = RUINThemeUITrim(weakPrompt.textFields.firstObject.text);
         if (!RUINValidatedThemeStoreURL(URLText)) {
-            [self showMessage:@"正しいLINE STOREの着せかえURLを入力してください。" title:@"ダウンロードを開始できませんでした"];
+            [self showMessage:RUINLocalizedString(@"正しいLINE STOREの着せかえURLを入力してください。") title:RUINLocalizedString(@"ダウンロードを開始できませんでした")];
             return;
         }
         gThemeUIDownloading = YES;
         gThemeUIDownloadSaved = NO;
         gThemeUIDownloadError = nil;
-        gThemeUIDownloadName = @"ストア情報を取得中…";
+        gThemeUIDownloadName = RUINLocalizedString(@"ストア情報を取得中…");
         [NSNotificationCenter.defaultCenter postNotificationName:RUINThemeUIDownloadChanged object:nil];
         RUINResolveThemeStoreURL(URLText, ^(NSDictionary<NSString *, NSString *> *theme, NSError *error) {
             dispatch_async(dispatch_get_main_queue(), ^{
                 gThemeUIDownloading = NO;
                 if (error || !theme) {
-                    gThemeUIDownloadError = RUINThemeUIError(@"ストア情報を取得できませんでした。URLと通信状況を確認してください。");
+                    gThemeUIDownloadError = RUINThemeUIError(RUINLocalizedString(@"ストア情報を取得できませんでした。URLと通信状況を確認してください。"));
                     [NSNotificationCenter.defaultCenter postNotificationName:RUINThemeUIDownloadChanged object:nil];
-                    [self showError:gThemeUIDownloadError title:@"ダウンロードを開始できませんでした"];
+                    [self showError:gThemeUIDownloadError title:RUINLocalizedString(@"ダウンロードを開始できませんでした")];
                 } else [self startDownloadWithName:theme[@"name"] productID:theme[@"productID"] version:theme[@"version"]];
             });
         });
@@ -473,9 +474,9 @@ static NSString *RUINThemeUITrim(NSString *value)
 - (void)showDownloadPrompt
 {
     if (!self.canDownload) return;
-    UIAlertController *prompt = [UIAlertController alertControllerWithTitle:@"着せかえファイルをダウンロード"
-        message:@"名前・商品ID・バージョン番号を入力してください。" preferredStyle:UIAlertControllerStyleAlert];
-    NSArray<NSString *> *placeholders = @[@"名前", @"商品ID", @"バージョン（例：V1.30）"];
+    UIAlertController *prompt = [UIAlertController alertControllerWithTitle:RUINLocalizedString(@"着せかえファイルをダウンロード")
+        message:RUINLocalizedString(@"名前・商品ID・バージョン番号を入力してください。") preferredStyle:UIAlertControllerStyleAlert];
+    NSArray<NSString *> *placeholders = @[RUINLocalizedString(@"名前"), RUINLocalizedString(@"商品ID"), RUINLocalizedString(@"バージョン（例：V1.30）")];
     for (NSUInteger i = 0; i < placeholders.count; i++) {
         [prompt addTextFieldWithConfigurationHandler:^(UITextField *field) {
             field.placeholder = placeholders[i];
@@ -487,10 +488,10 @@ static NSString *RUINThemeUITrim(NSString *value)
             [field addTarget:self action:@selector(downloadFieldsChanged:) forControlEvents:UIControlEventEditingChanged];
         }];
     }
-    [prompt addAction:[UIAlertAction actionWithTitle:@"キャンセル" style:UIAlertActionStyleCancel handler:nil]];
+    [prompt addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"キャンセル") style:UIAlertActionStyleCancel handler:nil]];
     __weak typeof(self) weakSelf = self;
     __weak UIAlertController *weakPrompt = prompt;
-    UIAlertAction *download = [UIAlertAction actionWithTitle:@"ダウンロード" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+    UIAlertAction *download = [UIAlertAction actionWithTitle:RUINLocalizedString(@"ダウンロード") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
         UIAlertController *active = weakPrompt;
         if (active.textFields.count != 3) return;
         [weakSelf startDownloadWithName:RUINThemeUITrim(active.textFields[0].text)
@@ -509,7 +510,7 @@ static NSString *RUINThemeUITrim(NSString *value)
     if (fields.count != 3) return;
     NSString *error = RUINThemeUIInputError(RUINThemeUITrim(fields[0].text), RUINThemeUITrim(fields[1].text), RUINThemeUITrim(fields[2].text));
     self.downloadSubmitAction.enabled = !error && self.canDownload;
-    self.downloadPrompt.message = error ?: @"ファイルを取得して保存します。LINEへの追加・適用はこの操作では行いません。";
+    self.downloadPrompt.message = error ?: RUINLocalizedString(@"ファイルを取得して保存します。LINEへの追加・適用はこの操作では行いません。");
 }
 
 - (void)startDownloadWithName:(NSString *)name productID:(NSString *)productID version:(NSString *)version
@@ -517,7 +518,7 @@ static NSString *RUINThemeUITrim(NSString *value)
     [self updateAvailability];
     NSString *inputError = RUINThemeUIInputError(name, productID, version);
     if (!self.canDownload || inputError) {
-        [self showMessage:inputError ?: @"ダウンロード設定と現在の処理状況を確認してください。" title:@"ダウンロードを開始できませんでした"];
+        [self showMessage:inputError ?: RUINLocalizedString(@"ダウンロード設定と現在の処理状況を確認してください。") title:RUINLocalizedString(@"ダウンロードを開始できませんでした")];
         return;
     }
     gThemeUIDownloading = YES;
@@ -530,18 +531,18 @@ static NSString *RUINThemeUITrim(NSString *value)
         dispatch_async(dispatch_get_main_queue(), ^{
             gThemeUIDownloading = NO;
             BOOL localArchive = packageURL.isFileURL && [packageURL.pathExtension.lowercaseString isEqualToString:@"linetheme"];
-            gThemeUIDownloadError = error ?: (localArchive ? nil : RUINThemeUIError(@"保存済みファイルの場所を確認できませんでした。"));
+            gThemeUIDownloadError = error ?: (localArchive ? nil : RUINThemeUIError(RUINLocalizedString(@"保存済みファイルの場所を確認できませんでした。")));
             gThemeUIDownloadSaved = !gThemeUIDownloadError;
             [NSNotificationCenter.defaultCenter postNotificationName:RUINThemeUIDownloadChanged object:nil userInfo:@{@"finished": @YES}];
-            if (gThemeUIDownloadError) [weakSelf showError:gThemeUIDownloadError title:@"ダウンロードを完了できませんでした"];
+            if (gThemeUIDownloadError) [weakSelf showError:gThemeUIDownloadError title:RUINLocalizedString(@"ダウンロードを完了できませんでした")];
             else if (weakSelf.isVisible) {
-                UIAlertController *saved = [UIAlertController alertControllerWithTitle:@"保存完了"
-                    message:@"ファイルを保存しました。マイ着せかえを開いて、着せかえを選択して適用できます。"
+                UIAlertController *saved = [UIAlertController alertControllerWithTitle:RUINLocalizedString(@"保存完了")
+                    message:RUINLocalizedString(@"ファイルを保存しました。マイ着せかえを開いて、着せかえを選択して適用できます。")
                     preferredStyle:UIAlertControllerStyleAlert];
-                [saved addAction:[UIAlertAction actionWithTitle:@"マイ着せかえを開く" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+                [saved addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"マイ着せかえを開く") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
                     RUINOpenDownloadedThemes(weakSelf);
                 }]];
-                [saved addAction:[UIAlertAction actionWithTitle:@"閉じる" style:UIAlertActionStyleCancel handler:nil]];
+                [saved addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"閉じる") style:UIAlertActionStyleCancel handler:nil]];
                 [weakSelf presentViewController:saved animated:YES completion:nil];
             }
         });
@@ -560,19 +561,19 @@ static NSString *RUINThemeUITrim(NSString *value)
     if (!RUINThemeUIArchiveURL(record)) return;
     CGRect rect = [self.tableView rectForRowAtIndexPath:path];
     UIAlertController *menu = [UIAlertController alertControllerWithTitle:RUINThemeUIName(record)
-        message:@"LINEのマイ着せかえに追加すると、選択して適用できます。"
+        message:RUINLocalizedString(@"LINEのマイ着せかえに追加すると、選択して適用できます。")
         preferredStyle:UIAlertControllerStyleActionSheet];
     __weak typeof(self) weakSelf = self;
-    [menu addAction:[UIAlertAction actionWithTitle:@"マイ着せかえに追加" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+    [menu addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"マイ着せかえに追加") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
         RUINOpenDownloadedThemes(weakSelf);
     }]];
-    [menu addAction:[UIAlertAction actionWithTitle:@"プレビュー" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+    [menu addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"プレビュー") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
         [weakSelf openArchive:record preview:YES anchorRect:rect];
     }]];
-    [menu addAction:[UIAlertAction actionWithTitle:@"共有・ほかのアプリで開く" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+    [menu addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"共有・ほかのアプリで開く") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
         [weakSelf openArchive:record preview:NO anchorRect:rect];
     }]];
-    [menu addAction:[UIAlertAction actionWithTitle:@"キャンセル" style:UIAlertActionStyleCancel handler:nil]];
+    [menu addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"キャンセル") style:UIAlertActionStyleCancel handler:nil]];
     menu.popoverPresentationController.sourceView = self.tableView;
     menu.popoverPresentationController.sourceRect = [self menuRect:rect];
     [self presentViewController:menu animated:YES completion:nil];
@@ -594,14 +595,14 @@ static NSString *RUINThemeUITrim(NSString *value)
                 NSURL *url = RUINThemeUIArchiveURL(candidate);
                 if (url && [url.path isEqualToString:requestedURL.path]) { verifiedURL = url; break; }
             }
-            NSError *resultError = verifiedURL ? nil : (error ?: RUINThemeUIError(@"ファイルが見つからないか、ファイルの構造確認に失敗しました。一覧を更新してください。"));
+            NSError *resultError = verifiedURL ? nil : (error ?: RUINThemeUIError(RUINLocalizedString(@"ファイルが見つからないか、ファイルの構造確認に失敗しました。一覧を更新してください。")));
             dispatch_async(dispatch_get_main_queue(), ^{
                 typeof(self) owner = weakSelf;
                 if (!owner) return;
                 owner.checkingArchive = NO;
                 [owner reloadRows];
                 if (!owner.isVisible) return;
-                if (resultError) { [owner showError:resultError title:@"ファイルを開けませんでした"]; return; }
+                if (resultError) { [owner showError:resultError title:RUINLocalizedString(@"ファイルを開けませんでした")]; return; }
                 UIDocumentInteractionController *document = [UIDocumentInteractionController interactionControllerWithURL:verifiedURL];
                 document.delegate = owner;
                 document.UTI = @"jp.naver.talk.theme-package";
@@ -609,9 +610,9 @@ static NSString *RUINThemeUITrim(NSString *value)
                 BOOL presented = preview ? [document presentPreviewAnimated:YES]
                     : [document presentOptionsMenuFromRect:[owner menuRect:rect] inView:owner.tableView animated:YES];
                 if (!presented) [owner showMessage:preview
-                    ? @"このファイルのプレビューには対応していません。共有メニューからファイルを操作できます。"
-                    : @"このファイルで利用できる共有先が見つかりませんでした。"
-                    title:preview ? @"プレビューを表示できませんでした" : @"共有メニューを表示できませんでした"];
+                    ? RUINLocalizedString(@"このファイルのプレビューには対応していません。共有メニューからファイルを操作できます。")
+                    : RUINLocalizedString(@"このファイルで利用できる共有先が見つかりませんでした。")
+                    title:preview ? RUINLocalizedString(@"プレビューを表示できませんでした") : RUINLocalizedString(@"共有メニューを表示できませんでした")];
             });
         }
     });

@@ -2,6 +2,7 @@
 
 #import "ThemeStoreWeb.h"
 #import "NativeThemeWorkflow.h"
+#import "../core/Localization.h"
 
 #import "ThemeFeatures.h"
 #import "ThemeStoreResolver.h"
@@ -15,10 +16,10 @@
 
 static NSString * const RUINThemeStoreWebClassName = @"_TtC4LIFF21ChatAppViewController";
 static NSString * const RUINThemeStoreWebHandlerName = @"ruinThemeStoreWebDownloadV1";
-static NSString * const RUINThemeStoreWebSavedMessage = @"ファイルを保存しました。マイ着せかえを開いて、着せかえを選択して適用できます。";
-static NSString * const RUINThemeStoreWebSaveLocationError = @"保存済みファイルの場所を確認できませんでした。";
-static NSString * const RUINThemeStoreWebResolverError = @"ストア情報を取得できませんでした。URLと通信状況を確認してください。";
-static NSString * const RUINThemeStoreWebGenericError = @"処理を完了できませんでした。";
+static NSString *RUINThemeStoreWebSavedMessage(void) { return RUINLocalizedString(@"ファイルを保存しました。マイ着せかえを開いて、着せかえを選択して適用できます。"); }
+static NSString *RUINThemeStoreWebSaveLocationError(void) { return RUINLocalizedString(@"保存済みファイルの場所を確認できませんでした。"); }
+static NSString *RUINThemeStoreWebResolverError(void) { return RUINLocalizedString(@"ストア情報を取得できませんでした。URLと通信状況を確認してください。"); }
+static NSString *RUINThemeStoreWebGenericError(void) { return RUINLocalizedString(@"処理を完了できませんでした。"); }
 
 enum {
     RUINThemeStoreWebHookPending = 0,
@@ -51,6 +52,7 @@ static NSString *RUINThemeStoreWebJavaScript(BOOL enabled, BOOL announceReady)
         "  const stateKey = \"__ruinThemeStoreWebV1\";\n"
         "  const requestedEnabled = __RUIN_ENABLED__;\n"
         "  const announceReady = __RUIN_READY__;\n"
+        "  const downloadLabel = __RUIN_DOWNLOAD_LABEL__;\n"
         "  const validUUID = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;\n"
         "  const allowedHost = host => String(host || \"\").toLowerCase() === \"themeshop.line.me\";\n"
         "  const allowedURL = u => !!u && u.protocol === \"https:\" && !u.username && !u.password && (!u.port || u.port === \"443\") && allowedHost(u.hostname);\n"
@@ -73,7 +75,7 @@ static NSString *RUINThemeStoreWebJavaScript(BOOL enabled, BOOL announceReady)
         "  let queued = false;\n"
         "  const snapshotFor = el => original.get(el);\n"
         "  const currentLabel = el => el instanceof HTMLInputElement ? el.value : (el.innerText || el.textContent || \"\");\n"
-        "  const controlLabel = el => { const saved = snapshotFor(el); const current = currentLabel(el).replace(/\\s+/g, \" \").trim(); return saved && (current === \"ダウンロード\" || !current) ? saved.label : current; };\n"
+        "  const controlLabel = el => { const saved = snapshotFor(el); const current = currentLabel(el).replace(/\\s+/g, \" \").trim(); return saved && (current === downloadLabel || !current) ? saved.label : current; };\n"
         "  const visible = el => { if (!el.isConnected || el.disabled || el.getAttribute(\"aria-disabled\") === \"true\") return false; const r = el.getBoundingClientRect(); if (!r.width || !r.height || r.bottom <= 0 || r.top >= innerHeight || r.right <= 0 || r.left >= innerWidth) return false; const s = getComputedStyle(el); return s.display !== \"none\" && s.visibility !== \"hidden\" && s.opacity !== \"0\"; };\n"
         "  const isRecommendation = el => { for (let n = el, i = 0; n && i < 9; n = n.parentElement, i++) { const marker = [n.id, n.className && String(n.className), n.getAttribute(\"aria-label\"), n.getAttribute(\"data-testid\"), n.getAttribute(\"data-section\")].join(\" \").toLowerCase(); if (/(recommend|related|suggest|ranking|carousel|swiper|similar|おすすめ|レコメンド|ランキング)/i.test(marker)) return true; if (n === document.body) break; } return false; };\n"
         "  const isProductCard = el => { for (let n = el, i = 0; n && i < 9; n = n.parentElement, i++) { const marker = [n.id, n.className && String(n.className), n.getAttribute(\"data-testid\")].join(\" \").toLowerCase(); if ((n.matches && n.matches(\"li,[role='listitem']\")) || /(product[-_ ]?(card|item|tile)|item[-_ ]?card)/i.test(marker)) return true; if (n === document.body) break; } return false; };\n"
@@ -81,10 +83,10 @@ static NSString *RUINThemeStoreWebJavaScript(BOOL enabled, BOOL announceReady)
         "  const controls = () => Array.from(document.querySelectorAll(\"button,a,[role='button'],input[type='button'],input[type='submit']\"));\n"
         "  const chooseControl = pid => { const candidates = []; for (const el of controls()) { if (!visible(el) || !isPurchaseLabel(controlLabel(el)) || isRecommendation(el)) continue; const ids = explicitProductIDs(el); if (ids.some(id => id !== pid)) continue; const strong = ids.includes(pid); if (!strong && isProductCard(el)) continue; candidates.push({el, strong}); } const strong = candidates.filter(item => item.strong); if (strong.length === 1) return strong[0].el; return candidates.length === 1 ? candidates[0].el : null; };\n"
         "  const captureControl = el => { if (original.has(el)) { const saved = original.get(el); if (el instanceof HTMLInputElement || saved.nodes.every(item => el.contains(item.node))) return saved; original.delete(el); const index = changed.indexOf(el); if (index >= 0) changed.splice(index, 1); } if (el instanceof HTMLInputElement) { const saved = {label: el.value, value: el.value, nodes: null}; original.set(el, saved); changed.push(el); return saved; } const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); const nodes = []; while (walker.nextNode()) { const node = walker.currentNode; if (node.nodeValue.trim()) nodes.push({node, value: node.nodeValue}); } if (!nodes.length) return null; const saved = {label: el.innerText || nodes.map(item => item.value).join(\"\"), nodes}; original.set(el, saved); changed.push(el); return saved; };\n"
-        "  const restoreControl = el => { const saved = original.get(el); if (!saved) return; if (el instanceof HTMLInputElement) { if (el.value === \"ダウンロード\") el.value = saved.value; } else if (saved.nodes && el.isConnected && saved.nodes.every(item => el.contains(item.node) && (item.node.nodeValue === \"ダウンロード\" || item.node.nodeValue === \"\"))) { for (const item of saved.nodes) item.node.nodeValue = item.value; } original.delete(el); };\n"
+        "  const restoreControl = el => { const saved = original.get(el); if (!saved) return; if (el instanceof HTMLInputElement) { if (el.value === downloadLabel) el.value = saved.value; } else if (saved.nodes && el.isConnected && saved.nodes.every(item => el.contains(item.node) && (item.node.nodeValue === downloadLabel || item.node.nodeValue === \"\"))) { for (const item of saved.nodes) item.node.nodeValue = item.value; } original.delete(el); };\n"
         "  const restoreAll = () => { for (const el of changed.splice(0)) restoreControl(el); activeControl = null; activeProductID = null; };\n"
-        "  const setButtonLabel = el => { const saved = captureControl(el); if (!saved) return false; if (el instanceof HTMLInputElement) { if (el.value !== \"ダウンロード\") el.value = \"ダウンロード\"; } else { saved.nodes.forEach((item, index) => { const value = index === 0 ? \"ダウンロード\" : \"\"; if (item.node.nodeValue !== value) item.node.nodeValue = value; }); } return true; };\n"
-        "  const refresh = () => { if (!enabled || !nativeHandler()) { restoreAll(); return; } const pid = selectedProductID(); const target = pid && chooseControl(pid); if (!target) { restoreAll(); return; } for (const el of changed.slice()) if (el !== target) { restoreControl(el); const index = changed.indexOf(el); if (index >= 0) changed.splice(index, 1); } if (activeControl !== target || activeProductID !== pid || !original.has(target) || currentLabel(target).replace(/\\s+/g, \" \").trim() !== \"ダウンロード\") { if (!setButtonLabel(target)) { restoreAll(); return; } } activeControl = target; activeProductID = pid; };\n"
+        "  const setButtonLabel = el => { const saved = captureControl(el); if (!saved) return false; if (el instanceof HTMLInputElement) { if (el.value !== downloadLabel) el.value = downloadLabel; } else { saved.nodes.forEach((item, index) => { const value = index === 0 ? downloadLabel : \"\"; if (item.node.nodeValue !== value) item.node.nodeValue = value; }); } return true; };\n"
+        "  const refresh = () => { if (!enabled || !nativeHandler()) { restoreAll(); return; } const pid = selectedProductID(); const target = pid && chooseControl(pid); if (!target) { restoreAll(); return; } for (const el of changed.slice()) if (el !== target) { restoreControl(el); const index = changed.indexOf(el); if (index >= 0) changed.splice(index, 1); } if (activeControl !== target || activeProductID !== pid || !original.has(target) || currentLabel(target).replace(/\\s+/g, \" \").trim() !== downloadLabel) { if (!setButtonLabel(target)) { restoreAll(); return; } } activeControl = target; activeProductID = pid; };\n"
         "  const schedule = () => { if (queued) return; queued = true; setTimeout(() => { queued = false; refresh(); }, 0); };\n"
         "  window.addEventListener(\"hashchange\", schedule);\n"
         "  document.addEventListener(\"scroll\", schedule, true);\n"
@@ -98,9 +100,16 @@ static NSString *RUINThemeStoreWebJavaScript(BOOL enabled, BOOL announceReady)
         "  if (announceReady && nativeAvailable) nativeHandler().postMessage({type:\"pageReady\"});\n"
         "})()\n";
 
+    NSString *downloadLabel = RUINLocalizedString(@"ダウンロード");
+    NSData *downloadLabelData = [NSJSONSerialization dataWithJSONObject:downloadLabel
+        options:NSJSONWritingFragmentsAllowed error:NULL];
+    NSString *downloadLabelJSON = downloadLabelData
+        ? [[NSString alloc] initWithData:downloadLabelData encoding:NSUTF8StringEncoding] : nil;
+    downloadLabelJSON = downloadLabelJSON ?: @"\"\"";
     NSString *result = [source stringByReplacingOccurrencesOfString:@"__RUIN_HANDLER__" withString:RUINThemeStoreWebHandlerName];
     result = [result stringByReplacingOccurrencesOfString:@"__RUIN_ENABLED__" withString:enabled ? @"true" : @"false"];
-    return [result stringByReplacingOccurrencesOfString:@"__RUIN_READY__" withString:announceReady ? @"true" : @"false"];
+    result = [result stringByReplacingOccurrencesOfString:@"__RUIN_READY__" withString:announceReady ? @"true" : @"false"];
+    return [result stringByReplacingOccurrencesOfString:@"__RUIN_DOWNLOAD_LABEL__" withString:downloadLabelJSON];
 }
 
 static BOOL RUINThemeStoreWebIsUUID(NSString *value)
@@ -278,32 +287,32 @@ static NSString *RUINThemeStoreWebFailureMessage(NSError *error)
 {
     if ([error.domain isEqualToString:NSURLErrorDomain]) {
         switch (error.code) {
-            case NSURLErrorNotConnectedToInternet: return @"インターネットに接続されていません。接続を確認して、もう一度お試しください。";
-            case NSURLErrorTimedOut: return @"通信がタイムアウトしました。時間をおいて、もう一度お試しください。";
-            case NSURLErrorNetworkConnectionLost: return @"通信が途中で切断されました。接続を確認して、もう一度お試しください。";
-            case NSURLErrorCancelled: return @"通信が中止されました。";
-            default: return RUINThemeStoreWebGenericError;
+            case NSURLErrorNotConnectedToInternet: return RUINLocalizedString(@"インターネットに接続されていません。接続を確認して、もう一度お試しください。");
+            case NSURLErrorTimedOut: return RUINLocalizedString(@"通信がタイムアウトしました。時間をおいて、もう一度お試しください。");
+            case NSURLErrorNetworkConnectionLost: return RUINLocalizedString(@"通信が途中で切断されました。接続を確認して、もう一度お試しください。");
+            case NSURLErrorCancelled: return RUINLocalizedString(@"通信が中止されました。");
+            default: return RUINThemeStoreWebGenericError();
         }
     }
-    if ([error.domain isEqualToString:RUINThemeStoreResolverErrorDomain]) return RUINThemeStoreWebResolverError;
+    if ([error.domain isEqualToString:RUINThemeStoreResolverErrorDomain]) return RUINThemeStoreWebResolverError();
     id description = error.userInfo[NSLocalizedDescriptionKey];
-    if (![description isKindOfClass:NSString.class]) return RUINThemeStoreWebGenericError;
-    if ([description isEqualToString:RUINThemeStoreWebSaveLocationError] ||
-        [description isEqualToString:RUINThemeStoreWebResolverError] ||
-        [description isEqualToString:RUINThemeStoreWebGenericError]) return description;
-    return RUINThemeStoreWebGenericError;
+    if (![description isKindOfClass:NSString.class]) return RUINThemeStoreWebGenericError();
+    if ([description isEqualToString:RUINThemeStoreWebSaveLocationError()] ||
+        [description isEqualToString:RUINThemeStoreWebResolverError()] ||
+        [description isEqualToString:RUINThemeStoreWebGenericError()]) return description;
+    return RUINThemeStoreWebGenericError();
 }
 
 static void RUINThemeStoreWebShowResult(UIViewController *controller, NSError *error)
 {
     if (!controller || !controller.viewIfLoaded.window) return;
-    NSString *title = error ? @"ダウンロードを完了できませんでした" : @"保存完了";
-    NSString *message = error ? RUINThemeStoreWebFailureMessage(error) : RUINThemeStoreWebSavedMessage;
+    NSString *title = error ? RUINLocalizedString(@"ダウンロードを完了できませんでした") : RUINLocalizedString(@"保存完了");
+    NSString *message = error ? RUINThemeStoreWebFailureMessage(error) : RUINThemeStoreWebSavedMessage();
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
-    if (!error) [alert addAction:[UIAlertAction actionWithTitle:@"マイ着せかえを開く" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+    if (!error) [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"マイ着せかえを開く") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
         RUINOpenDownloadedThemes(controller);
     }]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"閉じる" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"閉じる") style:UIAlertActionStyleCancel handler:nil]];
     UIViewController *presenter = controller;
     while (presenter.presentedViewController && !presenter.presentedViewController.isBeingDismissed) presenter = presenter.presentedViewController;
     if (!presenter.presentedViewController && presenter.viewIfLoaded.window) [presenter presentViewController:alert animated:YES completion:nil];
@@ -318,7 +327,7 @@ static void RUINThemeStoreWebFinishDownload(UIViewController *controller, NSErro
             [NSFileManager.defaultManager fileExistsAtPath:packageURL.path];
         if (!isSavedArchive) {
             atomic_fetch_add(&gRUINThemeStoreWebDownloadsFailed, 1);
-            RUINThemeStoreWebShowResult(controller, error ?: RUINThemeStoreWebError(RUINThemeStoreWebSaveLocationError));
+            RUINThemeStoreWebShowResult(controller, error ?: RUINThemeStoreWebError(RUINThemeStoreWebSaveLocationError()));
             return;
         }
         atomic_fetch_add(&gRUINThemeStoreWebDownloadsSucceeded, 1);
@@ -356,14 +365,14 @@ static void RUINThemeStoreWebStartDownload(RUINThemeStoreWebState *state, NSStri
     __weak UIViewController *weakController = controller;
     NSString *URLText = [NSString stringWithFormat:@"https://store.line.me/themeshop/product/%@/ja", normalizedID];
     if (!RUINValidatedThemeStoreURL(URLText)) {
-        RUINThemeStoreWebFinishDownload(controller, RUINThemeStoreWebError(RUINThemeStoreWebResolverError), nil);
+        RUINThemeStoreWebFinishDownload(controller, RUINThemeStoreWebError(RUINThemeStoreWebResolverError()), nil);
         return;
     }
     RUINResolveThemeStoreURL(URLText, ^(NSDictionary<NSString *,NSString *> *theme, NSError *error) {
         NSString *resolvedID = RUINThemeStoreWebNormalizedUUID(theme[@"productID"] ?: @"");
         if (error || !theme || ![resolvedID isEqualToString:normalizedID] ||
             ![theme[@"name"] isKindOfClass:NSString.class] || ![theme[@"version"] isKindOfClass:NSString.class]) {
-            RUINThemeStoreWebFinishDownload(weakController, error ?: RUINThemeStoreWebError(RUINThemeStoreWebResolverError), nil);
+            RUINThemeStoreWebFinishDownload(weakController, error ?: RUINThemeStoreWebError(RUINThemeStoreWebResolverError()), nil);
             return;
         }
         RUINDownloadThemeByID(theme[@"name"], resolvedID, theme[@"version"], ^(NSURL *packageURL, NSError *downloadError) {

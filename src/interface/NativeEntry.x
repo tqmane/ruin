@@ -3,6 +3,7 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 #import "Features.h"
+#import "Localization.h"
 #import "SecondaryLogin.h"
 
 extern void RUINOpenSettingsInLINE(UIViewController *owner);
@@ -15,6 +16,19 @@ static char entryFooterKey;
 static char homeItemKey;
 static BOOL homeHookInstalled, homeEntryAvailable;
 static BOOL friendHomeHookInstalled;
+
+@interface RUINSettingsFooterView : UIView
+@property (nonatomic, strong) UIButton *entryButton;
+@property (nonatomic) CGFloat entryTop;
+@end
+
+@implementation RUINSettingsFooterView
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    CGFloat width = CGRectGetWidth(self.bounds);
+    self.entryButton.frame = CGRectMake(16, self.entryTop, MAX(0, width - 32), 60);
+}
+@end
 
 static UITableView *RUINFindSettingsTable(UIView *view) {
     if ([view isKindOfClass:UITableView.class]) return (UITableView *)view;
@@ -33,32 +47,55 @@ static void RUINAttachSettingsEntry(UIViewController *controller) {
 
     // Keep LINE's existing footer and datasource intact; append one native row.
     UIView *oldFooter = table.tableFooterView;
-    CGFloat oldHeight = oldFooter ? CGRectGetHeight(oldFooter.frame) : 0;
+    CGRect oldFooterFrame = oldFooter ? oldFooter.frame : CGRectZero;
+    CGFloat oldHeight = CGRectGetHeight(oldFooterFrame);
     CGFloat width = CGRectGetWidth(table.bounds);
     table.tableFooterView = nil;
-    UIView *footer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, width, oldHeight + 80)];
+    RUINSettingsFooterView *footer = [[RUINSettingsFooterView alloc] initWithFrame:CGRectMake(0, 0, width, oldHeight + 80)];
     footer.autoresizingMask = UIViewAutoresizingFlexibleWidth;
     if (oldFooter) {
-        oldFooter.frame = CGRectMake(0, 0, width, oldHeight);
-        oldFooter.autoresizingMask |= UIViewAutoresizingFlexibleWidth;
+        oldFooter.frame = oldFooterFrame;
         [footer addSubview:oldFooter];
     }
-    UIButtonConfiguration *configuration = UIButtonConfiguration.plainButtonConfiguration;
-    configuration.title = @"RUIN";
-    configuration.subtitle = @"ローカル設定・診断";
-    configuration.image = [UIImage systemImageNamed:@"chevron.right"];
-    configuration.imagePlacement = NSDirectionalRectEdgeTrailing;
-    configuration.imagePadding = 12;
-    configuration.baseForegroundColor = UIColor.labelColor;
-    configuration.background.backgroundColor = UIColor.secondarySystemGroupedBackgroundColor;
-    configuration.background.cornerRadius = 12;
-    configuration.contentInsets = NSDirectionalEdgeInsetsMake(10, 16, 10, 16);
-    UIButton *entry = [UIButton buttonWithConfiguration:configuration primaryAction:nil];
-    entry.frame = CGRectMake(16, oldHeight + 8, MAX(0, width - 32), 60);
-    entry.autoresizingMask = UIViewAutoresizingFlexibleWidth;
-    entry.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeading;
+    footer.entryTop = oldHeight + 8;
+    UIButton *entry = [UIButton buttonWithType:UIButtonTypeCustom];
+    footer.entryButton = entry;
+    entry.backgroundColor = UIColor.secondarySystemGroupedBackgroundColor;
+    entry.layer.cornerRadius = 12;
+    entry.clipsToBounds = YES;
     entry.accessibilityIdentifier = @"ruin.line.settings.entry";
-    entry.accessibilityLabel = @"RUINの設定と診断";
+    entry.accessibilityLabel = RUINLocalizedString(@"RUINの設定と診断");
+    entry.isAccessibilityElement = YES;
+    UILabel *title = [UILabel new];
+    title.text = @"RUIN";
+    title.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
+    title.adjustsFontForContentSizeCategory = YES;
+    title.textColor = UIColor.labelColor;
+    title.isAccessibilityElement = NO;
+    UILabel *subtitle = [UILabel new];
+    subtitle.text = RUINLocalizedString(@"ローカル設定・診断");
+    subtitle.font = [UIFont preferredFontForTextStyle:UIFontTextStyleSubheadline];
+    subtitle.adjustsFontForContentSizeCategory = YES;
+    subtitle.textColor = UIColor.secondaryLabelColor;
+    subtitle.isAccessibilityElement = NO;
+    UIStackView *labels = [[UIStackView alloc] initWithArrangedSubviews:@[title, subtitle]];
+    labels.axis = UILayoutConstraintAxisVertical;
+    labels.alignment = UIStackViewAlignmentLeading;
+    labels.spacing = 2;
+    labels.translatesAutoresizingMaskIntoConstraints = NO;
+    UIImageView *chevron = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"chevron.right"]];
+    chevron.tintColor = UIColor.tertiaryLabelColor;
+    chevron.isAccessibilityElement = NO;
+    chevron.translatesAutoresizingMaskIntoConstraints = NO;
+    [entry addSubview:labels];
+    [entry addSubview:chevron];
+    [NSLayoutConstraint activateConstraints:@[
+        [labels.leadingAnchor constraintEqualToAnchor:entry.leadingAnchor constant:16],
+        [labels.centerYAnchor constraintEqualToAnchor:entry.centerYAnchor],
+        [labels.trailingAnchor constraintLessThanOrEqualToAnchor:chevron.leadingAnchor constant:-12],
+        [chevron.trailingAnchor constraintEqualToAnchor:entry.trailingAnchor constant:-16],
+        [chevron.centerYAnchor constraintEqualToAnchor:entry.centerYAnchor]
+    ]];
     [entry addTarget:controller action:sel_registerName("ruin_openSettings:") forControlEvents:UIControlEventTouchUpInside];
     [footer addSubview:entry];
     table.tableFooterView = footer;
@@ -74,7 +111,7 @@ static void RUINAttachHomeSettingsButton(UIViewController *controller) {
     if (!item) {
         item = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"gearshape"]
             style:UIBarButtonItemStylePlain target:controller action:sel_registerName("ruin_openSettings:")];
-        item.accessibilityLabel = @"RUIN設定";
+        item.accessibilityLabel = RUINLocalizedString(@"RUIN設定");
         objc_setAssociatedObject(controller, &homeItemKey, item, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
     NSArray *items = controller.navigationItem.rightBarButtonItems ?: @[];

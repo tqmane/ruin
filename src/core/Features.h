@@ -11,6 +11,7 @@ FOUNDATION_EXPORT NSString * const RUINLocalNamesByIdentityDefaultsKey;
 FOUNDATION_EXPORT NSString * const RUINReadExceptionsDefaultsKey;
 FOUNDATION_EXPORT NSString * const RUINMarkReadOnReplyDefaultsKey;
 FOUNDATION_EXPORT NSString * const RUINLocalLYPEnabledDefaultsKey;
+FOUNDATION_EXPORT NSString * const RUINLegacyMessagingEnabledDefaultsKey;
 
 /**
  RUINLocalNamesByIdentity maps user:<mid>, chat:<mid>, group:<id>, or

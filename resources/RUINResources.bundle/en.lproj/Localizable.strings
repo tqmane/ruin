@@ -1,0 +1,542 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>
+一覧の更新に失敗しました。前回取得した内容を表示しています。</key>
+	<string>
+Failed to update list. Showing previously retrieved content.</string>
+	<key>
+取消済</key>
+	<string>
+Unsent</string>
+	<key>%@を非表示</key>
+	<string>Hide %@</string>
+	<key>%@：%@</key>
+	<string>%@: %@</string>
+	<key>%ld人</key>
+	<string>%ld members</string>
+	<key>%ld人のグループに送信しますか？</key>
+	<string>Send to a group of %ld members?</string>
+	<key>%lu件</key>
+	<string>%lu items</string>
+	<key>0以上の人数を入力してください。</key>
+	<string>Please enter 0 or more members.</string>
+	<key>1対1のトークで、既読非表示・トーク別の例外・返信時の切替を実機で確認済みです。グループやオープンチャット、手動で既読にする操作は検証中です。</key>
+	<string>Read receipt suppression, per-chat exceptions, and reply switching have been verified on physical devices in 1-on-1 chats. Group chats, OpenChat, and manual mark-as-read are still under testing.</string>
+	<key>1対1トークでの受信済みテキスト保持と「取消済」表示を確認済みです。添付ファイル・グループ・オープンチャットでの保持は検証中です。既読者一覧には、この端末で記録した名前と日時を表示します。</key>
+	<string>Retaining received text and displaying "Unsent" in 1-on-1 chats have been verified. Retaining attachments, group chats, and OpenChat are still under testing. The "Read by" list displays names and timestamps recorded on this device.</string>
+	<key>1対1・グループトークの新着のみ通知します。アプリ停止中の即時受信には対応していません。</key>
+	<string>Notifies only for new messages in 1-on-1 and group chats. Instant delivery while the app is closed is not supported.</string>
+	<key>Agent-iバーを非表示</key>
+	<string>Hide Agent-i Bar</string>
+	<key>GIFでコピー</key>
+	<string>Copy as GIF</string>
+	<key>GIFをコピーできませんでした</key>
+	<string>Failed to copy GIF</string>
+	<key>ID別のローカル表示名</key>
+	<string>Local Display Names by ID</string>
+	<key>ID別の表示名を追加</key>
+	<string>Add Display Name by ID</string>
+	<key>LINE STOREの着せかえURLを入力してください。</key>
+	<string>Please enter the LINE STORE theme URL.</string>
+	<key>LINEが保存している記録です。現在の適用状態とファイルの存在は確認していません。</key>
+	<string>Records saved by LINE. Current application status and file existence are not verified.</string>
+	<key>LINEにプロフィール表示を要求しました。見つからない場合や表示できない場合は、MIDと通信状態を確認してください。</key>
+	<string>Requested LINE to show profile. If not found or unable to display, please check MID and network status.</string>
+	<key>LINEに着せかえショップの表示を要求しましたが、受け付けられませんでした。</key>
+	<string>Requested LINE to show Theme Shop, but the request was not accepted.</string>
+	<key>LINEのタブを検出した後に選択できます。</key>
+	<string>Available after LINE tabs are detected.</string>
+	<key>LINEのマイ着せかえに追加すると、選択して適用できます。</key>
+	<string>Add to LINE My Themes to select and apply.</string>
+	<key>LINEの着せかえショップを開く</key>
+	<string>Open LINE Theme Shop</string>
+	<key>LINEの着せかえ記録を取得できません</key>
+	<string>Unable to retrieve LINE theme records</string>
+	<key>LINEの着せかえ記録（%lu）</key>
+	<string>LINE Theme Records (%lu)</string>
+	<key>LINEを一度完全に終了して開き直してください。次回起動時から選んだログイン方法になります。</key>
+	<string>Please force close LINE completely and reopen it. The selected login method will apply from next launch.</string>
+	<key>LINE機能（開発中）</key>
+	<string>LINE Features (In Development)</string>
+	<key>MIDでプロフィールを開く</key>
+	<string>Open Profile by MID</string>
+	<key>MIDをコピー</key>
+	<string>Copy MID</string>
+	<key>MID検索</key>
+	<string>MID Search</string>
+	<key>MID（u＋32桁の半角英数字）</key>
+	<string>MID ("u" followed by 32 alphanumeric characters)</string>
+	<key>OK</key>
+	<string>OK</string>
+	<key>OTF/TTFファイルを適用します。変更後はトークを開き直すか、アプリを再起動してください。</key>
+	<string>Applies OTF/TTF files. After changing, please reopen the chat or restart the app.</string>
+	<key>RUIN TEST private-original-sentinel
+取消済</key>
+	<string>RUIN TEST private-original-sentinel
+Unsent</string>
+	<key>RUIN TEST silent original
+取消済</key>
+	<string>RUIN TEST silent original
+Unsent</string>
+	<key>RUINReadUsersForMessage runs only after the user selects 既読者一覧</key>
+	<string>RUINReadUsersForMessage runs only after the user selects Read by List</string>
+	<key>RUINのランタイム、互換性、機能診断のJSON</key>
+	<string>JSON for RUIN runtime, compatibility, and feature diagnostics</string>
+	<key>RUINの設定と診断</key>
+	<string>RUIN Settings &amp; Diagnostics</string>
+	<key>RUIN設定</key>
+	<string>RUIN Settings</string>
+	<key>chat:MID または squareChat:MID をカンマ区切りで入力します。空欄で全て解除します。</key>
+	<string>Enter chat:MID or squareChat:MID separated by commas. Leave empty to clear all.</string>
+	<key>iPad扱いでサブ端末ログイン</key>
+	<string>Log In as Secondary Device (iPad)</string>
+	<key>iPad扱いのサブ端末モード</key>
+	<string>Secondary Device Mode (iPad)</string>
+	<key>「%@」と「%@」を同時に非表示にできません。</key>
+	<string>Cannot hide "%@" and "%@" simultaneously.</string>
+	<key>「%@」の表示名をこの端末だけ変更します。空欄で解除し、旧表示名ルールもこのIDには適用しません。</key>
+	<string>Changes the display name of "%@" on this device only. Leave empty to clear; legacy display name rules will not apply to this ID.</string>
+	<key>「u」に続く32桁の半角数字・a〜f（小文字）を入力してください。</key>
+	<string>Please enter "u" followed by 32 lowercase hex digits (0–9, a–f).</string>
+	<key>おすすめ欄を非表示</key>
+	<string>Hide Recommendations</string>
+	<key>お使いのLINEのバージョンではMID検索を利用できません。</key>
+	<string>MID search is not available on your version of LINE.</string>
+	<key>このLINEバージョンでは、この画面からのダウンロードを利用できません。</key>
+	<string>Downloading from this screen is not available on this LINE version.</string>
+	<key>このLINEバージョンでは着せかえショップへの移動を利用できません。</key>
+	<string>Navigating to Theme Shop is not available on this LINE version.</string>
+	<key>このLINEバージョンでは着せかえ一覧を取得できません。</key>
+	<string>Unable to retrieve theme list on this LINE version.</string>
+	<key>このLINEビルドでは機能を有効にできません。</key>
+	<string>Cannot enable features on this LINE build.</string>
+	<key>このトーク</key>
+	<string>This Chat</string>
+	<key>このトークだけ既読制御を切り替えます</key>
+	<string>Toggle read receipt control for this chat only</string>
+	<key>このトークの既読抑制を有効にする</key>
+	<string>Enable read receipt suppression for this chat</string>
+	<key>このトークを既読抑制の例外にする</key>
+	<string>Exclude this chat from read receipt suppression</string>
+	<key>このファイルで利用できる共有先が見つかりませんでした。</key>
+	<string>No available sharing destinations found for this file.</string>
+	<key>このファイルのプレビューには対応していません。共有メニューからファイルを操作できます。</key>
+	<string>Preview is not supported for this file. You can manage it from the share menu.</string>
+	<key>この環境ではLINEの着せかえ記録を取得できません。</key>
+	<string>Unable to retrieve LINE theme records in this environment.</string>
+	<key>この端末での表示名</key>
+	<string>Display Name on This Device</string>
+	<key>この端末で表示する名前</key>
+	<string>Name to display on this device</string>
+	<key>この端末の別名</key>
+	<string>Alias on This Device</string>
+	<key>てすたーず</key>
+	<string>Testers</string>
+	<key>てすたーず (2)</key>
+	<string>Testers (2)</string>
+	<key>アプリの動作に必要なタブは、常に表示されます。</key>
+	<string>Tabs required for app operation are always shown.</string>
+	<key>アプリアイコンを変更できませんでした。</key>
+	<string>Failed to change app icon.</string>
+	<key>アプリアイコン等は「ローカルLYP」、24時間までの送信取消とミュート送信は別スイッチで設定します（変更後はLINEを再起動）。ミュート送信は入力確定後、送信ボタンを約2秒長押しします。</key>
+	<string>App icons and other features are set in 'Local LYP', while 24-hour unsend and silent messaging use a separate switch (restart LINE after changes). To send silently, confirm text input and long-press the send button for about 2 seconds.</string>
+	<key>インターネットに接続されていません。接続を確認して、もう一度お試しください。</key>
+	<string>No internet connection. Please check your connection and try again.</string>
+	<key>ウォレット</key>
+	<string>Wallet</string>
+	<key>オンにする</key>
+	<string>Turn On</string>
+	<key>カスタムフォント</key>
+	<string>Custom Font</string>
+	<key>カメラの確認</key>
+	<string>Camera Confirmation</string>
+	<key>カメラをオンにしますか？</key>
+	<string>Turn on camera?</string>
+	<key>カメラをオンにする前に確認</key>
+	<string>Confirm before turning on camera</string>
+	<key>キャッシュの名前</key>
+	<string>Cache Name</string>
+	<key>キャンセル</key>
+	<string>Cancel</string>
+	<key>グループへの送信確認</key>
+	<string>Confirm Sending to Group</string>
+	<key>グループ人数を確認できません。送信しますか？</key>
+	<string>Unable to verify group member count. Send anyway?</string>
+	<key>サブ端末では、現在のメイン端末でQRコードを読み取り、ログインを承認します。</key>
+	<string>On a secondary device, scan the QR code with your primary device to approve login.</string>
+	<key>サブ端末ログイン</key>
+	<string>Secondary Device Login</string>
+	<key>ショッピング</key>
+	<string>Shopping</string>
+	<key>ショップ</key>
+	<string>Shop</string>
+	<key>スタンプをGIFでコピー</key>
+	<string>Copy Sticker as GIF</string>
+	<key>スタンプショップ</key>
+	<string>Sticker Shop</string>
+	<key>スタンプショップを開けませんでした</key>
+	<string>Unable to open Sticker Shop</string>
+	<key>ストアURLからダウンロード</key>
+	<string>Download from Store URL</string>
+	<key>ストアURLから名前・商品ID・バージョンを取得</key>
+	<string>Get Name, Product ID, and Version from Store URL</string>
+	<key>ストアURLから着せかえ情報を取得してダウンロードできます。名前・商品ID・バージョンの手入力も可能です。</key>
+	<string>Retrieve theme info from a store URL to download. You can also enter the name, product ID, and version manually.</string>
+	<key>ストア情報を取得できませんでした。URLと通信状況を確認してください。</key>
+	<string>Failed to retrieve store info. Please check the URL and network connection.</string>
+	<key>ストア情報を取得中…</key>
+	<string>Retrieving store info…</string>
+	<key>タップして理由を確認</key>
+	<string>Tap to view reason</string>
+	<key>タブの管理</key>
+	<string>Manage Tabs</string>
+	<key>ダウンロード</key>
+	<string>Download</string>
+	<key>ダウンロードした着せかえは、マイ着せかえを開くと一覧に表示されます。選択して適用できます。</key>
+	<string>Downloaded themes will appear in the list when you open My Themes. Select a theme to apply it.</string>
+	<key>ダウンロードを完了できませんでした</key>
+	<string>Could not complete download</string>
+	<key>ダウンロードを開始できませんでした</key>
+	<string>Could not start download</string>
+	<key>ダウンロード・ファイル確認中…</key>
+	<string>Checking download and files…</string>
+	<key>ダウンロード設定と現在の処理状況を確認してください。</key>
+	<string>Please check your download settings and current status.</string>
+	<key>トーク</key>
+	<string>Chats</string>
+	<key>トークの識別IDを確認してください。</key>
+	<string>Please check the chat identifier ID.</string>
+	<key>ニュース</key>
+	<string>News</string>
+	<key>バージョン</key>
+	<string>Version</string>
+	<key>バージョン（例：V1.30）</key>
+	<string>Version (e.g. V1.30)</string>
+	<key>バージョン（例：V1.30）または配信番号を入力してください。</key>
+	<string>Please enter the version (e.g. V1.30) or delivery number.</string>
+	<key>ファイルが見つからないか、ファイルの構造確認に失敗しました。一覧を更新してください。</key>
+	<string>File not found or failed to verify file structure. Please refresh the list.</string>
+	<key>ファイルを保存しました</key>
+	<string>File saved</string>
+	<key>ファイルを保存しました。マイ着せかえを開いて、着せかえを選択して適用できます。</key>
+	<string>File saved. Open My Themes to select and apply the theme.</string>
+	<key>ファイルを取得して保存します。LINEへの追加・適用はこの操作では行いません。</key>
+	<string>Retrieves and saves the file. This does not add or apply it to LINE.</string>
+	<key>ファイルを確認中…</key>
+	<string>Checking file…</string>
+	<key>ファイルを開けませんでした</key>
+	<string>Could not open file</string>
+	<key>フォントを読み込めませんでした。OTF/TTFファイルを確認してください。</key>
+	<string>Could not load font. Please check the OTF/TTF file.</string>
+	<key>フォントを適用しました。トークを開き直してください。</key>
+	<string>Font applied. Please reopen the chat.</string>
+	<key>フォントを選択</key>
+	<string>Select Font</string>
+	<key>プレビュー</key>
+	<string>Preview</string>
+	<key>プレビューを表示できませんでした</key>
+	<string>Could not display preview</string>
+	<key>プロフィールを表示</key>
+	<string>View Profile</string>
+	<key>プロフィールを表示します</key>
+	<string>Displays profile</string>
+	<key>プロフィールを開けませんでした</key>
+	<string>Could not open profile</string>
+	<key>プロフィールを開けませんでした。MIDと通信状態を確認し、もう一度お試しください。</key>
+	<string>Could not open profile. Please check the MID and network connection, then try again.</string>
+	<key>ホーム</key>
+	<string>Home</string>
+	<key>マイ着せかえ</key>
+	<string>My Themes</string>
+	<key>マイ着せかえに追加</key>
+	<string>Add to My Themes</string>
+	<key>マイ着せかえを開く</key>
+	<string>Open My Themes</string>
+	<key>マイ着せかえを開けませんでした</key>
+	<string>Could not open My Themes</string>
+	<key>ミュート送信と送信取消期限はアプリ再起動後に反映されます。アプリアイコンはLINE設定から変更できます。</key>
+	<string>Silent messages and unsend limits will take effect after restarting the app. The app icon can be changed in LINE settings.</string>
+	<key>ユーザー・グループ・オープンチャットの識別IDで照合します。表示名を空にすると解除します。一覧への反映にはアプリの再起動が必要です。</key>
+	<string>Matches by identifier ID for users, groups, and OpenChats. Leave display name empty to clear. App restart required to update the list.</string>
+	<key>ユーザー検索</key>
+	<string>User Search</string>
+	<key>ランタイム・機能診断</key>
+	<string>Runtime &amp; Feature Diagnostics</string>
+	<key>ルールはありません（＋で追加）</key>
+	<string>No rules (Add with +)</string>
+	<key>ログイン方法</key>
+	<string>Login Method</string>
+	<key>ログイン方法を切り替えました</key>
+	<string>Switched login method</string>
+	<key>ローカルLYP機能</key>
+	<string>Local LYP Features</string>
+	<key>ローカル表示名</key>
+	<string>Local Display Name</string>
+	<key>ローカル表示名を設定</key>
+	<string>Set Local Display Name</string>
+	<key>ローカル設定・診断</key>
+	<string>Local Settings &amp; Diagnostics</string>
+	<key>一覧の更新に失敗しました。前回取得した内容を表示しています。</key>
+	<string>Failed to update the list. Showing previously retrieved content.</string>
+	<key>一覧を取得できませんでした</key>
+	<string>Could not retrieve list</string>
+	<key>一覧を更新できませんでした</key>
+	<string>Could not refresh list</string>
+	<key>一覧を読み込み中…</key>
+	<string>Loading list…</string>
+	<key>不明なエラー</key>
+	<string>Unknown error</string>
+	<key>保存</key>
+	<string>Save</string>
+	<key>保存完了</key>
+	<string>Saved</string>
+	<key>保存済みファイルの場所を確認できませんでした。</key>
+	<string>Could not verify location of saved file.</string>
+	<key>保存済みファイルはありません</key>
+	<string>No saved files</string>
+	<key>保存済みファイル（%lu）</key>
+	<string>Saved Files (%lu)</string>
+	<key>保有</key>
+	<string>Owned</string>
+	<key>全体の既読抑制はオフです。例外設定は保存されます</key>
+	<string>Global read receipt suppression is off. Exception settings are saved</string>
+	<key>全機能の対応表</key>
+	<string>Feature Compatibility Chart</string>
+	<key>共有メニューを表示できませんでした</key>
+	<string>Could not display share sheet</string>
+	<key>共有・ほかのアプリで開く</key>
+	<string>Share / Open in Another App</string>
+	<key>処理を完了できませんでした。</key>
+	<string>Could not complete the process.</string>
+	<key>処理中</key>
+	<string>Processing</string>
+	<key>利用期限内</key>
+	<string>Within Expiry Date</string>
+	<key>利用期限切れの記録</key>
+	<string>Expired record</string>
+	<key>利用状況は未確認</key>
+	<string>Usage status unconfirmed</string>
+	<key>取得できませんでした</key>
+	<string>Could not retrieve</string>
+	<key>取消済</key>
+	<string>Unsent</string>
+	<key>名前</key>
+	<string>Name</string>
+	<key>名前のない着せかえ</key>
+	<string>Unnamed Theme</string>
+	<key>名前は改行を含めず、256文字以内で入力してください。</key>
+	<string>Please enter a name within 256 characters without line breaks.</string>
+	<key>名前を入力してください。</key>
+	<string>Please enter a name.</string>
+	<key>名前を確認中…</key>
+	<string>Checking name…</string>
+	<key>名前・商品ID・バージョンを指定</key>
+	<string>Specify Name, Product ID, and Version</string>
+	<key>名前・商品ID・バージョン番号を入力してください。</key>
+	<string>Please enter the name, product ID, and version number.</string>
+	<key>名前不明</key>
+	<string>Unknown Name</string>
+	<key>商品ID</key>
+	<string>Product ID</string>
+	<key>商品ID: %@
+バージョン: %@
+%@
+
+LINEの保存記録です。現在の適用状態は確認していません。</key>
+	<string>Product ID: %@
+Version: %@
+%@
+
+This is a saved record in LINE. Current applied status is unconfirmed.</string>
+	<key>商品ID: %@
+バージョン: %@%@</key>
+	<string>Product ID: %@
+Version: %@%@</string>
+	<key>商品IDには半角英数字・ハイフン・アンダースコア・ピリオドを使えます。</key>
+	<string>Product ID can contain alphanumeric characters, hyphens, underscores, and periods.</string>
+	<key>商品IDは6〜128文字で入力してください。</key>
+	<string>Please enter a product ID between 6 and 128 characters.</string>
+	<key>変更はログアウト後、ログイン画面の「ログイン」長押しで行います。切り替え後はアプリの再起動が必要です。</key>
+	<string>To change, log out and press and hold "Log in" on the login screen. Restarting the app is required after switching.</string>
+	<key>変更後はトーク画面を開き直してください。</key>
+	<string>Please reopen the chat screen after making changes.</string>
+	<key>履歴・追加機能（開発中）</key>
+	<string>History &amp; Additional Features (In Development)</string>
+	<key>年齢確認をスキップ</key>
+	<string>Skip Age Verification</string>
+	<key>広告を非表示</key>
+	<string>Hide Ads</string>
+	<key>手動でファイルをダウンロード</key>
+	<string>Download File Manually</string>
+	<key>操作確認</key>
+	<string>Confirm Action</string>
+	<key>新着のローカル通知</key>
+	<string>New Local Notification</string>
+	<key>新着メッセージを受信しました</key>
+	<string>New message received</string>
+	<key>既存の別名</key>
+	<string>Existing alias</string>
+	<key>既読の例外</key>
+	<string>Read receipt exceptions</string>
+	<key>既読の管理</key>
+	<string>Manage read receipts</string>
+	<key>既読を隠す</key>
+	<string>Suppress read receipts</string>
+	<key>既読情報を取得できませんでした。もう一度お試しください。</key>
+	<string>Failed to retrieve read receipt information. Please try again.</string>
+	<key>既読情報を取得中…</key>
+	<string>Retrieving read receipt information…</string>
+	<key>既読日時</key>
+	<string>Read timestamp</string>
+	<key>既読日時（範囲情報）</key>
+	<string>Read timestamp (range info)</string>
+	<key>既読日時（範囲情報）：</key>
+	<string>Read timestamp (range info):</string>
+	<key>既読日時：2023/11/15 07:13:20</key>
+	<string>Read timestamp: 2023/11/15 07:13:20</string>
+	<key>既読範囲を記録</key>
+	<string>Record read range</string>
+	<key>既読者一覧</key>
+	<string>Readers list</string>
+	<key>日時不明</key>
+	<string>Unknown date/time</string>
+	<key>更新</key>
+	<string>Update</string>
+	<key>未確認</key>
+	<string>Unconfirmed</string>
+	<key>未設定</key>
+	<string>Not set</string>
+	<key>検索するMID</key>
+	<string>MID to search</string>
+	<key>検索するとLINE内でプロフィールを開きます。友だち追加やメッセージ送信は行いません。</key>
+	<string>Searching will open the profile in LINE. It will not add friends or send messages.</string>
+	<key>標準で利用可能</key>
+	<string>Available by default</string>
+	<key>標準に戻す</key>
+	<string>Reset to default</string>
+	<key>標準フォント</key>
+	<string>Default font</string>
+	<key>標準フォントに戻しました。トークを開き直してください。</key>
+	<string>Reset to the default font. Please reopen the chat.</string>
+	<key>正しいLINE STOREの着せかえURLを入力してください。</key>
+	<string>Please enter a valid LINE STORE theme URL.</string>
+	<key>添付ファイルを受信しました</key>
+	<string>Attachment received</string>
+	<key>現在利用可能なタブのみ設定できます。「ホーム」と「トーク」は非表示にできません。%@変更はアプリの再起動後に反映されます。</key>
+	<string>Only currently available tabs can be configured. "Home" and "Chats" cannot be hidden. %@Changes will take effect after restarting the app.</string>
+	<key>画面を閉じて、もう一度お試しください。ダウンロードしたファイルは保存されています。</key>
+	<string>Please close this screen and try again. The downloaded file has been saved.</string>
+	<key>着せかえ</key>
+	<string>Themes</string>
+	<key>着せかえのダウンロードを有効にする</key>
+	<string>Enable theme downloads</string>
+	<key>着せかえのダウンロード・保存一覧</key>
+	<string>Downloaded &amp; saved themes</string>
+	<key>着せかえショップ</key>
+	<string>Theme Shop</string>
+	<key>着せかえショップを開けませんでした</key>
+	<string>Failed to open Theme Shop</string>
+	<key>着せかえファイルをダウンロード</key>
+	<string>Download theme file</string>
+	<key>着せかえ・スタンプGIF・MID検索なども全機能対応の対象です。未完成の項目を対応済みとは表示しません。</key>
+	<string>Themes, sticker GIFs, and MID search are also covered by full feature support. Incomplete items are not displayed as supported.</string>
+	<key>着せかえ一覧を取得できませんでした。</key>
+	<string>Failed to retrieve theme list.</string>
+	<key>着せかえ一覧を更新</key>
+	<string>Refresh theme list</string>
+	<key>着せかえ記録はありません</key>
+	<string>No theme records</string>
+	<key>確認</key>
+	<string>Confirm</string>
+	<key>確認したいユーザーのMIDを1件入力してください。MIDは「u」で始まる33文字の識別子です。LINE IDとは異なります。</key>
+	<string>Please enter the MID of the user you want to check. An MID is a 33-character identifier starting with "u". It differs from a LINE ID.</string>
+	<key>確認日時</key>
+	<string>Checked timestamp</string>
+	<key>確認日時は、この端末が既読情報を確認した日時です。日時を特定できない記録は「日時不明」と表示します。</key>
+	<string>The checked timestamp is the date and time when this device confirmed read information. Records with indeterminable timestamps are displayed as "Unknown date/time".</string>
+	<key>確認日時：</key>
+	<string>Checked timestamp:</string>
+	<key>確認日時：2023/11/15 07:13:30</key>
+	<string>Checked timestamp: 2023/11/15 07:13:30</string>
+	<key>種別:MID</key>
+	<string>Type: MID</string>
+	<key>種別と識別IDを確認してください。</key>
+	<string>Please check the type and identifier ID.</string>
+	<key>種別は user:、chat:、group:、squareChat: のいずれかです。表示名を空にすると解除します。</key>
+	<string>Type must be one of user:, chat:, group:, or squareChat:. Clear display name to remove.</string>
+	<key>端末内の別名</key>
+	<string>On-device alias</string>
+	<key>終了</key>
+	<string>End</string>
+	<key>自分の名前</key>
+	<string>My Name</string>
+	<key>自分を含むグループ人数。0は人数指定なし。</key>
+	<string>Group size including yourself. 0 specifies no limit.</string>
+	<key>表示の管理</key>
+	<string>Manage display</string>
+	<key>表示名を編集</key>
+	<string>Edit display name</string>
+	<key>記録はありません</key>
+	<string>No records</string>
+	<key>設定</key>
+	<string>Settings</string>
+	<key>診断</key>
+	<string>Diagnostics</string>
+	<key>診断をJSONに変換できませんでした: %@</key>
+	<string>Failed to convert diagnostics to JSON: %@</string>
+	<key>起動時に開くタブ</key>
+	<string>Tab to open on startup</string>
+	<key>起動時のタブを固定</key>
+	<string>Lock startup tab</string>
+	<key>返信時に既読をつける</key>
+	<string>Mark as read when replying</string>
+	<key>送信</key>
+	<string>Send</string>
+	<key>送信の確認</key>
+	<string>Confirm send</string>
+	<key>送信先の種類を確認できません。送信しますか？</key>
+	<string>Cannot verify recipient type. Send anyway?</string>
+	<key>送信取消された本文を保持</key>
+	<string>Retain unsent message content</string>
+	<key>送信取消延長・ミュート</key>
+	<string>Extended Unsend &amp; Mute</string>
+	<key>送信確認の最低人数</key>
+	<string>Minimum members for send confirmation</string>
+	<key>送信確認を行う最低人数は、自分を含むグループ人数です。0は人数指定なし。通話・送信の一部の入口はまだ検証中です。</key>
+	<string>The minimum number of members for send confirmation is the group size including yourself. 0 specifies no limit. Some entry points for calls and sending are still under verification.</string>
+	<key>通信がタイムアウトしました。時間をおいて、もう一度お試しください。</key>
+	<string>Connection timed out. Please wait a moment and try again.</string>
+	<key>通信が中止されました。</key>
+	<string>Connection was aborted.</string>
+	<key>通信が途中で切断されました。接続を確認して、もう一度お試しください。</key>
+	<string>Connection was interrupted. Please check your connection and try again.</string>
+	<key>通常のiPhoneモード</key>
+	<string>Standard iPhone mode</string>
+	<key>通常のiPhoneログイン</key>
+	<string>Standard iPhone login</string>
+	<key>通常通り既読をつけるトーク</key>
+	<string>Chats to send read receipts normally</string>
+	<key>通知</key>
+	<string>Notifications</string>
+	<key>通話</key>
+	<string>Calls</string>
+	<key>通話の確認</key>
+	<string>Confirm call</string>
+	<key>通話を終了しますか？</key>
+	<string>End call?</string>
+	<key>通話を開始しますか？</key>
+	<string>Start call?</string>
+	<key>通話終了の確認</key>
+	<string>Confirm ending call</string>
+	<key>通話開始の確認</key>
+	<string>Confirm starting call</string>
+	<key>閉じる</key>
+	<string>Close</string>
+	<key>開始</key>
+	<string>Start</string>
+	<key>音声入力ボタンを非表示</key>
+	<string>Hide voice input button</string>
+</dict>
+</plist>

@@ -6,6 +6,7 @@
 #import "MessageHistory.h"
 #import "Features.h"
 #import "SwiftFields.h"
+#import "../core/Localization.h"
 #import <CoreData/CoreData.h>
 #import <CoreGraphics/CoreGraphics.h>
 #import <TargetConditionals.h>
@@ -249,11 +250,12 @@ static void UIRefreshCell(UICollectionViewCell *cell) {
             ![bubble isDescendantOfView:cell.contentView] || ![status isDescendantOfView:cell.contentView] || status.hidden) { UIRemoveBadge(cell); return; }
         UILabel *badge = objc_getAssociatedObject(cell, &UIBadgeKey);
         if (!badge) {
-            badge = [UILabel new]; badge.text = @"取消済"; badge.textAlignment = NSTextAlignmentCenter;
+            NSString *markerLabel = RUINLocalizedString(@"取消済");
+            badge = [UILabel new]; badge.text = markerLabel; badge.textAlignment = NSTextAlignmentCenter;
             badge.font = [UIFont preferredFontForTextStyle:UIFontTextStyleCaption2]; badge.adjustsFontForContentSizeCategory = YES;
             badge.textColor = UIColor.secondaryLabelColor; badge.backgroundColor = UIColor.tertiarySystemBackgroundColor;
             badge.layer.cornerRadius = 3; badge.clipsToBounds = YES; badge.userInteractionEnabled = NO;
-            badge.isAccessibilityElement = YES; badge.accessibilityLabel = @"取消済"; badge.accessibilityIdentifier = @"RUINUnsendMarker";
+            badge.isAccessibilityElement = YES; badge.accessibilityLabel = markerLabel; badge.accessibilityIdentifier = @"RUINUnsendMarker";
             objc_setAssociatedObject(cell, &UIBadgeKey, badge, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         }
         CGSize textSize = [badge sizeThatFits:CGSizeMake(CGFLOAT_MAX, CGFLOAT_MAX)];
