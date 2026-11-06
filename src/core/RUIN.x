@@ -39,6 +39,8 @@
 #import "LocalAppearance.h"
 #import "LocalFont.h"
 #import "LocalFontUI.h"
+#import "ChatPicker.h"
+#import "ChatCatalog.h"
 #import "NativeMuteSend.h"
 #import "ClientVersionAdvertisement.h"
 #import "LegacyMessagingConfiguration.h"
@@ -117,6 +119,7 @@ static NSDictionary *RUINRuntimeDiagnostics(void) {
         },
         @"compatibility": compatibilityDiagnostics,
         @"bundleIdentity": RUINBundleIdentityDiagnostics(),
+        @"chatCatalog": RUINChatCatalogDiagnostics(),
         @"push": RUINPushDiagnostics(),
         @"nativeEntry": RUINNativeEntryDiagnostics() ?: @{},
         @"nativeChat": RUINNativeChatControlsDiagnostics(),
@@ -233,7 +236,7 @@ static NSArray<NSDictionary *> *ToggleRows(NSInteger section) {
         case 5: return RUINNativeTabRows();
         case 6: return @[Toggle(RUINLocalizedString(@"送信取消された本文を保持"), RUINKeepUnsentMessagesKey), Toggle(RUINLocalizedString(@"既読範囲を記録"), RUINTrackReadUsersKey), Toggle(RUINLocalizedString(@"年齢確認をスキップ"), RUINBypassAgeVerificationDefaultsKey), Toggle(RUINLocalizedString(@"スタンプをGIFでコピー"), RUINCopyStickerGIFEnabledDefaultsKey)];
         case 11: return @[Toggle(RUINLocalizedString(@"新着のローカル通知"), RUINLocalNotificationsEnabledDefaultsKey)];
-        case 12: return @[Toggle(RUINLocalizedString(@"ローカルLYP機能"), RUINLocalLYPEnabledDefaultsKey), Toggle(RUINLocalizedString(@"送信取消延長・ミュート"), RUINLegacyMessagingEnabledDefaultsKey)];
+        case 12: return @[Toggle(RUINLocalizedString(@"ローカルLYP機能"), RUINLocalLYPEnabledDefaultsKey), Toggle(RUINLocalizedString(@"24h送信取消・ミュートメッセージ"), RUINLegacyMessagingEnabledDefaultsKey)];
         default: return @[];
     }
 }
@@ -282,7 +285,7 @@ static void RefreshFeatures(void) {
     self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeAlways;
     if (self.navigationController.viewControllers.firstObject == self)
         self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemClose target:self action:@selector(closeSettings)];
-    if (self.compatible) self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemAdd target:self action:@selector(addLocalName)];
+    self.tableView.rowHeight = UITableViewAutomaticDimension; self.tableView.estimatedRowHeight = 60;
 }
 - (void)closeSettings {
     sSettingsPresentationInFlight = YES;
@@ -297,16 +300,15 @@ static void RefreshFeatures(void) {
     for (id key in saved) if ([key isKindOfClass:NSString.class] && [saved[key] isKindOfClass:NSString.class] && [saved[key] length]) visible[key] = saved[key];
     return visible;
 }
-- (NSArray<NSString *> *)aliasKeys { return [self.aliases.allKeys sortedArrayUsingSelector:@selector(compare:)]; }
 - (NSInteger)numberOfSectionsInTableView:(__unused UITableView *)tableView { return self.compatible ? 13 : 1; }
 - (NSString *)tableView:(__unused UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
-    return self.compatible ? @[RUINLocalizedString(@"バージョン"), RUINLocalizedString(@"既読の管理"), RUINLocalizedString(@"ID別のローカル表示名"), RUINLocalizedString(@"操作確認"), RUINLocalizedString(@"表示の管理"), RUINLocalizedString(@"タブの管理"), RUINLocalizedString(@"履歴・追加機能（開発中）"), RUINLocalizedString(@"サブ端末ログイン"), RUINLocalizedString(@"診断"), RUINLocalizedString(@"ショップ"), RUINLocalizedString(@"ユーザー検索"), RUINLocalizedString(@"通知"), RUINLocalizedString(@"LINE機能（開発中）")][section] : RUINLocalizedString(@"診断");
+    return self.compatible ? @[RUINLocalizedString(@"バージョン"), RUINLocalizedString(@"既読の管理"), RUINLocalizedString(@"トークの表示名"), RUINLocalizedString(@"操作確認"), RUINLocalizedString(@"表示の管理"), RUINLocalizedString(@"タブの管理"), RUINLocalizedString(@"履歴・追加機能（開発中）"), RUINLocalizedString(@"サブ端末ログイン"), RUINLocalizedString(@"診断"), RUINLocalizedString(@"ショップ"), RUINLocalizedString(@"ユーザー検索"), RUINLocalizedString(@"通知"), RUINLocalizedString(@"LINE機能（開発中）")][section] : RUINLocalizedString(@"診断");
 }
 - (NSString *)tableView:(__unused UITableView *)tableView titleForFooterInSection:(NSInteger)section {
     if (!self.compatible) return RUINLocalizedString(@"このLINEビルドでは機能を有効にできません。");
     switch (section) {
         case 1: return RUINLocalizedString(@"1対1のトークで、既読非表示・トーク別の例外・返信時の切替を実機で確認済みです。グループやオープンチャット、手動で既読にする操作は検証中です。");
-        case 2: return RUINLocalizedString(@"ユーザー・グループ・オープンチャットの識別IDで照合します。表示名を空にすると解除します。一覧への反映にはアプリの再起動が必要です。");
+        case 2: return RUINLocalizedString(@"この端末での表示名だけを変更します。相手には反映されません。一覧に反映されない場合はLINEを再起動してください。");
         case 3: return RUINLocalizedString(@"送信確認を行う最低人数は、自分を含むグループ人数です。0は人数指定なし。通話・送信の一部の入口はまだ検証中です。");
         case 4: return RUINLocalizedString(@"変更後はトーク画面を開き直してください。");
         case 5: {
@@ -326,7 +328,7 @@ static void RefreshFeatures(void) {
 }
 - (NSInteger)tableView:(__unused UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
     if (!self.compatible) return 1;
-    if (section == 2) return MAX((NSInteger)1, (NSInteger)self.aliasKeys.count);
+    if (section == 2) return 1;
     if (section == 1 || section == 3 || section == 5) return ToggleRows(section).count + 1;
     if (section == 8 || section == 9) return 2;
     if (section == 12) return ToggleRows(12).count + 1;
@@ -354,9 +356,9 @@ static void RefreshFeatures(void) {
         cell.detailTextLabel.text = [NSString stringWithFormat:@"LINE %@ / %@", RUINInfoString(@"CFBundleShortVersionString"), RUINInfoString(@"CFBundleVersion")];
         cell.selectionStyle = UITableViewCellSelectionStyleNone;
     } else if (path.section == 2) {
-        NSArray *keys = self.aliasKeys;
-        if (keys.count) { NSString *key = keys[path.row]; cell.textLabel.text = self.aliases[key]; cell.detailTextLabel.text = key; cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator; }
-        else { cell.textLabel.text = RUINLocalizedString(@"ルールはありません（＋で追加）"); cell.textLabel.textColor = UIColor.secondaryLabelColor; }
+        cell.textLabel.text = RUINLocalizedString(@"表示名を変更するトークを選ぶ");
+        cell.detailTextLabel.text = [NSString stringWithFormat:RUINLocalizedString(@"%lu件のトークを変更中"), (unsigned long)self.aliases.count];
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     } else if (path.section == 7) {
         BOOL on = [RUINSecondaryLoginDiagnostics()[@"activeTabletRole"] boolValue];
         cell.textLabel.text = on ? RUINLocalizedString(@"iPad扱いのサブ端末モード") : RUINLocalizedString(@"通常のiPhoneモード");
@@ -365,6 +367,7 @@ static void RefreshFeatures(void) {
         NSDictionary *row = rows[path.row]; NSString *key = row[@"key"];
         cell.textLabel.text = row[@"title"];
         UISwitch *toggle = [UISwitch new]; toggle.on = [NSUserDefaults.standardUserDefaults boolForKey:key];
+        toggle.accessibilityLabel = row[@"title"];
         if (path.section == 5) toggle.enabled = toggle.on || RUINCanHideNativeService(key);
         if ([key isEqual:RUINHideSettingsTabDefaultsKey]) toggle.enabled = toggle.on ||
             (toggle.enabled && [RUINNativeEntryDiagnostics()[@"homeEntryAvailable"] boolValue]);
@@ -407,34 +410,12 @@ static void RefreshFeatures(void) {
     } else if (path.section == 9) {
         if (path.row == 0) RUINOpenThemeSettings(self);
         else RUINOpenStickerShop(self);
-    } else if (path.section == 2 && self.aliasKeys.count) {
-        NSString *key = self.aliasKeys[path.row]; [self editLocalName:key alias:self.aliases[key]];
+    } else if (path.section == 2) {
+        __weak typeof(self) weak = self;
+        RUINOpenLocalNamePicker(self, ^{ RefreshFeatures(); [weak.tableView reloadData]; });
     } else if (path.section == 1 && (NSUInteger)path.row == ToggleRows(1).count) [self editReadExceptions];
     else if (path.section == 3 && (NSUInteger)path.row == ToggleRows(3).count) [self editThreshold];
     else if (path.section == 5 && (NSUInteger)path.row == ToggleRows(5).count) [self editStartupTab];
-}
-- (BOOL)tableView:(__unused UITableView *)tableView canEditRowAtIndexPath:(NSIndexPath *)path { return self.compatible && path.section == 2 && self.aliasKeys.count > 0; }
-- (void)tableView:(UITableView *)tableView commitEditingStyle:(UITableViewCellEditingStyle)style forRowAtIndexPath:(NSIndexPath *)path {
-    if (style != UITableViewCellEditingStyleDelete || path.section != 2 || (NSUInteger)path.row >= self.aliasKeys.count) return;
-    RUINSetLocalName(self.aliasKeys[path.row], @""); RefreshFeatures(); [tableView reloadData];
-}
-- (void)addLocalName { [self editLocalName:nil alias:nil]; }
-- (void)editLocalName:(NSString *)identity alias:(NSString *)alias {
-    UIAlertController *prompt = [UIAlertController alertControllerWithTitle:identity ? RUINLocalizedString(@"表示名を編集") : RUINLocalizedString(@"ID別の表示名を追加") message:RUINLocalizedString(@"種別は user:、chat:、group:、squareChat: のいずれかです。表示名を空にすると解除します。") preferredStyle:UIAlertControllerStyleAlert];
-    [prompt addTextFieldWithConfigurationHandler:^(UITextField *field) { field.placeholder = RUINLocalizedString(@"種別:MID"); field.text = identity; field.autocorrectionType = UITextAutocorrectionTypeNo; field.autocapitalizationType = UITextAutocapitalizationTypeNone; }];
-    [prompt addTextFieldWithConfigurationHandler:^(UITextField *field) { field.placeholder = RUINLocalizedString(@"この端末での表示名"); field.text = alias; }];
-    __weak typeof(self) owner = self; __weak UIAlertController *weakPrompt = prompt;
-    [prompt addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"キャンセル") style:UIAlertActionStyleCancel handler:nil]];
-    [prompt addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"保存") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
-        UIAlertController *active = weakPrompt; if (!active) return;
-        NSString *key = [active.textFields[0].text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-        NSRange colon = [key rangeOfString:@":"]; BOOL valid = colon.location != NSNotFound && NSMaxRange(colon) < key.length;
-        if (valid) valid = [@[@"user", @"chat", @"group", @"squareChat"] containsObject:[key substringToIndex:colon.location]];
-        if (!valid) { dispatch_async(dispatch_get_main_queue(), ^{ [owner showMessage:RUINLocalizedString(@"種別と識別IDを確認してください。")]; }); return; }
-        if (identity && ![identity isEqual:key]) RUINSetLocalName(identity, @"");
-        RUINSetLocalName(key, active.textFields[1].text ?: @""); RefreshFeatures(); [owner.tableView reloadData];
-    }]];
-    [self presentViewController:prompt animated:YES completion:nil];
 }
 - (void)editThreshold {
     UIAlertController *prompt = [UIAlertController alertControllerWithTitle:RUINLocalizedString(@"送信確認の最低人数") message:RUINLocalizedString(@"自分を含むグループ人数。0は人数指定なし。") preferredStyle:UIAlertControllerStyleAlert];
@@ -449,21 +430,8 @@ static void RefreshFeatures(void) {
     [self presentViewController:prompt animated:YES completion:nil];
 }
 - (void)editReadExceptions {
-    UIAlertController *prompt = [UIAlertController alertControllerWithTitle:RUINLocalizedString(@"既読の例外") message:RUINLocalizedString(@"chat:MID または squareChat:MID をカンマ区切りで入力します。空欄で全て解除します。") preferredStyle:UIAlertControllerStyleAlert];
-    [prompt addTextFieldWithConfigurationHandler:^(UITextField *field) { field.text = [[NSUserDefaults.standardUserDefaults arrayForKey:RUINReadExceptionsDefaultsKey] componentsJoinedByString:@","]; field.autocorrectionType = UITextAutocorrectionTypeNo; field.autocapitalizationType = UITextAutocapitalizationTypeNone; }];
-    __weak typeof(self) owner = self; __weak UIAlertController *weakPrompt = prompt;
-    [prompt addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"キャンセル") style:UIAlertActionStyleCancel handler:nil]];
-    [prompt addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"保存") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
-        NSMutableOrderedSet *keys = [NSMutableOrderedSet orderedSet]; BOOL valid = YES;
-        for (NSString *part in [(weakPrompt.textFields.firstObject.text ?: @"") componentsSeparatedByString:@","]) {
-            NSString *key = [part stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet]; if (!key.length) continue;
-            NSRange colon = [key rangeOfString:@":"]; if (colon.location == NSNotFound || NSMaxRange(colon) == key.length || ![@[@"chat", @"squareChat"] containsObject:[key substringToIndex:colon.location]]) { valid = NO; break; }
-            [keys addObject:key];
-        }
-        if (!valid) { dispatch_async(dispatch_get_main_queue(), ^{ [owner showMessage:RUINLocalizedString(@"トークの識別IDを確認してください。")]; }); return; }
-        [NSUserDefaults.standardUserDefaults setObject:keys.array forKey:RUINReadExceptionsDefaultsKey]; RefreshFeatures(); [owner.tableView reloadData];
-    }]];
-    [self presentViewController:prompt animated:YES completion:nil];
+    __weak typeof(self) weak = self;
+    RUINOpenReadExceptionPicker(self, ^{ RefreshFeatures(); [weak.tableView reloadData]; });
 }
 - (void)editStartupTab {
     NSArray *available = RUINAvailableTabs();
@@ -633,6 +601,7 @@ __attribute__((constructor)) static void RUINConstructor(void) {
             RUINInstallSecondaryLogin();
             RUINInstallClientVersionAdvertisement();
             RUINInstallCompatibility();
+            RUINInstallChatCatalog();
             RUINInstallKeychainCompatibility();
             RUINInstallLegacyMessagingConfiguration();
             RUINInstallLocalFont();

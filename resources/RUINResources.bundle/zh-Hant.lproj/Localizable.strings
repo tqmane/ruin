@@ -20,14 +20,20 @@
 	<string>傳送至%ld人的群組？</string>
 	<key>%lu件</key>
 	<string>%lu項</string>
+	<key>%lu件のトークを変更中</key>
+	<string>已變更 %lu 個聊天室</string>
 	<key>0以上の人数を入力してください。</key>
 	<string>請輸入0或以上的人數。</string>
 	<key>1対1のトークで、既読非表示・トーク別の例外・返信時の切替を実機で確認済みです。グループやオープンチャット、手動で既読にする操作は検証中です。</key>
 	<string>已於實體裝置上驗證1對1聊天中的已讀抑制、個別聊天例外及回覆時切換功能。群組、OpenChat及手動標記已讀仍在測試中。</string>
+	<key>1対1トーク</key>
+	<string>一對一聊天</string>
 	<key>1対1トークでの受信済みテキスト保持と「取消済」表示を確認済みです。添付ファイル・グループ・オープンチャットでの保持は検証中です。既読者一覧には、この端末で記録した名前と日時を表示します。</key>
 	<string>已驗證1對1聊天中保留已接收文字及顯示「已收回」。附件、群組和OpenChat的訊息保留仍在測試中。已讀成員名單顯示在此裝置上記錄的名稱和時間。</string>
 	<key>1対1・グループトークの新着のみ通知します。アプリ停止中の即時受信には対応していません。</key>
 	<string>僅通知1對1和群組聊天的新訊息。不支援應用程式關閉時的即時接收。</string>
+	<key>24h送信取消・ミュートメッセージ</key>
+	<string>24小時收回與無聲訊息</string>
 	<key>Agent-iバーを非表示</key>
 	<string>隱藏Agent-i列</string>
 	<key>GIFでコピー</key>
@@ -126,8 +132,12 @@
 	<string>不支援預覽此檔案。可透過分享選單操作此檔案。</string>
 	<key>この環境ではLINEの着せかえ記録を取得できません。</key>
 	<string>在此環境下無法取得LINE主題記錄。</string>
+	<key>この端末でのトーク名だけを変更します。相手には反映されません。</key>
+	<string>僅變更此裝置上的聊天室名稱，不會套用至對方。</string>
 	<key>この端末での表示名</key>
 	<string>此裝置上的顯示名稱</string>
+	<key>この端末での表示名だけを変更します。相手には反映されません。一覧に反映されない場合はLINEを再起動してください。</key>
+	<string>僅變更此裝置上的顯示名稱，不會套用至對方。若列表未更新，請重新啟動LINE。</string>
 	<key>この端末で表示する名前</key>
 	<string>在此裝置上顯示的名稱</string>
 	<key>この端末の別名</key>
@@ -136,6 +146,8 @@
 	<string>測試者們</string>
 	<key>てすたーず (2)</key>
 	<string>測試者們 (2)</string>
+	<key>アカウントが変わりました。トーク一覧を開き直してください。</key>
+	<string>帳號已變更，請重新開啟聊天室列表。</string>
 	<key>アプリの動作に必要なタブは、常に表示されます。</key>
 	<string>應用程式運作所需的標籤頁將一律顯示。</string>
 	<key>アプリアイコンを変更できませんでした。</key>
@@ -148,6 +160,8 @@
 	<string>錢包</string>
 	<key>オンにする</key>
 	<string>開啟</string>
+	<key>オープンチャット</key>
+	<string>社群 (OpenChat)</string>
 	<key>カスタムフォント</key>
 	<string>自訂字型</string>
 	<key>カメラの確認</key>
@@ -162,6 +176,8 @@
 	<string>取消</string>
 	<key>グループへの送信確認</key>
 	<string>群組傳送確認</string>
+	<key>グループトーク</key>
+	<string>群組聊天</string>
 	<key>グループ人数を確認できません。送信しますか？</key>
 	<string>無法確認群組人數。是否傳送？</string>
 	<key>サブ端末では、現在のメイン端末でQRコードを読み取り、ログインを承認します。</key>
@@ -206,8 +222,16 @@
 	<string>請檢查下載設定與目前處理狀態。</string>
 	<key>トーク</key>
 	<string>聊天</string>
+	<key>トークが見つかりません</key>
+	<string>找不到聊天室</string>
+	<key>トークの表示名</key>
+	<string>聊天室顯示名稱</string>
 	<key>トークの識別IDを確認してください。</key>
 	<string>請檢查聊天識別ID。</string>
+	<key>トークを読み込み中…</key>
+	<string>正在載入聊天室…</string>
+	<key>トーク一覧を一度開いてから、もう一度お試しください。</key>
+	<string>請先開啟一次聊天室列表，然後再試一次。</string>
 	<key>ニュース</key>
 	<string>新聞</string>
 	<key>バージョン</key>
@@ -278,6 +302,8 @@
 	<string>設定本機顯示名稱</string>
 	<key>ローカル設定・診断</key>
 	<string>本機設定與診斷</string>
+	<key>一覧にないトーク（%lu）</key>
+	<string>不在列表中的聊天室（%lu）</string>
 	<key>一覧の更新に失敗しました。前回取得した内容を表示しています。</key>
 	<string>更新列表失敗。正在顯示上次取得的內容。</string>
 	<key>一覧を取得できませんでした</key>
@@ -300,6 +326,10 @@
 	<string>已儲存檔案（%lu）</string>
 	<key>保有</key>
 	<string>已擁有</string>
+	<key>元の名前に戻す</key>
+	<string>還原原始名稱</string>
+	<key>元の名前：%@</key>
+	<string>原始名稱：%@</string>
 	<key>全体の既読抑制はオフです。例外設定は保存されます</key>
 	<string>全域已讀抑制已關閉。例外設定已儲存</string>
 	<key>全機能の対応表</key>
@@ -324,10 +354,14 @@
 	<string>已收回</string>
 	<key>名前</key>
 	<string>名稱</string>
+	<key>名前とアイコンから、通常通り既読をつけるトークを選べます。変更はすぐに反映されます。</key>
+	<string>可透過名稱與大頭貼選擇正常傳送已讀標記的聊天室。變更將立即生效。</string>
 	<key>名前のない着せかえ</key>
 	<string>未命名主題</string>
 	<key>名前は改行を含めず、256文字以内で入力してください。</key>
 	<string>請輸入不含換行且在 256 個字元以內的名稱。</string>
+	<key>名前やトーク名で検索</key>
+	<string>依名稱或聊天室名稱搜尋</string>
 	<key>名前を入力してください。</key>
 	<string>請輸入名稱。</string>
 	<key>名前を確認中…</key>
@@ -476,6 +510,8 @@ LINEの保存記録です。現在の適用状態は確認していません。<
 	<string>包含自己在內的群組人數。0為不指定人數。</string>
 	<key>表示の管理</key>
 	<string>顯示管理</string>
+	<key>表示名を変更するトークを選ぶ</key>
+	<string>選擇要變更顯示名稱的聊天室</string>
 	<key>表示名を編集</key>
 	<string>編輯顯示名稱</string>
 	<key>記録はありません</key>
@@ -532,6 +568,8 @@ LINEの保存記録です。現在の適用状態は確認していません。<
 	<string>結束通話確認</string>
 	<key>通話開始の確認</key>
 	<string>發起通話確認</string>
+	<key>選択中：%lu件</key>
+	<string>已選取：%lu 個</string>
 	<key>閉じる</key>
 	<string>關閉</string>
 	<key>開始</key>
