@@ -3,6 +3,7 @@
 #import "SecondaryLogin.h"
 #import "../core/Localization.h"
 #import "Features.h"
+#import "../core/TargetMetadata.h"
 #import "LINEPrivateCalls.h"
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
@@ -22,9 +23,7 @@ static NSString *lastLoginScreen;
 
 static BOOL RUINSecondaryLoginTargetMatches(void) {
     NSDictionary *info = NSBundle.mainBundle.infoDictionary;
-    return [info[@"RUINOriginalBundleIdentifier"] isEqual:RUINTargetBundleIdentifier] &&
-        [info[@"CFBundleShortVersionString"] isEqual:RUINTargetVersion] &&
-        [info[@"CFBundleVersion"] isEqual:RUINTargetBuild];
+    return RUINTargetMetadataMatchesInfo(info);
 }
 
 %group RUINSecondaryDeviceRole

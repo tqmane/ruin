@@ -1,6 +1,7 @@
 #import <Foundation/Foundation.h>
 #import <Security/SecItem.h>
 #import <stdatomic.h>
+#import "BundleIdentity.h"
 
 #import "fishhook.h"
 // Imported C symbols intentionally use fishhook: Logos' internal backend does
@@ -65,7 +66,7 @@ static OSStatus RUINSecItemDelete(CFDictionaryRef query) {
 void RUINInstallKeychainCompatibility(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        NSDictionary *info = NSBundle.mainBundle.infoDictionary;
+        NSDictionary *info = RUINActualMainBundleInfo();
         id teamValue = info[@"RUINSignedTeamIdentifier"];
         id bundleValue = info[@"RUINSignedBundleIdentifier"];
         id currentBundleValue = info[@"CFBundleIdentifier"];

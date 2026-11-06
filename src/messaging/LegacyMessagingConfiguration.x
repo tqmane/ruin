@@ -3,6 +3,7 @@
 #import "MessagingPrivateAPI.h"
 #import "LegacyMessagingConfiguration.h"
 #import "../core/Features.h"
+#import "../core/TargetMetadata.h"
 #import <objc/runtime.h>
 #import <stdatomic.h>
 #import <string.h>
@@ -13,9 +14,7 @@ static NSString *const kUnsend = @"function.chatroom.message.unsend.timelimit";
 static const long long kNormalUnsendLimitMilliseconds = 24LL * 60 * 60 * 1000;
 
 static BOOL RUINLegacyMessagingTargetMatchesInfo(NSDictionary *info) {
-    return [info[@"RUINOriginalBundleIdentifier"] isEqual:RUINTargetBundleIdentifier] &&
-        [info[@"CFBundleShortVersionString"] isEqual:RUINTargetVersion] &&
-        [info[@"CFBundleVersion"] isEqual:RUINTargetBuild];
+    return RUINTargetMetadataMatchesInfo(info);
 }
 
 static BOOL RUINLegacyMessagingEnabledForInfo(NSDictionary *info, BOOL optionEnabled) {

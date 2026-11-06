@@ -3,6 +3,7 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 #import "Features.h"
+#import "../core/TargetMetadata.h"
 #import "Localization.h"
 #import "SecondaryLogin.h"
 
@@ -171,9 +172,7 @@ static void RUINAttachHomeSettingsButton(UIViewController *controller) {
 void RUINInstallNativeEntry(void) {
     if (nativeHookInstalled && homeHookInstalled && friendHomeHookInstalled) return;
     NSDictionary *info = NSBundle.mainBundle.infoDictionary;
-    if (![info[@"RUINOriginalBundleIdentifier"] isEqual:RUINTargetBundleIdentifier] ||
-        ![info[@"CFBundleShortVersionString"] isEqual:RUINTargetVersion] ||
-        ![info[@"CFBundleVersion"] isEqual:RUINTargetBuild]) return;
+    if (!RUINTargetMetadataMatchesInfo(info)) return;
     for (NSString *name in @[@"_TtC8LineHome18HomeViewController", @"_TtC11LineHomeTab23FriendTabViewController"]) {
         BOOL *hookInstalled = [name containsString:@"FriendTab"] ? &friendHomeHookInstalled : &homeHookInstalled;
         if (*hookInstalled) continue;

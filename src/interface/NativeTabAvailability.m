@@ -1,6 +1,7 @@
 #import "NativeTabAvailability.h"
 #import "InterfaceFeatures.h"
 #import "Features.h"
+#import "../core/TargetMetadata.h"
 #include <stdatomic.h>
 #include <stdint.h>
 
@@ -145,9 +146,7 @@ void RUINInstallNativeTabAvailability(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         NSDictionary *info = NSBundle.mainBundle.infoDictionary;
-        if (![info[@"RUINOriginalBundleIdentifier"] isEqual:RUINTargetBundleIdentifier] ||
-            ![info[@"CFBundleShortVersionString"] isEqual:RUINTargetVersion] ||
-            ![info[@"CFBundleVersion"] isEqual:RUINTargetBuild]) { atomic_store(&status,1); return; }
+        if (!RUINTargetMetadataMatchesInfo(info)) { atomic_store(&status,1); return; }
         intptr_t slide = _dyld_get_image_vmaddr_slide(0);
         const uint32_t *bridge = (const void *)(slide + 0x100010f38);
         static const uint32_t expectedBridge[] = {0xaa1603e0,0xaa1503e1,0xd61f0100};

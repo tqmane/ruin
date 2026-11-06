@@ -14,6 +14,7 @@
 #import <CoreData/CoreData.h>
 
 #import "Features.h"
+#import "TargetMetadata.h"
 #import "LINEPrivateCalls.h"
 #import "SwiftFields.h"
 #import "ThemeApplyEvent.h"
@@ -51,9 +52,7 @@ static BOOL RUINInspectorEnabled(void) {
 
 static BOOL RUINInspectorTargetMatches(void) {
     NSDictionary *info = NSBundle.mainBundle.infoDictionary ?: @{};
-    return [info[@"RUINOriginalBundleIdentifier"] isEqual:RUINTargetBundleIdentifier] &&
-        [info[@"CFBundleShortVersionString"] isEqual:RUINTargetVersion] &&
-        [info[@"CFBundleVersion"] isEqual:RUINTargetBuild];
+    return RUINTargetMetadataMatchesInfo(info);
 }
 
 static NSString *RUINClassName(id object) { return NSStringFromClass(object_getClass(object)) ?: @""; }

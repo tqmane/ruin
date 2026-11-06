@@ -1,5 +1,6 @@
 #import "NativeReadRangeSync.h"
 #import "MessageHistory.h"
+#import "../core/TargetMetadata.h"
 #import <objc/runtime.h>
 #include <string.h>
 #import <os/lock.h>
@@ -22,10 +23,7 @@ static BOOL TrackReadersEnabled(void) {
 void RUINObserveNativeReadRangeRequest(NSURLSession *session, NSURLRequest *request) {
     BOOL inspect = [NSProcessInfo.processInfo.environment[@"RUIN_ENABLE_RUNTIME_INSPECTOR"] isEqual:@"1"];
     NSDictionary *info = NSBundle.mainBundle.infoDictionary;
-    BOOL capture = [info[@"RUINOriginalBundleIdentifier"] isEqual:@"jp.naver.line"] &&
-        [info[@"CFBundleShortVersionString"] isEqual:@"26.16.0"] &&
-        [info[@"CFBundleVersion"] isEqual:@"2026.1006.1718"] &&
-        TrackReadersEnabled();
+    BOOL capture = RUINTargetMetadataMatchesInfo(info) && TrackReadersEnabled();
     if (!inspect && !capture) return;
     if (![session isKindOfClass:NSURLSession.class] || ![request isKindOfClass:NSURLRequest.class]) return;
     NSString *host = request.URL.host.lowercaseString;
@@ -157,9 +155,7 @@ void RUINPrepareNativeReadRangeProbe(void) {
     NSString *chat = environment[@"RUIN_TEST_READ_RANGE_CHAT"];
     if (!chat || ![environment[@"RUIN_ENABLE_RUNTIME_INSPECTOR"] isEqual:@"1"]) return;
     NSDictionary *info = NSBundle.mainBundle.infoDictionary;
-    if (![info[@"RUINOriginalBundleIdentifier"] isEqual:@"jp.naver.line"] ||
-        ![info[@"CFBundleShortVersionString"] isEqual:@"26.16.0"] ||
-        ![info[@"CFBundleVersion"] isEqual:@"2026.1006.1718"]) { probeStatus = @"wrong_build"; return; }
+    if (!RUINTargetMetadataMatchesInfo(info)) { probeStatus = @"wrong_build"; return; }
     NSUserDefaults *profile = [[NSUserDefaults alloc] initWithSuiteName:@"group.com.linecorp.line"];
     if (!Identifier([profile objectForKey:@"mid"], 'u')) { probeStatus = @"profile_missing"; return; }
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;

@@ -13,6 +13,7 @@
 #import <UIKit/UIKit.h>
 #import "SwiftFields.h"
 #import "Features.h"
+#import "../core/TargetMetadata.h"
 #endif
 
 static atomic_uint_fast64_t gReaderSheets, gReaderContexts, gReaderSchemaRejected;
@@ -188,9 +189,7 @@ NSDictionary<NSString *, id> *RUINReadersSheetDiagnostics(void)
 static BOOL RUINReaderTargetMatches(void)
 {
     NSDictionary *info = NSBundle.mainBundle.infoDictionary;
-    return [info[@"RUINOriginalBundleIdentifier"] isEqual:@"jp.naver.line"] &&
-        [info[@"CFBundleShortVersionString"] isEqual:@"26.16.0"] &&
-        [info[@"CFBundleVersion"] isEqual:@"2026.1006.1718"];
+    return RUINTargetMetadataMatchesInfo(info);
 }
 
 static NSArray<NSManagedObjectContext *> *RUINReaderContexts(UIViewController *source)

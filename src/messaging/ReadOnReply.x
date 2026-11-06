@@ -3,6 +3,7 @@
 #import "MessagingPrivateAPI.h"
 #import "ReadOnReply.h"
 #import "Features.h"
+#import "../core/TargetMetadata.h"
 #import "AutomaticReadGate.h"
 #import <CoreData/CoreData.h>
 #import <objc/runtime.h>
@@ -80,9 +81,7 @@ static BOOL Install(const char *name, const char *selectorName, const char *enco
 }
 void RUINInstallReadOnReply(void) {
     NSDictionary *info = NSBundle.mainBundle.infoDictionary;
-    if (![info[@"RUINOriginalBundleIdentifier"] isEqual:RUINTargetBundleIdentifier] ||
-        ![info[@"CFBundleShortVersionString"] isEqual:RUINTargetVersion] ||
-        ![info[@"CFBundleVersion"] isEqual:RUINTargetBuild]) { RUINSetReplyObserverInstalled(NO); return; }
+    if (!RUINTargetMetadataMatchesInfo(info)) { RUINSetReplyObserverInstalled(NO); return; }
     if (!talkInstalled) talkInstalled = Install("ManagedMessage", "addNotificationOfSentMessage", "v16@0:8", ^(Class cls) {
         %init(RUINReplyTalkSent, RUINReplyTalk = cls);
     });
