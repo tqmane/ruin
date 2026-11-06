@@ -89,6 +89,8 @@ def main():
         old_profile.unlink()
     info['CFBundleIdentifier'] = bundle_id
     info['CFBundleDisplayName'] = 'RUIN'
+    info['UIFileSharingEnabled'] = True
+    info['LSSupportsOpeningDocumentsInPlace'] = True
     info['RUINOriginalBundleIdentifier'] = original_bundle_id
     info['RUINSignedBundleIdentifier'] = bundle_id
     info['RUINSigningApplicationIdentifier'] = signing_app_id
@@ -106,10 +108,12 @@ def main():
         localized_info.write_bytes(plistlib.dumps(localized, fmt=plistlib.FMT_BINARY))
     shutil.copy2(a.profile, app / 'embedded.mobileprovision')
     fishhook_notice = (ROOT / 'vendor/fishhook/fishhook.c').read_text().split('#include "fishhook.h"', 1)[0]
-    (app / 'RUIN-ThirdPartyNotices.txt').write_text('fishhook - https://github.com/facebook/fishhook\n\n' + fishhook_notice)
+    tabler_notice = (ROOT / 'vendor/tabler-icons/LICENSE').read_text()
+    (app / 'RUIN-ThirdPartyNotices.txt').write_text('fishhook - https://github.com/facebook/fishhook\n\n' + fishhook_notice + '\n\nTabler Icons - https://github.com/tabler/tabler-icons\n\n' + tabler_notice)
     frameworks = app / 'Frameworks'
     frameworks.mkdir(exist_ok=True)
     shutil.copy2(a.dylib, frameworks / 'RUIN.dylib')
+    shutil.copytree(ROOT / 'resources/RUINResources.bundle', app / 'RUINResources.bundle')
     os.chmod(frameworks / 'RUIN.dylib', 0o755)
     run(ROOT / 'build/insert_dylib', '--inplace', '--all-yes', '--strip-codesig',
         RUIN_LOAD_PATH, binary)

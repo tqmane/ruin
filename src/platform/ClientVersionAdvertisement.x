@@ -5,7 +5,6 @@
 #import "../core/Features.h"
 
 #import <objc/runtime.h>
-#import <os/lock.h>
 #import <stdatomic.h>
 #import <string.h>
 
@@ -71,68 +70,11 @@ static atomic_uint_fast64_t gRewriteApplicationVersion;
 static atomic_uint_fast64_t gRewriteUserAgent;
 static atomic_uint_fast64_t gRewriteUserAgentBuildVersion;
 static dispatch_once_t gInstallOnce;
-static os_unfair_lock gFontEventLock = OS_UNFAIR_LOCK_INIT;
-static NSMutableArray *gFontRPCEvents;
 static atomic_uint_fast64_t gNativeFontVersionRequests;
 static BOOL RUINURLIsSupportedLINEAPI(NSURL *URL);
 
-static NSString *RUINRPCMethodName(NSData *body) {
-    if (body.length < 4 || body.length > 1024 * 1024) return nil;
-    const uint8_t *bytes = body.bytes;
-    NSUInteger at = 0, length = 0;
-    if (bytes[0] == 0x82 && (bytes[1] & 0x1f) == 1) {
-        at = 2;
-        for (unsigned field = 0; field < 2; field++) {
-            uint32_t value = 0; BOOL complete = NO;
-            for (unsigned shift = 0; shift < 35 && at < body.length; shift += 7) {
-                uint8_t byte = bytes[at++];
-                if (shift == 28 && (byte & 0xf0)) return nil;
-                value |= (uint32_t)(byte & 0x7f) << shift;
-                if (!(byte & 0x80)) { complete = YES; break; }
-            }
-            if (!complete) return nil;
-            if (field == 1) length = value;
-        }
-    } else if (body.length >= 8 && bytes[0] == 0x80 && bytes[1] == 1) {
-        at = 8;
-        length = ((NSUInteger)bytes[4] << 24) | ((NSUInteger)bytes[5] << 16) |
-            ((NSUInteger)bytes[6] << 8) | bytes[7];
-    } else return nil;
-    if (!length || length > 128 || length > body.length - at) return nil;
-    for (NSUInteger i = at; i < at + length; i++) {
-        uint8_t c = bytes[i];
-        if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
-            (c >= '0' && c <= '9') || c == '_' || c == ':' || c == '.')) return nil;
-    }
-    NSString *name = [[NSString alloc] initWithBytes:bytes + at length:length encoding:NSASCIIStringEncoding];
-    return name;
-}
-
-static NSString *RUINFontRPCMethod(NSURLRequest *request) {
-    NSString *name = RUINRPCMethodName(request.HTTPBody);
-    if ([request.URL.path isEqual:@"/EXT/talk/asset-meta-server/thrift/fontService"])
-        return name ?: @"fontService";
-    if (!name) return nil;
-    return [name rangeOfString:@"font" options:NSCaseInsensitiveSearch].location != NSNotFound ? name : nil;
-}
-
-static RUINURLSessionCompletion RUINFontRPCCompletion(NSURLRequest *request, RUINURLSessionCompletion original) {
-    if (!original || !RUINURLIsSupportedLINEAPI(request.URL) ||
-        ![NSProcessInfo.processInfo.environment[@"RUIN_ENABLE_RUNTIME_INSPECTOR"] isEqual:@"1"])
-        return original;
-    NSString *method = RUINFontRPCMethod(request);
-    if (!method) return original;
-    return ^(NSData *data, NSURLResponse *response, NSError *error) {
-        NSInteger status = [response isKindOfClass:NSHTTPURLResponse.class] ? [(NSHTTPURLResponse *)response statusCode] : 0;
-        NSDictionary *event = @{@"method":method, @"httpStatus":@(status), @"bytes":@(data.length),
-            @"errorDomain":error.domain ?: @"", @"errorCode":@(error.code)};
-        os_unfair_lock_lock(&gFontEventLock);
-        if (!gFontRPCEvents) gFontRPCEvents = [NSMutableArray array];
-        if (gFontRPCEvents.count == 16) [gFontRPCEvents removeObjectAtIndex:0];
-        [gFontRPCEvents addObject:event];
-        os_unfair_lock_unlock(&gFontEventLock);
-        original(data, response, error);
-    };
+static BOOL RUINIsNativeFontRequest(NSURLRequest *request) {
+    return [request.URL.path isEqual:@"/EXT/talk/asset-meta-server/thrift/fontService"];
 }
 
 #if defined(RUIN_CLIENT_VERSION_ADVERTISEMENT_HOST_CHECK)
@@ -457,7 +399,7 @@ static NSURLRequest *RUINRequestWithAdvertisedHeaders(id self, NSURLRequest *req
         atomic_fetch_add(&gHostScopedRequests, 1);
         // New font APIs keep this build's native client metadata. Legacy
         // advertisement remains in place for message send/unsend requests.
-        if (RUINFontRPCMethod(request)) {
+        if (RUINIsNativeFontRequest(request)) {
             atomic_fetch_add(&gNativeFontVersionRequests, 1);
             return request;
         }
@@ -508,7 +450,6 @@ static NSURLRequest *RUINRequestWithAdvertisedHeaders(id self, NSURLRequest *req
 }
 - (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request completionHandler:(RUINURLSessionCompletion)completion
 {
-    completion = RUINFontRPCCompletion(request, completion);
     if (atomic_load(&gHookStatus) == RUINAdvertisementHookInstalled)
         request = RUINRequestWithAdvertisedHeaders(self, request);
     return %orig(request, completion);
@@ -611,9 +552,6 @@ void RUINInstallClientVersionAdvertisement(void)
 
 NSDictionary<NSString *, id> *RUINClientVersionAdvertisementDiagnostics(void)
 {
-    os_unfair_lock_lock(&gFontEventLock);
-    NSArray *fontEvents = [gFontRPCEvents copy] ?: @[];
-    os_unfair_lock_unlock(&gFontEventLock);
     BOOL targetMatches = RUINClientVersionAdvertisementTargetMatches();
     BOOL enabled = RUINClientVersionAdvertisementEnabled();
     return @{
@@ -633,10 +571,9 @@ NSDictionary<NSString *, id> *RUINClientVersionAdvertisementDiagnostics(void)
             @"User-Agent:iphoneapp.line/<version> or Line/<version>", @"User-Agent:BuildVersion:<version> (if present)"],
         @"sessionConfigurationModified":@NO,
         @"bundleMetadataModified":@NO,
-        @"rpcMethodHeaderInspected":@YES,
+        @"rpcMethodHeaderInspected":@NO,
         @"requestPayloadLogged":@NO,
         @"nativeFontVersionRequests":@(atomic_load(&gNativeFontVersionRequests)),
-        @"debugFontRPCs":fontEvents,
         @"requestsObserved":@(atomic_load(&gRequestsObserved)),
         @"requestsRewritten":@(atomic_load(&gRequestsRewritten)),
         @"hostScopedRequests":@(atomic_load(&gHostScopedRequests)),
@@ -662,26 +599,11 @@ NSDictionary<NSString *, id> *RUINClientVersionAdvertisementDiagnostics(void)
 int main(void)
 {
     @autoreleasepool {
-        const char fontCall[] = "\x82\x21\x00\x0bgetFontInfo";
-        NSData *fontBody = [NSData dataWithBytes:fontCall length:15];
-        assert([RUINRPCMethodName(fontBody) isEqual:@"getFontInfo"]);
-        assert(!RUINRPCMethodName([fontBody subdataWithRange:NSMakeRange(0, 10)]));
-        const char normalCall[] = "\x82\x21\x00\x0bsendMessage";
         NSMutableURLRequest *fontRequest = [NSMutableURLRequest requestWithURL:
-            [NSURL URLWithString:@"https://legy-jp.line-apps.com/S4"]];
-        fontRequest.HTTPBody = [NSData dataWithBytes:normalCall length:15];
-        assert(!RUINFontRPCMethod(fontRequest));
-        const char tokenCall[] = "\x82\x21\x00\x0egetAccessToken";
-        fontRequest.HTTPBody = [NSData dataWithBytes:tokenCall length:18];
-        assert(!RUINFontRPCMethod(fontRequest));
-        fontRequest.URL = [NSURL URLWithString:@"https://legy-jp.line-apps.com/EXT/talk/asset-meta-server/thrift/fontService"];
-        assert([RUINFontRPCMethod(fontRequest) isEqual:@"getAccessToken"]);
-        fontRequest.HTTPBody = nil;
-        assert([RUINFontRPCMethod(fontRequest) isEqual:@"fontService"]);
-        const uint8_t binaryHeader[] = {0x80,1,0,1,0,0,0,11};
-        NSMutableData *binaryFont = [NSMutableData dataWithBytes:binaryHeader length:sizeof(binaryHeader)];
-        [binaryFont appendData:[@"getFontInfo" dataUsingEncoding:NSASCIIStringEncoding]];
-        assert([RUINRPCMethodName(binaryFont) isEqual:@"getFontInfo"]);
+            [NSURL URLWithString:@"https://legy-jp.line-apps.com/EXT/talk/asset-meta-server/thrift/fontService"]];
+        assert(RUINIsNativeFontRequest(fontRequest));
+        fontRequest.URL = [NSURL URLWithString:@"https://legy-jp.line-apps.com/S4"];
+        assert(!RUINIsNativeFontRequest(fontRequest));
         NSURL *lineURL = [NSURL URLWithString:@"https://legy-jp.line-apps.com/S4"];
         NSDictionary *requestHeaders = @{
             @"X-Line-Application":@"IOS\t26.16.0\tiPhone OS\t18.2.1",

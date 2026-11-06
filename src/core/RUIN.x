@@ -34,7 +34,8 @@
 #import "PushDiagnostics.h"
 #import "LocalNotifications.h"
 #import "LocalAppearance.h"
-#import "NativeFontCustomization.h"
+#import "LocalFont.h"
+#import "LocalFontUI.h"
 #import "NativeMuteSend.h"
 #import "ClientVersionAdvertisement.h"
 #import "LegacyMessagingConfiguration.h"
@@ -49,7 +50,7 @@ extern NSDictionary *RUINKeychainSelfTest(void);
 extern void RUINInstallNativeEntry(void);
 extern NSDictionary *RUINNativeEntryDiagnostics(void);
 
-static NSString *const RUINVersion = @"0.3.0-dev";
+static NSString *const RUINVersion = @"0.3.11-dev";
 
 static UINavigationController *sSettingsNavigationController;
 static BOOL sSettingsPresentationInFlight;
@@ -135,7 +136,8 @@ static NSDictionary *RUINRuntimeDiagnostics(void) {
         @"localNotifications": RUINLocalNotificationDiagnostics(),
         @"localNotificationLaunchHookInstalled": @(sLocalNotificationLaunchHookInstalled),
         @"localAppearance": RUINLocalAppearanceDiagnostics(),
-        @"fontCustomization": RUINNativeFontCustomizationDiagnostics(),
+        @"localFont": RUINLocalFontDiagnostics(),
+        @"localFontRendering": RUINLocalFontHookDiagnostics(),
         @"nativeMuteSend": RUINNativeMuteSendDiagnostics(),
         @"clientVersionAdvertisement": RUINClientVersionAdvertisementDiagnostics(),
         @"legacyMessagingConfiguration": RUINLegacyMessagingConfigurationDiagnostics(),
@@ -237,7 +239,7 @@ static void RefreshFeatures(void) {
     RUINInstallClientVersionAdvertisement();
     RUINInstallLocalNotifications();
     RUINInstallLocalAppearance();
-    RUINInstallNativeFontCustomization();
+    RUINInstallLocalFont();
     RUINInstallNativeMuteSend();
     RUINInstallFeatures();
     RUINInstallReadBoundary();
@@ -265,6 +267,7 @@ static void RefreshFeatures(void) {
 @implementation RUINSettingsViewController
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
+    [self.tableView reloadData];
     RUINWriteRuntimeReport();
 }
 - (instancetype)initWithCompatibility:(BOOL)compatible {
@@ -314,7 +317,7 @@ static void RefreshFeatures(void) {
         case 7: return @"変更はログアウト後、ログイン画面の「ログイン」長押しで行います。切り替え後はアプリの再起動が必要です。";
         case 8: return @"着せかえ・スタンプGIF・MID検索なども全機能対応の対象です。未完成の項目を対応済みとは表示しません。";
         case 11: return @"1対1・グループトークの新着のみ通知します。アプリ停止中の即時受信には対応していません。";
-        case 12: return @"ミュート送信と送信取消期限は、アプリの再起動後に反映されます。アプリアイコンはLINEの設定から変更できます。フォント機能は準備中です。";
+        case 12: return @"ミュート送信と送信取消期限はアプリ再起動後に反映されます。アプリアイコンはLINE設定から変更できます。";
         default: return nil;
     }
 }
@@ -322,7 +325,7 @@ static void RefreshFeatures(void) {
     if (!self.compatible) return 1;
     if (section == 2) return MAX((NSInteger)1, (NSInteger)self.aliasKeys.count);
     if (section == 1 || section == 3 || section == 5) return ToggleRows(section).count + 1;
-    if (section == 8) return 2;
+    if (section == 8 || section == 12) return 2;
     return MAX((NSInteger)1, (NSInteger)ToggleRows(section).count);
 }
 - (UITableViewCell *)tableView:(__unused UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)path {
@@ -331,6 +334,10 @@ static void RefreshFeatures(void) {
     NSArray *rows = ToggleRows(path.section);
     if (!self.compatible || path.section == 8) {
         cell.textLabel.text = path.row == 0 ? @"ランタイム・機能診断" : @"全機能の対応表";
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    } else if (path.section == 12 && path.row == 1) {
+        cell.textLabel.text = @"カスタムフォント";
+        cell.detailTextLabel.text = RUINLocalFontName() ?: @"標準フォント";
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     } else if (path.section == 10) {
         cell.textLabel.text = @"MIDでプロフィールを開く";
@@ -389,6 +396,8 @@ static void RefreshFeatures(void) {
             viewer.document = RUINFeatureDiagnostics();
         }
         [self.navigationController pushViewController:viewer animated:YES];
+    } else if (path.section == 12 && path.row == 1) {
+        RUINOpenLocalFontSettings(self);
     } else if (path.section == 10) {
         RUINOpenMIDLookup(self);
     } else if (path.section == 9) {
@@ -568,7 +577,7 @@ static void RUINApplicationDidBecomeActive(void) {
         RUINInstallLegacyMessagingConfiguration();
         RUINInstallLocalNotifications();
         RUINInstallLocalAppearance();
-        RUINInstallNativeFontCustomization();
+        RUINInstallLocalFont();
         RUINInstallNativeMuteSend();
     }
     static BOOL selfTestAttempted;
@@ -616,7 +625,8 @@ __attribute__((constructor)) static void RUINConstructor(void) {
             RUINInstallCompatibility();
             RUINInstallKeychainCompatibility();
             RUINInstallLegacyMessagingConfiguration();
-            RUINInstallNativeFontCustomization();
+            RUINInstallLocalFont();
+            RUINInstallLocalFontHooks();
             RUINInstallLocalNotificationLaunchBoundary();
             [NSUserDefaults.standardUserDefaults removeObjectForKey:@"RUINMessageMarkdownEnabled"];
             RUINPrepareNativeReadRangeProbe();

@@ -47,7 +47,6 @@ HOST_FIXTURES := \
 	build/check_client_version_advertisement \
 	build/check_local_appearance \
 	build/check_legacy_messaging_configuration \
-	build/check_native_font \
 	build/check_native_tab_availability \
 	build/check_read_range_codec \
 	build/check_native_range_queue \
@@ -122,7 +121,6 @@ check-host: check-portable $(HOST_FIXTURES)
 	./build/check_client_version_advertisement
 	./build/check_local_appearance
 	./build/check_legacy_messaging_configuration
-	./build/check_native_font
 	python3 tests/check_theme_archive.py
 
 build/check_native_theme_validation: $(call source,src/themes/NativeThemeValidation.m) \
@@ -130,12 +128,6 @@ build/check_native_theme_validation: $(call source,src/themes/NativeThemeValidat
 	mkdir -p build
 	$(HOST_CC) -DRUIN_NATIVE_THEME_VALIDATION_HOST_CHECK=1 -fobjc-arc -fblocks $(HOST_WARNINGS) $(CPPFLAGS) \
 		$(call source,src/themes/NativeThemeValidation.m) -framework Foundation -framework CoreData -o $@
-
-build/check_native_font: $(call source,src/interface/NativeFontCustomization.m) \
-	src/interface/NativeFontCustomization.h src/core/Features.h
-	mkdir -p build
-	$(HOST_CC) -DRUIN_NATIVE_FONT_HOST_CHECK=1 -fobjc-arc -fblocks $(HOST_WARNINGS) $(CPPFLAGS) \
-		$(call source,src/interface/NativeFontCustomization.m) -framework Foundation -o $@
 
 build/check_legacy_messaging_configuration: $(call source,src/messaging/LegacyMessagingConfiguration.m) \
 	src/messaging/LegacyMessagingConfiguration.h
@@ -279,7 +271,7 @@ build/SwiftFields.o: src/core/SwiftFields.swift src/core/SwiftFields.h
 	xcrun --sdk iphoneos swiftc -sdk $(SDK) -target arm64-apple-ios18.0 -parse-as-library -O -module-name RUINRuntime -emit-object $< -o $@
 
 build/RUIN.dylib: $(OBJECTS)
-	xcrun --sdk iphoneos swiftc -sdk $(SDK) -target arm64-apple-ios18.0 -emit-library $(OBJECTS) -framework Foundation -framework UIKit -framework WebKit -framework CoreGraphics -framework Security -framework CoreData -framework ImageIO -framework UniformTypeIdentifiers -framework UserNotifications -lsqlite3 -lz -Xlinker -install_name -Xlinker @rpath/RUIN.dylib -o $@
+	xcrun --sdk iphoneos swiftc -sdk $(SDK) -target arm64-apple-ios18.0 -emit-library $(OBJECTS) -framework Foundation -framework UIKit -framework CoreText -framework WebKit -framework CoreGraphics -framework Security -framework CoreData -framework ImageIO -framework UniformTypeIdentifiers -framework UserNotifications -lsqlite3 -lz -Xlinker -install_name -Xlinker @rpath/RUIN.dylib -o $@
 
 # Upstream: https://github.com/Tyilo/insert_dylib, pinned for reproducible builds.
 build/insert_dylib.c:
