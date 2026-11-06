@@ -1,7 +1,8 @@
 SDK = $(shell xcrun --sdk iphoneos --show-sdk-path)
 CC := xcrun --sdk iphoneos clang
-HOST_CC := xcrun --sdk macosx clang
+HOST_CC := xcrun --sdk macosx clang -DRUIN_HOST_CHECK=1
 HOST_WARNINGS := -Wall -Wextra -Werror
+RUIN_BUILD_VERSION ?= $(shell cat VERSION)
 HEADER_DIRS := $(sort $(dir $(wildcard src/*/*.h))) vendor/fishhook
 CPPFLAGS := $(addprefix -I,$(HEADER_DIRS)) $(addprefix -Ibuild/logos/,$(filter src/%,$(HEADER_DIRS)))
 PERL ?= perl
@@ -17,12 +18,20 @@ LOGOS_DEPS := $(wildcard \
 	vendor/logos/bin/lib/Logos/Patch/Source/*.pm)
 # Host fixtures compile the same generated hooks as the iOS dylib.
 source = $(if $(filter $(1:.m=.x),$(LOGOS_SOURCES)),build/logos/$(1),$(1))
-CFLAGS = -arch arm64 -isysroot $(SDK) -miphoneos-version-min=18.0 -fobjc-arc -fblocks -Wall -Wextra -O2
+CFLAGS = -arch arm64 -isysroot $(SDK) -miphoneos-version-min=18.0 -fobjc-arc -fblocks -Wall -Wextra -O2 \
+	-DRUIN_BUILD_VERSION='@"$(RUIN_BUILD_VERSION)"'
 SOURCES := $(sort $(wildcard src/*/*.m))
 OBJECTS := $(SOURCES:%.m=build/%.o) $(LOGOS_SOURCES:%.x=build/%.o) build/fishhook.o build/SwiftFields.o
 
-.PHONY: all check check-host check-portable check-packaging check-fixtures logos clean
+.PHONY: all check check-host check-portable check-packaging check-fixtures logos clean dist version FORCE
 all: build/RUIN.dylib build/insert_dylib
+FORCE:
+# ponytail: rebuild the single version owner; use a generated header if this becomes expensive.
+build/src/core/RUIN.o: FORCE
+version:
+	@printf '%s\n' "$(RUIN_BUILD_VERSION)"
+dist: build/RUIN.dylib
+	python3 tools/distribute.py --version "$(RUIN_BUILD_VERSION)"
 logos: $(LOGOS_GENERATED)
 check: check-fixtures check-packaging
 check-portable: logos
@@ -46,6 +55,7 @@ check-fixtures: check-host build/check_native_theme_registration build/check_nat
 HOST_FIXTURES := \
 	build/check_client_version_advertisement \
 	build/check_local_appearance \
+	build/check_localization \
 	build/check_legacy_messaging_configuration \
 	build/check_native_tab_availability \
 	build/check_read_range_codec \
@@ -120,6 +130,7 @@ check-host: check-portable $(HOST_FIXTURES)
 	./build/check_local_notifications
 	./build/check_client_version_advertisement
 	./build/check_local_appearance
+	./build/check_localization "$(CURDIR)/resources/RUINResources.bundle"
 	./build/check_legacy_messaging_configuration
 	python3 tests/check_theme_archive.py
 
@@ -139,6 +150,11 @@ build/check_local_appearance: $(call source,src/interface/LocalAppearance.m) src
 	mkdir -p build
 	$(HOST_CC) -DRUIN_LOCAL_APPEARANCE_HOST_CHECK=1 -fobjc-arc -fblocks $(HOST_WARNINGS) $(CPPFLAGS) \
 		$(call source,src/interface/LocalAppearance.m) -framework Foundation -o $@
+
+build/check_localization: src/core/Localization.m src/core/Localization.h tests/check_localization.m
+	mkdir -p build
+	$(HOST_CC) -fobjc-arc -fblocks $(HOST_WARNINGS) $(CPPFLAGS) tests/check_localization.m \
+		-framework Foundation -o $@
 
 build/check_client_version_advertisement: $(call source,src/platform/ClientVersionAdvertisement.m) \
 	src/platform/ClientVersionAdvertisement.h src/core/Features.h
@@ -254,11 +270,11 @@ build/logos/%.m: %.x $(LOGOS_DEPS)
 	$(PERL) $(LOGOS) -c generator=internal -c warnings=error $< > $@.tmp
 	mv $@.tmp $@
 
-build/%.o: build/logos/%.m $(wildcard src/*/*.h) vendor/fishhook/fishhook.h
+build/%.o: build/logos/%.m $(wildcard src/*/*.h) vendor/fishhook/fishhook.h VERSION
 	mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 
-build/%.o: %.m $(wildcard src/*/*.h) vendor/fishhook/fishhook.h
+build/%.o: %.m $(wildcard src/*/*.h) vendor/fishhook/fishhook.h VERSION
 	mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 

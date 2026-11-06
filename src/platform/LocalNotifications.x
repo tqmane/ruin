@@ -1,6 +1,7 @@
 %config(generator=internal);
 
 #import "LocalNotifications.h"
+#import "../core/Localization.h"
 #import <CoreFoundation/CoreFoundation.h>
 #import <CommonCrypto/CommonDigest.h>
 #import <math.h>
@@ -14,8 +15,6 @@ static const NSTimeInterval kMaximumMessageAge = 5 * 60;
 static const NSTimeInterval kMaximumFutureSkew = 60;
 static const double kMaximumExactInteger = 9007199254740991.0;
 static NSString *const kRUINLocalDefaultTitle = @"LINE";
-static NSString *const kRUINLocalGenericBody = @"新着メッセージを受信しました";
-static NSString *const kRUINLocalAttachmentBody = @"添付ファイルを受信しました";
 
 typedef NS_ENUM(NSUInteger, RUINLocalSnapshotDisposition) {
     RUINLocalSnapshotRejected,
@@ -144,7 +143,7 @@ static BOOL RUINLocalEvaluateSnapshot(NSDictionary *snapshot, BOOL enabled,
 
     NSString *digest = RUINLocalIdentityDigest(snapshot);
     NSString *title = RUINLocalDisplayText(snapshot[@"title"], kRUINLocalDefaultTitle, 120);
-    NSString *fallbackBody = contentType ? kRUINLocalAttachmentBody : kRUINLocalGenericBody;
+    NSString *fallbackBody = contentType ? RUINLocalizedString(@"添付ファイルを受信しました") : RUINLocalizedString(@"新着メッセージを受信しました");
     NSString *body = RUINLocalDisplayText(snapshot[@"body"], fallbackBody, 500);
     if (!digest || !title || !body) return NO;
     if (digestOut) *digestOut = digest;

@@ -6,6 +6,7 @@
 #import <string.h>
 
 #if !defined(RUIN_MIDLOOKUP_HOST_CHECK)
+#import "../core/Localization.h"
 #import <UIKit/UIKit.h>
 #endif
 
@@ -96,16 +97,16 @@ NSDictionary<NSString *, id> *RUINMIDLookupDiagnostics(void)
 - (void)viewDidLoad
 {
     [super viewDidLoad];
-    self.title = @"MID検索";
+    self.title = RUINLocalizedString(@"MID検索");
     self.view.backgroundColor = UIColor.systemBackgroundColor;
     UILabel *explanation = [UILabel new];
-    explanation.text = @"確認したいユーザーのMIDを1件入力してください。MIDは「u」で始まる33文字の識別子です。LINE IDとは異なります。";
+    explanation.text = RUINLocalizedString(@"確認したいユーザーのMIDを1件入力してください。MIDは「u」で始まる33文字の識別子です。LINE IDとは異なります。");
     explanation.numberOfLines = 0;
     explanation.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
     explanation.adjustsFontForContentSizeCategory = YES;
     self.midField = [UITextField new];
-    self.midField.placeholder = @"MID（u＋32桁の半角英数字）";
-    self.midField.accessibilityLabel = @"検索するMID";
+    self.midField.placeholder = RUINLocalizedString(@"MID（u＋32桁の半角英数字）");
+    self.midField.accessibilityLabel = RUINLocalizedString(@"検索するMID");
     self.midField.borderStyle = UITextBorderStyleRoundedRect;
     self.midField.autocorrectionType = UITextAutocorrectionTypeNo;
     self.midField.autocapitalizationType = UITextAutocapitalizationTypeNone;
@@ -121,14 +122,14 @@ NSDictionary<NSString *, id> *RUINMIDLookupDiagnostics(void)
     [self.midField addTarget:self action:@selector(inputChanged) forControlEvents:UIControlEventEditingChanged];
     self.lookupButton = [UIButton buttonWithType:UIButtonTypeSystem];
     self.lookupButton.configuration = [UIButtonConfiguration filledButtonConfiguration];
-    [self.lookupButton setTitle:@"プロフィールを表示" forState:UIControlStateNormal];
+    [self.lookupButton setTitle:RUINLocalizedString(@"プロフィールを表示") forState:UIControlStateNormal];
     [self.lookupButton addTarget:self action:@selector(lookup) forControlEvents:UIControlEventTouchUpInside];
     self.statusLabel = [UILabel new];
     self.statusLabel.numberOfLines = 0;
     self.statusLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleFootnote];
     self.statusLabel.adjustsFontForContentSizeCategory = YES;
     self.statusLabel.textColor = UIColor.secondaryLabelColor;
-    self.statusLabel.text = @"検索するとLINE内でプロフィールを開きます。友だち追加やメッセージ送信は行いません。";
+    self.statusLabel.text = RUINLocalizedString(@"検索するとLINE内でプロフィールを開きます。友だち追加やメッセージ送信は行いません。");
     UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[
         explanation, self.midField, self.lookupButton, self.statusLabel]];
     stack.axis = UILayoutConstraintAxisVertical;
@@ -167,7 +168,7 @@ NSDictionary<NSString *, id> *RUINMIDLookupDiagnostics(void)
 - (void)lookup
 {
     if (!RUINMIDURL(self.midField.text)) {
-        self.statusLabel.text = @"「u」に続く32桁の半角数字・a〜f（小文字）を入力してください。";
+        self.statusLabel.text = RUINLocalizedString(@"「u」に続く32桁の半角数字・a〜f（小文字）を入力してください。");
         return;
     }
     if (self.navigationController.topViewController != self || self.presentedViewController) return;
@@ -177,11 +178,11 @@ NSDictionary<NSString *, id> *RUINMIDLookupDiagnostics(void)
     [self inputChanged];
     NSString *result = RUINMIDDispatch(input, UIApplication.sharedApplication.delegate, NSBundle.mainBundle.infoDictionary);
     if ([result isEqualToString:@"native_route_accepted"]) {
-        self.statusLabel.text = @"LINEにプロフィール表示を要求しました。見つからない場合や表示できない場合は、MIDと通信状態を確認してください。";
+        self.statusLabel.text = RUINLocalizedString(@"LINEにプロフィール表示を要求しました。見つからない場合や表示できない場合は、MIDと通信状態を確認してください。");
     } else {
         self.statusLabel.text = [result isEqualToString:@"version_gated"] || [result isEqualToString:@"native_router_unavailable_or_abi_mismatch"]
-            ? @"お使いのLINEのバージョンではMID検索を利用できません。"
-            : @"プロフィールを開けませんでした。MIDと通信状態を確認し、もう一度お試しください。";
+            ? RUINLocalizedString(@"お使いのLINEのバージョンではMID検索を利用できません。")
+            : RUINLocalizedString(@"プロフィールを開けませんでした。MIDと通信状態を確認し、もう一度お試しください。");
     }
 }
 @end
@@ -210,9 +211,9 @@ void RUINOpenMIDProfile(UIViewController *source, NSString *mid)
         UIApplication.sharedApplication.applicationState != UIApplicationStateActive) return;
     NSString *result = RUINMIDDispatch(mid, UIApplication.sharedApplication.delegate, NSBundle.mainBundle.infoDictionary);
     if ([result isEqual:@"native_route_accepted"]) return;
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"プロフィールを開けませんでした"
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:RUINLocalizedString(@"プロフィールを開けませんでした")
         message:nil preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:@"閉じる" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"閉じる") style:UIAlertActionStyleCancel handler:nil]];
     [source presentViewController:alert animated:YES completion:nil];
 }
 

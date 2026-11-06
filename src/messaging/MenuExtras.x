@@ -2,6 +2,7 @@
 
 #import "MessagingPrivateAPI.h"
 #import "MenuExtras.h"
+#import "../core/Localization.h"
 
 #import "Features.h"
 #import "ReadersSheet.h"
@@ -947,7 +948,7 @@ static void RUINMenuExtrasAttachReadUsersEntry(UIView *container)
 }
 
 static UICollectionViewCell *RUINMenuExtrasActionCell(
-    UICollectionView *collectionView, NSIndexPath *indexPath, NSString *title, NSString *symbolName)
+    UICollectionView *collectionView, NSIndexPath *indexPath, NSString *title, UIImage *image)
 {
     static NSString *const reuseIdentifier = @"RUIN.MenuExtras.CalloutAction";
     if (![objc_getAssociatedObject(collectionView, &sCalloutActionCellRegistrationAssociationKey) boolValue]) {
@@ -987,7 +988,7 @@ static UICollectionViewCell *RUINMenuExtrasActionCell(
         ]];
     }
     titleLabel.text = title;
-    imageView.image = [UIImage systemImageNamed:symbolName];
+    imageView.image = image;
     imageView.tintColor = titleLabel.textColor;
     cell.isAccessibilityElement = YES;
     cell.accessibilityLabel = title;
@@ -997,13 +998,16 @@ static UICollectionViewCell *RUINMenuExtrasActionCell(
 static UICollectionViewCell *RUINMenuExtrasReadUsersCell(
     UICollectionView *collectionView, NSIndexPath *indexPath)
 {
-    return RUINMenuExtrasActionCell(collectionView, indexPath, NSLocalizedString(@"既読者一覧", nil), @"eye");
+    UIImage *image = [[UIImage imageNamed:@"tabler-eye" inBundle:RUINResourceBundle() compatibleWithTraitCollection:nil]
+        imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+    return RUINMenuExtrasActionCell(collectionView, indexPath, RUINLocalizedString(@"既読者一覧"), image);
 }
 
 static UICollectionViewCell *RUINMenuExtrasStickerGIFCell(
     UICollectionView *collectionView, NSIndexPath *indexPath)
 {
-    return RUINMenuExtrasActionCell(collectionView, indexPath, NSLocalizedString(@"GIFでコピー", nil), @"doc.on.doc");
+    return RUINMenuExtrasActionCell(collectionView, indexPath, RUINLocalizedString(@"GIFでコピー"),
+        [UIImage systemImageNamed:@"doc.on.doc"]);
 }
 
 static NSInteger RUINMenuExtrasAdditionalActionCount(RUINMenuExtrasReadUsersContext *context)
@@ -1073,10 +1077,10 @@ static void RUINMenuExtrasPresentReadUsersMessage(UIViewController *chatControll
         chatController.presentedViewController || !chatController.viewIfLoaded.window ||
         chatController.viewIfLoaded.window.windowScene.activationState != UISceneActivationStateForegroundActive)
         return;
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:NSLocalizedString(@"既読者一覧", nil)
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:RUINLocalizedString(@"既読者一覧")
                                                                     message:message
                                                              preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"OK") style:UIAlertActionStyleCancel handler:nil]];
     [chatController presentViewController:alert animated:YES completion:nil];
 }
 
@@ -1088,9 +1092,9 @@ static void RUINMenuExtrasPresentStickerGIFFailure(UIViewController *chatControl
         chatController.viewIfLoaded.window.windowScene.activationState != UISceneActivationStateForegroundActive)
         return;
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:nil
-                                                                   message:NSLocalizedString(@"GIFをコピーできませんでした", nil)
+                                                                   message:RUINLocalizedString(@"GIFをコピーできませんでした")
                                                             preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"OK") style:UIAlertActionStyleCancel handler:nil]];
     [chatController presentViewController:alert animated:YES completion:nil];
 }
 
@@ -1153,7 +1157,7 @@ static void RUINMenuExtrasPresentReaders(UIViewController *chatController,
         [(id)self accessibilityPerformEscape];
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             RUINMenuExtrasPresentReadUsersMessage(chatController,
-                NSLocalizedString(@"取得できませんでした", nil));
+                RUINLocalizedString(@"取得できませんでした"));
         });
         return;
     }

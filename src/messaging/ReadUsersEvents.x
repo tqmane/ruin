@@ -242,7 +242,7 @@ int main(int argc, const char *argv[]) {
             testInfo = @{@"RUINOriginalBundleIdentifier":@"jp.naver.line", @"CFBundleShortVersionString":@"26.16.0", @"CFBundleVersion":@"unsupported"};
             RUINInstallReadUsersEvents();
             Check([RUINReadUsersEventsDiagnostics()[@"status"] isEqual:@"version_gated"], @"unsupported build installed hook");
-            testInfo = @{@"RUINOriginalBundleIdentifier":@"jp.naver.line", @"RUINSignedBundleIdentifier":@"app.amethyst8609.ximenia5089",
+            testInfo = @{@"RUINOriginalBundleIdentifier":@"jp.naver.line", @"RUINSignedBundleIdentifier":@"example.signed.line",
                 @"CFBundleShortVersionString":@"26.16.0", @"CFBundleVersion":@"2026.1006.1718"};
             IMP baseRead = class_getMethodImplementation(RUINOperationFixtureBase.class, @selector(read:));
             LineOperation *operation = [LineOperation new];

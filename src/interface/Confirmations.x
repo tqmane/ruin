@@ -2,6 +2,7 @@
 
 #define RUIN_CONFIRMATIONS_INTERNAL 1
 #import "Confirmations.h"
+#import "../core/Localization.h"
 #import "SwiftFields.h"
 #import "LINEPrivateCalls.h"
 
@@ -848,20 +849,20 @@ static NSString *RUINPreferenceKey(RUINConfirmationKind kind)
 static NSString *RUINPromptTitle(RUINConfirmationKind kind)
 {
     switch (kind) {
-        case RUINConfirmationSend: return @"送信の確認";
-        case RUINConfirmationCall: return @"通話の確認";
-        case RUINConfirmationCameraOn: return @"カメラの確認";
-        case RUINConfirmationDisconnect: return @"通話終了の確認";
+        case RUINConfirmationSend: return RUINLocalizedString(@"送信の確認");
+        case RUINConfirmationCall: return RUINLocalizedString(@"通話の確認");
+        case RUINConfirmationCameraOn: return RUINLocalizedString(@"カメラの確認");
+        case RUINConfirmationDisconnect: return RUINLocalizedString(@"通話終了の確認");
     }
 }
 
 static NSString *RUINApproveTitle(RUINConfirmationKind kind)
 {
     switch (kind) {
-        case RUINConfirmationSend: return @"送信";
-        case RUINConfirmationCall: return @"開始";
-        case RUINConfirmationCameraOn: return @"オンにする";
-        case RUINConfirmationDisconnect: return @"終了";
+        case RUINConfirmationSend: return RUINLocalizedString(@"送信");
+        case RUINConfirmationCall: return RUINLocalizedString(@"開始");
+        case RUINConfirmationCameraOn: return RUINLocalizedString(@"オンにする");
+        case RUINConfirmationDisconnect: return RUINLocalizedString(@"終了");
     }
 }
 
@@ -980,7 +981,7 @@ static BOOL RUINShowConfirmation(RUINConfirmationPending *pending)
                                                             preferredStyle:UIAlertControllerStyleAlert];
     pending.alert = alert;
     __weak UIAlertController *weakAlert = alert;
-    [alert addAction:[UIAlertAction actionWithTitle:@"キャンセル" style:UIAlertActionStyleCancel handler:^(__unused UIAlertAction *action) {
+    [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"キャンセル") style:UIAlertActionStyleCancel handler:^(__unused UIAlertAction *action) {
         RUINResolve(pending, NO);
     }]];
     UIAlertActionStyle style = pending.hook->kind == RUINConfirmationDisconnect ? UIAlertActionStyleDestructive : UIAlertActionStyleDefault;
@@ -1028,11 +1029,11 @@ static BOOL RUINShouldConfirmSend(RUINConfirmationHook *hook, id target, RUINCon
     if (!minimumConfigured) atomic_fetch_add_explicit(&gMissingSendThreshold, 1, memory_order_relaxed);
     pending.memberCount = snapshot.memberCountKnown ? snapshot.totalMemberCount : 0;
     if (snapshot.oneOnOneKnown && !snapshot.oneOnOne && snapshot.memberCountKnown) {
-        pending.message = [NSString stringWithFormat:@"%ld人のグループに送信しますか？", (long)snapshot.totalMemberCount];
+        pending.message = [NSString stringWithFormat:(RUINLocalizedString(@"%ld人のグループに送信しますか？") ?: @"%ld人のグループに送信しますか？"), (long)snapshot.totalMemberCount];
     } else if (!snapshot.oneOnOneKnown) {
-        pending.message = @"送信先の種類を確認できません。送信しますか？";
+        pending.message = RUINLocalizedString(@"送信先の種類を確認できません。送信しますか？");
     } else {
-        pending.message = @"グループ人数を確認できません。送信しますか？";
+        pending.message = RUINLocalizedString(@"グループ人数を確認できません。送信しますか？");
     }
     *shouldConfirm = YES;
     return YES;
@@ -1115,13 +1116,13 @@ static void RUINHandleHook(RUINConfirmationHook *hook, id self, SEL selector, id
         case RUINConfirmationSend:
             break;
         case RUINConfirmationCall:
-            pending.message = @"通話を開始しますか？";
+            pending.message = RUINLocalizedString(@"通話を開始しますか？");
             break;
         case RUINConfirmationCameraOn:
-            pending.message = @"カメラをオンにしますか？";
+            pending.message = RUINLocalizedString(@"カメラをオンにしますか？");
             break;
         case RUINConfirmationDisconnect:
-            pending.message = @"通話を終了しますか？";
+            pending.message = RUINLocalizedString(@"通話を終了しますか？");
             break;
     }
     if (!RUINShowConfirmation(pending))

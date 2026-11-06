@@ -3,6 +3,7 @@
 #import "MessagingPrivateAPI.h"
 #import "MessageHistory.h"
 #import "Features.h"
+#import "../core/Localization.h"
 #import "NativeReadPositions.h"
 #import <CoreData/CoreData.h>
 #import <CommonCrypto/CommonDigest.h>
@@ -731,7 +732,7 @@ static void CaptureLocalIncomingNotification(id value) {
         NSMutableDictionary *snapshot = [key mutableCopy];
         snapshot[@"title"] = Text(title) && title.length ? [title copy] : @"LINE";
         snapshot[@"body"] = Text(body) && body.length ? [body copy] :
-            (contentType ? @"添付ファイルを受信しました" : @"新着メッセージを受信しました");
+            (contentType ? RUINLocalizedString(@"添付ファイルを受信しました") : RUINLocalizedString(@"新着メッセージを受信しました"));
         snapshot[@"timestampMs"] = @(timestamp);
         snapshot[@"contentType"] = @(contentType);
         snapshot[@"isOutgoing"] = @NO;

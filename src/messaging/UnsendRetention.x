@@ -4,6 +4,7 @@
 #import "UnsendRetention.h"
 #import "MessageHistory.h"
 #import "Features.h"
+#import "../core/Localization.h"
 #import <CoreData/CoreData.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
@@ -298,7 +299,7 @@ static NSString *InspectAndRetain(id message) {
             // The specific transport filter kept native plaintext intact. Do
             // not replace it with a synthetic body or require a prior snapshot.
             NSString *retained = RetainedNativePlaintext(message);
-            if (retained) return [retained stringByAppendingString:@"\n取消済"];
+            if (retained) return [retained stringByAppendingFormat:@"\n%@", RUINLocalizedString(@"取消済")];
         }
         if (!filteredMarker && (!atomic_load(&nativeKeysVerified) ||
             (state != RUINNativeUnsendNormal && state != RUINNativeUnsendSilent))) return nil;
@@ -312,7 +313,7 @@ static NSString *InspectAndRetain(id message) {
             ![snapshot[@"contentType"] isKindOfClass:NSNumber.class] || [snapshot[@"contentType"] longLongValue] != 0) {
             atomic_fetch_add(&unsupportedSnapshots, 1); return nil;
         }
-        return [body stringByAppendingString:@"\n取消済"];
+        return [body stringByAppendingFormat:@"\n%@", RUINLocalizedString(@"取消済")];
     } @catch (__unused NSException *exception) {
         atomic_fetch_add(&inspectionFailures, 1); return nil;
     }

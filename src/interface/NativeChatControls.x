@@ -36,6 +36,7 @@ int main(void) { @autoreleasepool {
 } return 0; }
 #else
 #import "NativeChatControls.h"
+#import "../core/Localization.h"
 
 #import "Features.h"
 #import "LINEPrivateCalls.h"
@@ -757,8 +758,7 @@ static BOOL RUINReadExceptionEnabled(NSString *key)
 }
 
 static UIImage *RUINReadExceptionSymbol(BOOL exempt) {
-    NSString *path = [NSBundle.mainBundle pathForResource:@"RUINResources" ofType:@"bundle"];
-    NSBundle *bundle = path ? [NSBundle bundleWithPath:path] : nil;
+    NSBundle *bundle = RUINResourceBundle();
     return [[UIImage imageNamed:exempt ? @"tabler-eye" : @"tabler-eye-off"
         inBundle:bundle compatibleWithTraitCollection:nil] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
 }
@@ -822,8 +822,8 @@ static void RUINUpdateReadExceptionButton(UIViewController *controller, NSString
     BOOL enabled = [NSUserDefaults.standardUserDefaults boolForKey:RUINReadControlEnabledDefaultsKey];
     BOOL exempt = key && RUINReadExceptionEnabled(key);
     UIImage *image = RUINReadExceptionSymbol(exempt);
-    NSString *label = exempt ? @"このトークの既読抑制を有効にする" : @"このトークを既読抑制の例外にする";
-    NSString *hint = enabled ? @"このトークだけ既読制御を切り替えます" : @"全体の既読抑制はオフです。例外設定は保存されます";
+    NSString *label = exempt ? RUINLocalizedString(@"このトークの既読抑制を有効にする") : RUINLocalizedString(@"このトークを既読抑制の例外にする");
+    NSString *hint = enabled ? RUINLocalizedString(@"このトークだけ既読制御を切り替えます") : RUINLocalizedString(@"全体の既読抑制はオフです。例外設定は保存されます");
     UIColor *tint = RUINReadExceptionTint(controller, custom);
     item.enabled = RUINValidReadExceptionKey(key); item.image = image;
     item.tintColor = tint;
@@ -908,18 +908,18 @@ static void RUINPresentLocalNameEditor(UIViewController *controller, UIView *tit
     NSDictionary *saved = [NSUserDefaults.standardUserDefaults dictionaryForKey:RUINLocalNamesByIdentityDefaultsKey] ?: @{};
     id stored = saved[identity.localNameKey];
     NSString *existingAlias = [stored isKindOfClass:NSString.class] ? stored : @"";
-    NSString *title = nativeTitle.length ? nativeTitle : @"このトーク";
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"ローカル表示名"
-                                                                   message:[NSString stringWithFormat:@"「%@」の表示名をこの端末だけ変更します。空欄で解除し、旧表示名ルールもこのIDには適用しません。", title]
+    NSString *title = nativeTitle.length ? nativeTitle : RUINLocalizedString(@"このトーク");
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:RUINLocalizedString(@"ローカル表示名")
+                                                                   message:[NSString stringWithFormat:(RUINLocalizedString(@"「%@」の表示名をこの端末だけ変更します。空欄で解除し、旧表示名ルールもこのIDには適用しません。") ?: @"「%@」の表示名をこの端末だけ変更します。空欄で解除し、旧表示名ルールもこのIDには適用しません。"), title]
                                                             preferredStyle:UIAlertControllerStyleAlert];
     [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
-        field.placeholder = @"この端末で表示する名前";
+        field.placeholder = RUINLocalizedString(@"この端末で表示する名前");
         field.text = existingAlias;
         field.clearButtonMode = UITextFieldViewModeWhileEditing;
     }];
-    [alert addAction:[UIAlertAction actionWithTitle:@"キャンセル" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"キャンセル") style:UIAlertActionStyleCancel handler:nil]];
     __weak UIAlertController *weakAlert = alert;
-    [alert addAction:[UIAlertAction actionWithTitle:@"保存" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+    [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"保存") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
         if (!RUINNativeControllerIsCurrent(controller, identity.chatObject) || RUINCurrentTitleView(controller) != titleView) {
             atomic_fetch_add(&gStaleUIActionCount, 1);
             return;
@@ -945,14 +945,14 @@ static void RUINPresentTitleActions(UIViewController *controller, UIView *titleV
                                                                 preferredStyle:UIAlertControllerStyleActionSheet];
     __weak UIAlertController *weakActions = actions;
     if (identity.localNameKey) {
-        [actions addAction:[UIAlertAction actionWithTitle:@"ローカル表示名を設定" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+        [actions addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"ローカル表示名を設定") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
             [weakActions dismissViewControllerAnimated:YES completion:^{
                 RUINPresentLocalNameEditor(controller, titleView, nativeTitle, identity);
             }];
         }]];
     }
     if (identity.midToCopy.length) {
-        [actions addAction:[UIAlertAction actionWithTitle:@"MIDをコピー" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+        [actions addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"MIDをコピー") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
             if (!RUINNativeControllerIsCurrent(controller, identity.chatObject) || RUINCurrentTitleView(controller) != titleView) {
                 atomic_fetch_add(&gStaleUIActionCount, 1);
                 return;
@@ -961,7 +961,7 @@ static void RUINPresentTitleActions(UIViewController *controller, UIView *titleV
             atomic_fetch_add(&gMIDCopyCount, 1);
         }]];
     }
-    [actions addAction:[UIAlertAction actionWithTitle:@"キャンセル" style:UIAlertActionStyleCancel handler:nil]];
+    [actions addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"キャンセル") style:UIAlertActionStyleCancel handler:nil]];
     UIPopoverPresentationController *popover = actions.popoverPresentationController;
     if (popover) {
         popover.sourceView = titleView;

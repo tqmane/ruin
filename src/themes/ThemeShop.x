@@ -2,6 +2,7 @@
 
 #import "ThemePrivateAPI.h"
 #import "ThemeShop.h"
+#import "../core/Localization.h"
 
 #import <objc/runtime.h>
 #import <stdatomic.h>
@@ -453,11 +454,11 @@ void RUINOpenThemeShop(UIViewController *source)
     if (status == RUINThemeShopRouteAccepted) return;
     if (navigation.topViewController != visible || visible.presentedViewController || !visible.viewIfLoaded.window) return;
     NSString *message = status == RUINThemeShopVersionGated || status == RUINThemeShopRouterUnavailable
-        ? @"このLINEバージョンでは着せかえショップへの移動を利用できません。"
-        : @"LINEに着せかえショップの表示を要求しましたが、受け付けられませんでした。";
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"着せかえショップを開けませんでした"
+        ? RUINLocalizedString(@"このLINEバージョンでは着せかえショップへの移動を利用できません。")
+        : RUINLocalizedString(@"LINEに着せかえショップの表示を要求しましたが、受け付けられませんでした。");
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:RUINLocalizedString(@"着せかえショップを開けませんでした")
         message:message preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:@"閉じる" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"閉じる") style:UIAlertActionStyleCancel handler:nil]];
     [visible presentViewController:alert animated:YES completion:nil];
 }
 

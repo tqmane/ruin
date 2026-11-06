@@ -1208,15 +1208,22 @@ static RUINTabKind RUINKindForControllerClass(UIViewController *controller)
     return RUINTabUnknown;
 }
 
+static BOOL RUINTabTitleMatchesNativeKey(NSString *title, NSString *key, NSString *japaneseFallback)
+{
+    NSString *localizedTitle = [NSBundle.mainBundle localizedStringForKey:key value:japaneseFallback table:nil];
+    return [title isEqualToString:japaneseFallback] ||
+        (title.length && [title caseInsensitiveCompare:localizedTitle] == NSOrderedSame);
+}
+
 static RUINTabKind RUINKindForTitle(NSString *title)
 {
-    if ([title isEqualToString:@"ホーム"]) return RUINTabHomeKind;
-    if ([title isEqualToString:@"トーク"]) return RUINTabTalkKind;
+    if (RUINTabTitleMatchesNativeKey(title, @"access.home", @"ホーム")) return RUINTabHomeKind;
+    if (RUINTabTitleMatchesNativeKey(title, @"common.action.chat", @"トーク")) return RUINTabTalkKind;
     if ([title isEqualToString:@"VOOM"]) return RUINTabVOOMKind;
-    if ([title isEqualToString:@"ウォレット"]) return RUINTabWalletKind;
-    if ([title isEqualToString:@"ニュース"]) return RUINTabNewsKind;
-    if ([title isEqualToString:@"通話"]) return RUINTabCallKind;
-    if ([title isEqualToString:@"設定"]) return RUINTabSettingsKind;
+    if (RUINTabTitleMatchesNativeKey(title, @"walletTab.title", @"ウォレット")) return RUINTabWalletKind;
+    if (RUINTabTitleMatchesNativeKey(title, @"news.title", @"ニュース")) return RUINTabNewsKind;
+    if (RUINTabTitleMatchesNativeKey(title, @"settings.call.selecttab.call", @"通話")) return RUINTabCallKind;
+    if (RUINTabTitleMatchesNativeKey(title, @"access.settings", @"設定")) return RUINTabSettingsKind;
     return RUINTabUnknown;
 }
 

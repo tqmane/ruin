@@ -1,6 +1,7 @@
 %config(generator=internal);
 
 #import "SecondaryLogin.h"
+#import "../core/Localization.h"
 #import "Features.h"
 #import "LINEPrivateCalls.h"
 #import <UIKit/UIKit.h>
@@ -45,27 +46,27 @@ static BOOL RUINSecondaryLoginTargetMatches(void) {
 %end
 
 static void RUINShowLoginRestartNotice(UIViewController *controller) {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"ログイン方法を切り替えました"
-        message:@"LINEを一度完全に終了して開き直してください。次回起動時から選んだログイン方法になります。"
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:RUINLocalizedString(@"ログイン方法を切り替えました")
+        message:RUINLocalizedString(@"LINEを一度完全に終了して開き直してください。次回起動時から選んだログイン方法になります。")
         preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:@"確認" style:UIAlertActionStyleDefault handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"確認") style:UIAlertActionStyleDefault handler:nil]];
     [controller presentViewController:alert animated:YES completion:nil];
 }
 
 static void RUINPresentLoginModeMenu(UIViewController *controller, UILongPressGestureRecognizer *gesture) {
     if (gesture.state != UIGestureRecognizerStateBegan) return;
     if (controller.presentedViewController) return;
-    UIAlertController *menu = [UIAlertController alertControllerWithTitle:@"ログイン方法"
-        message:@"サブ端末では、現在のメイン端末でQRコードを読み取り、ログインを承認します。"
+    UIAlertController *menu = [UIAlertController alertControllerWithTitle:RUINLocalizedString(@"ログイン方法")
+        message:RUINLocalizedString(@"サブ端末では、現在のメイン端末でQRコードを読み取り、ログインを承認します。")
         preferredStyle:UIAlertControllerStyleActionSheet];
     for (NSNumber *enabled in @[@YES, @NO]) {
-        NSString *title = enabled.boolValue ? @"iPad扱いでサブ端末ログイン" : @"通常のiPhoneログイン";
+        NSString *title = enabled.boolValue ? RUINLocalizedString(@"iPad扱いでサブ端末ログイン") : RUINLocalizedString(@"通常のiPhoneログイン");
         [menu addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
             [NSUserDefaults.standardUserDefaults setBool:enabled.boolValue forKey:RUINSecondaryLoginEnabledKey];
             dispatch_async(dispatch_get_main_queue(), ^{ RUINShowLoginRestartNotice(controller); });
         }]];
     }
-    [menu addAction:[UIAlertAction actionWithTitle:@"キャンセル" style:UIAlertActionStyleCancel handler:nil]];
+    [menu addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"キャンセル") style:UIAlertActionStyleCancel handler:nil]];
     if (menu.popoverPresentationController) {
         menu.popoverPresentationController.sourceView = gesture.view;
         menu.popoverPresentationController.sourceRect = gesture.view.bounds;
