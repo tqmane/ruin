@@ -3,6 +3,7 @@
 #import "MessagingPrivateAPI.h"
 #import "ReadBoundary.h"
 #import "Features.h"
+#import "../core/TargetMetadata.h"
 #import <CoreData/CoreData.h>
 #import <objc/runtime.h>
 #import <stdatomic.h>
@@ -278,9 +279,7 @@ static void InstallBoundaryAccessor(Class cls) {
 
 void RUINInstallReadBoundary(void) {
     NSDictionary *info = NSBundle.mainBundle.infoDictionary;
-    if (![info[@"RUINOriginalBundleIdentifier"] isEqual:RUINTargetBundleIdentifier] ||
-        ![info[@"CFBundleShortVersionString"] isEqual:RUINTargetVersion] ||
-        ![info[@"CFBundleVersion"] isEqual:RUINTargetBuild]) return;
+    if (!RUINTargetMetadataMatchesInfo(info)) return;
     @synchronized (NSManagedObjectContext.class) {
         if (!installedBoundaries) installedBoundaries = [NSMutableDictionary dictionary];
         if (!installedImplementations) installedImplementations = [NSMutableDictionary dictionary];

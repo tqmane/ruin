@@ -50,10 +50,9 @@ jobs:
         with:
           name: ruin-${{ steps.version.outputs.value }}
           path: |
-            dist/RUIN-${{ steps.version.outputs.value }}-ios-arm64.dylib
-            dist/com.tqmane.ruin_${{ steps.version.outputs.value }}_iphoneos-arm64.deb
-            dist/RUIN-${{ steps.version.outputs.value }}-manual-injection.zip
-            dist/RUIN-ThirdPartyNotices.txt
+            dist/RUIN-${{ steps.version.outputs.value }}-rootful.deb
+            dist/RUIN-${{ steps.version.outputs.value }}-rootless.deb
+            dist/RUIN-${{ steps.version.outputs.value }}-jailed.deb
             dist/SHA256SUMS
           if-no-files-found: error
           compression-level: 0
@@ -69,8 +68,8 @@ jobs:
               --verify-tag --title "RUIN $GITHUB_REF_NAME" --generate-notes
           fi
           gh release upload "$GITHUB_REF_NAME" \
-            "dist/RUIN-${RUIN_VERSION}-ios-arm64.dylib" \
-            "dist/com.tqmane.ruin_${RUIN_VERSION}_iphoneos-arm64.deb" \
-            "dist/RUIN-${RUIN_VERSION}-manual-injection.zip" \
-            dist/RUIN-ThirdPartyNotices.txt dist/SHA256SUMS \
+            "dist/RUIN-${RUIN_VERSION}-rootful.deb" \
+            "dist/RUIN-${RUIN_VERSION}-rootless.deb" \
+            "dist/RUIN-${RUIN_VERSION}-jailed.deb" \
+            dist/SHA256SUMS \
             --clobber

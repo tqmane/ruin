@@ -9,6 +9,7 @@
 #import <string.h>
 
 #import "Features.h"
+#import "../core/TargetMetadata.h"
 
 NSString * const RUINBypassAgeVerificationDefaultsKey = @"RUINBypassAgeVerificationEnabled";
 
@@ -42,9 +43,7 @@ static os_unfair_lock gAgeInstallLock = OS_UNFAIR_LOCK_INIT;
 static BOOL RUINTargetMatches(void)
 {
     NSDictionary *info = NSBundle.mainBundle.infoDictionary ?: @{};
-    return [info[@"RUINOriginalBundleIdentifier"] isEqual:RUINTargetBundleIdentifier] &&
-        [info[@"CFBundleShortVersionString"] isEqual:RUINTargetVersion] &&
-        [info[@"CFBundleVersion"] isEqual:RUINTargetBuild];
+    return RUINTargetMetadataMatchesInfo(info);
 }
 
 %group RUINAgeNecessary

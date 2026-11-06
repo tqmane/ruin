@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build reproducible RUIN dylib, jailed Debian package, and manual payload ZIP."""
+"""Build resource-inclusive rootful, rootless, and jailed Debian packages."""
 import argparse
 import gzip
 import hashlib
@@ -10,11 +10,15 @@ import re
 import stat
 import subprocess
 import tarfile
-import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = "com.tqmane.ruin"
 INSTALL_DIR = "Library/MobileSubstrate/DynamicLibraries"
+VARIANTS = {
+    "rootful": ("", "iphoneos-arm"),
+    "rootless": ("var/jb/", "iphoneos-arm64"),
+    "jailed": ("", "iphoneos-arm64"),
+}
 DYLIB_INSTALL_NAME = "@rpath/RUIN.dylib"
 # Direct links reviewed for this build; new SDK dependencies require review.
 APPLE_DEPENDENCIES = {
@@ -101,19 +105,21 @@ def source_date_epoch():
     return value
 
 
-def payload_files(dylib, resources):
+def payload_files(dylib, resources, variant):
     dylib, resources = Path(dylib), Path(resources)
     if not dylib.is_file():
         raise ValueError(f"Dylib not found: {dylib}")
     if not resources.is_dir() or not (resources / "Info.plist").is_file():
         raise ValueError(f"Resource bundle is missing or has no Info.plist: {resources}")
 
+    prefix, _ = VARIANTS[variant]
+    install_dir = prefix + INSTALL_DIR
     files = {
-        f"{INSTALL_DIR}/RUIN.dylib": (dylib.read_bytes(), 0o755),
-        f"{INSTALL_DIR}/RUIN.plist": (FILTER_PLIST, 0o644),
-        "usr/share/doc/com.tqmane.ruin/RUIN-ThirdPartyNotices.txt": (third_party_notices(), 0o644),
+        f"{install_dir}/RUIN.dylib": (dylib.read_bytes(), 0o755),
+        f"{install_dir}/RUIN.plist": (FILTER_PLIST, 0o644),
+        f"{prefix}usr/share/doc/{PACKAGE}/RUIN-ThirdPartyNotices.txt": (third_party_notices(), 0o644),
     }
-    bundle_prefix = f"{INSTALL_DIR}/RUINResources.bundle"
+    bundle_prefix = f"{install_dir}/RUINResources.bundle"
     for path in sorted(resources.rglob("*")):
         if path.is_symlink():
             raise ValueError(f"Resource bundle must not contain symlinks: {path}")
@@ -175,14 +181,21 @@ def data_archive(files, epoch):
     return tar_gz(tar_files, directories, epoch)
 
 
-def control_archive(version, epoch):
+def control_archive(version, variant, epoch):
+    _, architecture = VARIANTS[variant]
     control = (
         f"Package: {PACKAGE}\n"
+        f"Name: RUIN ({variant})\n"
         f"Version: {version}\n"
-        "Architecture: iphoneos-arm64\n"
+        f"Architecture: {architecture}\n"
         "Maintainer: RUIN contributors\n"
-        "Description: RUIN runtime tweak for LINE\n"
+        "Section: Tweaks\n"
+        f"X-RUIN-Variant: {variant}\n"
+        f"Description: RUIN runtime tweak for LINE ({variant})\n"
     ).encode("utf-8")
+    if variant != "jailed":
+        # The platform supplies the injector; RUIN links no hook runtime.
+        control += b"Depends: firmware (>= 18.0), mobilesubstrate\n"
     return tar_gz({"./control": (control, 0o644)}, {"."}, epoch)
 
 
@@ -195,26 +208,13 @@ def ar_member(name, data, epoch):
     return header + data + (b"\n" if len(data) % 2 else b"")
 
 
-def deb_archive(files, version, epoch):
+def deb_archive(files, version, variant, epoch):
     members = (
         ("debian-binary", b"2.0\n"),
-        ("control.tar.gz", control_archive(version, epoch)),
+        ("control.tar.gz", control_archive(version, variant, epoch)),
         ("data.tar.gz", data_archive(files, epoch)),
     )
     return b"!<arch>\n" + b"".join(ar_member(name, data, epoch) for name, data in members)
-
-
-def payload_zip(files):
-    output = io.BytesIO()
-    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_STORED) as archive:
-        for name in sorted(files):
-            data, mode = files[name]
-            info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
-            info.create_system = 3
-            info.compress_type = zipfile.ZIP_STORED
-            info.external_attr = (stat.S_IFREG | mode) << 16
-            archive.writestr(info, data)
-    return output.getvalue()
 
 
 def build_distribution(dylib, resources, output, version, epoch=None):
@@ -222,21 +222,19 @@ def build_distribution(dylib, resources, output, version, epoch=None):
     epoch = source_date_epoch() if epoch is None else epoch
     if not 0 <= epoch <= 0xFFFFFFFF:
         raise ValueError("epoch must be between 0 and 4294967295")
-    files = payload_files(dylib, resources)
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
-
-    standalone = output / f"RUIN-{version}-ios-arm64.dylib"
-    package = output / f"{PACKAGE}_{version}_iphoneos-arm64.deb"
-    manual = output / f"RUIN-{version}-manual-injection.zip"
-    notices = output / "RUIN-ThirdPartyNotices.txt"
-    standalone.write_bytes(files[f"{INSTALL_DIR}/RUIN.dylib"][0])
-    standalone.chmod(0o755)
-    package.write_bytes(deb_archive(files, version, epoch))
-    manual.write_bytes(payload_zip(files))
-    notices.write_bytes(third_party_notices())
-
-    artifacts = (standalone, package, manual, notices)
+    # Remove the obsolete distribution formats, preserving signed IPA output.
+    for pattern in ("RUIN-*-ios-arm64.dylib", "RUIN-*-manual-injection.zip",
+                    "RUIN-ThirdPartyNotices.txt", f"{PACKAGE}_*_iphoneos-arm64.deb"):
+        for old in output.glob(pattern):
+            old.unlink()
+    artifacts = []
+    for variant in VARIANTS:
+        files = payload_files(dylib, resources, variant)
+        package = output / f"RUIN-{version}-{variant}.deb"
+        package.write_bytes(deb_archive(files, version, variant, epoch))
+        artifacts.append(package)
     sums = "".join(
         f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n"
         for path in artifacts

@@ -13,6 +13,7 @@
 #import <string.h>
 
 #import "Features.h"
+#import "../src/core/TargetMetadata.h"
 
 #define CHECK(condition, message) do { \
     if (!(condition)) @throw [NSException exceptionWithName:@"RUINFeatureCheck" \
@@ -231,6 +232,28 @@ static int RUINRunChecks(void)
     @try {
         CHECK([RUINTargetVersion isEqualToString:@"26.16.0"] &&
               [RUINTargetBuild isEqualToString:@"2026.1006.1718"], @"target constants differ from researched build");
+        NSDictionary *stockTarget = @{
+            @"CFBundleIdentifier": @"jp.naver.line",
+            @"CFBundleShortVersionString": @"26.16.0",
+            @"CFBundleVersion": @"2026.1006.1718"
+        };
+        NSDictionary *sideloadTarget = @{
+            @"CFBundleIdentifier": @"host.ruin.check",
+            @"RUINOriginalBundleIdentifier": @"jp.naver.line",
+            @"CFBundleShortVersionString": @"26.16.0",
+            @"CFBundleVersion": @"2026.1006.1718"
+        };
+        CHECK(RUINTargetMetadataMatchesInfo(stockTarget), @"stock LINE metadata was rejected");
+        CHECK(RUINTargetMetadataMatchesInfo(sideloadTarget), @"sideload LINE metadata was rejected");
+        NSMutableDictionary *wrongTarget = [stockTarget mutableCopy];
+        wrongTarget[@"CFBundleShortVersionString"] = @"26.15.0";
+        CHECK(!RUINTargetMetadataMatchesInfo(wrongTarget), @"unknown app version passed target metadata gate");
+        wrongTarget = [stockTarget mutableCopy];
+        wrongTarget[@"CFBundleVersion"] = @"unknown-build";
+        CHECK(!RUINTargetMetadataMatchesInfo(wrongTarget), @"unknown app build passed target metadata gate");
+        wrongTarget = [stockTarget mutableCopy];
+        wrongTarget[@"CFBundleIdentifier"] = @"unknown.bundle";
+        CHECK(!RUINTargetMetadataMatchesInfo(wrongTarget), @"unknown bundle passed target metadata gate");
         [defaults removeObjectForKey:RUINLocalNamesByIdentityDefaultsKey];
         [defaults removeObjectForKey:RUINReadExceptionsDefaultsKey];
         [defaults removeObjectForKey:RUINMarkReadOnReplyDefaultsKey];

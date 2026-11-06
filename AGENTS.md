@@ -42,7 +42,7 @@ RUIN/
 - **アーキテクチャ**: `arm64`
 - **下限OS**: iOS 18.0 以降 (※ビルド下限値であり、全機種・全環境での動作を保証するものではありません)
 - **ビルド依存**: macOSホスト、フルXcode (iOS SDK含む)、`make`、`perl` (Logos internal用)、`python3`、`node` (ホスト検査・JS構文検査用)。
-- **ランタイム依存**: Apple/system Swiftおよびシステムフレームワーク、同梱リソースのみ。外部の Cydia Substrate、libhooker、pip パッケージ等への依存は禁止。
+- **ランタイム依存**: Apple系のシステムライブラリ・フレームワーク、同梱リソースのみ。脱獄版DEBにおける注入ローダー（mobilesubstrate仮想パッケージ）への依存は許容しますが、バイナリ自体が外部の Cydia Substrate、libhooker、pip パッケージ等へ動的リンクすることは禁止。
 
 ### フック実装規約
 - **Logos構文とジェネレータ**: Objective-Cフックは Logos (`.x`, `%hook`, `%orig`, `%new(typeencoding)`, `%group`, `%init`) を使用し、リポジトリ同梱の internal generator を通じて生成します。
@@ -109,17 +109,20 @@ RUIN/
 ## 7. バージョン更新とCI/CD・リリース手順
 
 1. **バージョン定義**: 製品バージョンの基準はリポジトリ直下の `VERSION` ファイルです。手動上書きビルド時は以下のコマンドを個別に実行します。
-   - `make RUIN_BUILD_VERSION=0.4.0 all`
-   - `make RUIN_BUILD_VERSION=0.4.0 dist`
+   - `make RUIN_BUILD_VERSION=0.4.1 all`
+   - `make RUIN_BUILD_VERSION=0.4.1 dist`
 2. **整合性確認**: `make version` を実行し、パッケージメタデータとの不整合がないことを確認します。
 3. **CI検証と保守運用**:
-   - PRおよび `main` へのpushにより `Validate RUIN` ワークフローが自動実行され、Linux (portable) および macOS (apple) 環境でビルド、Node.js構文検査、各種テストが検証されます。
+   - PR、`main` へのpush、および手動実行 (`workflow_dispatch`) により `Validate RUIN` ワークフローが実行されます。
+     - macOS環境: iOS SDKを用いたビルド検証、ホストテスト（Node.js構文検査含む）、合成フィクスチャ検証、パッケージ構造検証を実施。
+     - Linux環境: `make check-portable` によるLogos前処理検証、Python unittestを実施（Linux上でのバイナリビルドは行わない）。
+     - テストデータ: 秘密の原IPAや復号バイナリは使用せず、合成フィクスチャおよびホスト検証データのみを使用。
    - 保守エージェントは、特定の会話時点の状態に依存せず、実行結果を確認した上で成功報告を行う普遍的な運用手順を遵守してください。
-   - 手動実行 (`workflow_dispatch`) およびタグCI (`v*`) の各ワークフローを活用し、適切なトリガーで検証を実施します。
-4. **リリースタグ運用**:
-   - リリース時は `vX.Y.Z` 形式のSemVerタグをpushします。`Build RUIN distribution` ワークフローが起動し、プレフィックス `v` を除いたバージョン名で配布物が生成され、GitHub Releaseへ添付されます。
-   - 成果物:
-     - `RUIN-<version>-ios-arm64.dylib`
-     - 配布用DEBパッケージ (ライセンス通知: `usr/share/doc/com.tqmane.ruin/RUIN-ThirdPartyNotices.txt`)
-     - `RUIN-<version>-manual-injection.zip`
-     - `SHA256SUMS`
+4. **リリースタグ運用と配布物**:
+   - リリース時は `vX.Y.Z` 形式のSemVerタグをpushします。`Build RUIN distribution` ワークフロー (`distribute.yml`) が起動し（手動実行 `workflow_dispatch` も可能）、プレフィックス `v` を除いたバージョン名で配布物が生成され、GitHub Releaseへ添付されます。
+   - 配布物は以下の3つのDEBパッケージおよびチェックサムファイルのみに限定されます（単体dylib、`manual-injection.zip`、単体ライセンスtxtは全て廃止。ローカルの `build/RUIN.dylib` はビルド中間物です）。
+     - `RUIN-<version>-rootful.deb` (Architecture: `iphoneos-arm`、`/Library/MobileSubstrate/DynamicLibraries/` 配下、Debian Depends: `firmware (>=18.0), mobilesubstrate`)
+     - `RUIN-<version>-rootless.deb` (Architecture: `iphoneos-arm64`、`/var/jb/Library/MobileSubstrate/DynamicLibraries/` 配下、Debian Depends: `firmware (>=18.0), mobilesubstrate`、`dladdr` による隣接リソース解決)
+     - `RUIN-<version>-jailed.deb` (Architecture: `iphoneos-arm64`、`X-RUIN-Variant: jailed`、`/Library/MobileSubstrate/DynamicLibraries/` レイアウト、復号IPAへの注入・独自署名用ペイロードであり直接のdpkgインストール用ではない)
+     - `SHA256SUMS` (上記3DEBのSHA-256ハッシュ一覧)
+   - 全DEBパッケージに同一の `arm64` バイナリ、5言語対応 `RUINResources.bundle`、XMLフィルタ、ライセンス通知 (`usr/share/doc/com.tqmane.ruin/RUIN-ThirdPartyNotices.txt`、rootlessは `/var/jb` 配下) を内包します。

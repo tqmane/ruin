@@ -1,4 +1,5 @@
 #import "PushDiagnostics.h"
+#import "BundleIdentity.h"
 #import <UIKit/UIKit.h>
 #import <UserNotifications/UserNotifications.h>
 #import <os/lock.h>
@@ -18,8 +19,8 @@ void RUINRefreshPushDiagnostics(void) {
         dispatch_async(dispatch_get_main_queue(), ^{ RUINRefreshPushDiagnostics(); });
         return;
     }
-    NSDictionary *info = NSBundle.mainBundle.infoDictionary;
-    NSString *topic = NSBundle.mainBundle.bundleIdentifier ?: @"";
+    NSDictionary *info = RUINActualMainBundleInfo();
+    NSString *topic = [info[@"CFBundleIdentifier"] isKindOfClass:NSString.class] ? info[@"CFBundleIdentifier"] : @"";
     NSString *original = [info[@"RUINOriginalBundleIdentifier"] isKindOfClass:NSString.class]
         ? info[@"RUINOriginalBundleIdentifier"] : @"";
     NSString *environment = [info[@"RUINPushEnvironment"] isKindOfClass:NSString.class]

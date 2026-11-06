@@ -4,6 +4,7 @@
 #import "NativeThemeValidation.h"
 #import "NativeThemeRegistration.h"
 #import "ThemeShop.h"
+#import "../core/TargetMetadata.h"
 #import <objc/runtime.h>
 #import <mach-o/dyld.h>
 #import <stdatomic.h>
@@ -45,9 +46,7 @@ void RUINInstallNativeThemeValidation(void)
 #endif
     if (gInstalled) return;
     NSDictionary *info = NSBundle.mainBundle.infoDictionary;
-    if (![info[@"RUINOriginalBundleIdentifier"] isEqual:@"jp.naver.line"] ||
-        ![info[@"CFBundleShortVersionString"] isEqual:@"26.16.0"] ||
-        ![info[@"CFBundleVersion"] isEqual:@"2026.1006.1718"]) return;
+    if (!RUINTargetMetadataMatchesInfo(info)) return;
     // Check the actual call and the surrounding native continuation before
     // accepting its return address; different code always keeps LINE's result.
     const uint32_t expected[] = {0xaa1303e0, 0x94f800f3, 0xaa0003f4, 0x94f6ad09};

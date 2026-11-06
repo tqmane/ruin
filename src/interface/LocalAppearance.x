@@ -71,6 +71,7 @@ int main(void)
 #import <objc/runtime.h>
 #import <stdatomic.h>
 #import "../core/Features.h"
+#import "../core/TargetMetadata.h"
 #import "../core/SwiftFields.h"
 #import "LocalAppearance.h"
 
@@ -106,18 +107,10 @@ static atomic_uint_fast64_t gApplyAttempts = ATOMIC_VAR_INIT(0);
 static atomic_uint_fast64_t gApplySuccesses = ATOMIC_VAR_INIT(0);
 static atomic_uint_fast64_t gApplyFailures = ATOMIC_VAR_INIT(0);
 
-static BOOL RUINInfoStringEquals(NSDictionary *info, NSString *key, NSString *expected)
-{
-    id value = info[key];
-    return [value isKindOfClass:NSString.class] && [value isEqualToString:expected];
-}
-
 static BOOL RUINLocalAppearanceCompatible(void)
 {
     NSDictionary *info = NSBundle.mainBundle.infoDictionary ?: @{};
-    return RUINInfoStringEquals(info, @"RUINOriginalBundleIdentifier", RUINTargetBundleIdentifier) &&
-        RUINInfoStringEquals(info, @"CFBundleShortVersionString", RUINTargetVersion) &&
-        RUINInfoStringEquals(info, @"CFBundleVersion", RUINTargetBuild);
+    return RUINTargetMetadataMatchesInfo(info);
 }
 
 static BOOL RUINLocalAppearanceEnabled(void)

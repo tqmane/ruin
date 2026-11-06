@@ -2,6 +2,8 @@
 
 #import <UIKit/UIKit.h>
 #import "Features.h"
+#import "TargetMetadata.h"
+#import "BundleIdentity.h"
 #import "Localization.h"
 #import "SecondaryLogin.h"
 #import "InterfaceFeatures.h"
@@ -72,9 +74,7 @@ static NSString *RUINInfoString(NSString *key) {
 
 static BOOL RUINIsCompatible(void) {
     NSDictionary *info = RUINMainBundleInfo();
-    return [info[@"RUINOriginalBundleIdentifier"] isEqualToString:RUINTargetBundleIdentifier] &&
-           [info[@"CFBundleShortVersionString"] isEqualToString:RUINTargetVersion] &&
-           [info[@"CFBundleVersion"] isEqualToString:RUINTargetBuild];
+    return RUINTargetMetadataMatchesInfo(info);
 }
 
 %group RUINLaunchBoundary
@@ -116,6 +116,7 @@ static NSDictionary *RUINRuntimeDiagnostics(void) {
             @"compatible": @(RUINIsCompatible())
         },
         @"compatibility": compatibilityDiagnostics,
+        @"bundleIdentity": RUINBundleIdentityDiagnostics(),
         @"push": RUINPushDiagnostics(),
         @"nativeEntry": RUINNativeEntryDiagnostics() ?: @{},
         @"nativeChat": RUINNativeChatControlsDiagnostics(),
@@ -623,6 +624,7 @@ static void RUINApplicationDidBecomeActive(void) {
 
 __attribute__((constructor)) static void RUINConstructor(void) {
     @autoreleasepool {
+        RUINInstallBundleIdentity();
         if (RUINIsCompatible()) {
             NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
             if (![defaults objectForKey:RUINLegacyMessagingEnabledDefaultsKey])

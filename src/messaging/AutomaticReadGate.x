@@ -3,6 +3,7 @@
 #import "MessagingPrivateAPI.h"
 #import "AutomaticReadGate.h"
 #import "Features.h"
+#import "../core/TargetMetadata.h"
 #import "SwiftFields.h"
 #import <UIKit/UIKit.h>
 #import <CoreData/CoreData.h>
@@ -19,9 +20,7 @@ static NSMutableDictionary *hookStatus;
 
 static BOOL Compatible(void) {
     NSDictionary *info = NSBundle.mainBundle.infoDictionary;
-    return [info[@"RUINOriginalBundleIdentifier"] isEqual:RUINTargetBundleIdentifier] &&
-        [info[@"CFBundleShortVersionString"] isEqual:RUINTargetVersion] &&
-        [info[@"CFBundleVersion"] isEqual:RUINTargetBuild];
+    return RUINTargetMetadataMatchesInfo(info);
 }
 static void Apply(UIViewController *controller) {
     if (!NSThread.isMainThread || !Compatible()) return;

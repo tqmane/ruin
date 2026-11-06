@@ -7,7 +7,6 @@ import plistlib
 import tempfile
 import tarfile
 import unittest
-import zipfile
 
 spec = importlib.util.spec_from_file_location(
     "distribute", Path(__file__).resolve().parents[1] / "tools/distribute.py")
@@ -23,7 +22,8 @@ class DistributionTests(unittest.TestCase):
         self.dylib.write_bytes(b"fixture dylib")
         self.resources = self.root / "RUINResources.bundle"
         self.resources.mkdir()
-        (self.resources / "Info.plist").write_text("fixture bundle", encoding="utf-8")
+        (self.resources / "Info.plist").write_bytes(plistlib.dumps({
+            "CFBundleIdentifier": "com.tqmane.ruin.resources"}))
         for language in ("en", "ja", "ko", "zh-Hans", "zh-Hant"):
             directory = self.resources / f"{language}.lproj"
             directory.mkdir()
@@ -58,61 +58,61 @@ class DistributionTests(unittest.TestCase):
             raise AssertionError("invalid ar member padding")
         return members
 
-    def test_deb_and_zip_include_all_resources_and_are_reproducible(self):
+    def test_three_debs_include_resources_and_are_reproducible(self):
+        self.output.mkdir()
+        obsolete = ["RUIN-0.4.0-ios-arm64.dylib", "RUIN-0.4.0-manual-injection.zip",
+                    "RUIN-ThirdPartyNotices.txt", "com.tqmane.ruin_0.4.0_iphoneos-arm64.deb"]
+        for name in obsolete:
+            (self.output / name).write_bytes(b"old output")
+        signed_ipa = self.output / "RUIN-LINE-26.16.0.ipa"
+        signed_ipa.write_bytes(b"private signing output")
         artifacts = distribute.build_distribution(
             self.dylib, self.resources, self.output, "0.4.0", epoch=123456789)
+        self.assertEqual([p.name for p in artifacts],
+                         ["RUIN-0.4.0-rootful.deb", "RUIN-0.4.0-rootless.deb",
+                          "RUIN-0.4.0-jailed.deb", "SHA256SUMS"])
+        self.assertTrue(all(not (self.output / name).exists() for name in obsolete))
+        self.assertEqual(signed_ipa.read_bytes(), b"private signing output")
         first = [path.read_bytes() for path in artifacts]
-        standalone, package, manual, notices, sums = artifacts
-        self.assertEqual(standalone.read_bytes(), b"fixture dylib")
-
-        members = self.read_ar(package)
-        self.assertEqual([name for name, _ in members],
-                         ["debian-binary", "control.tar.gz", "data.tar.gz"])
-        self.assertEqual(members[0][1], b"2.0\n")
-        with tarfile.open(fileobj=io.BytesIO(members[1][1]), mode="r:gz") as archive:
-            self.assertEqual(set(archive.getnames()), {".", "./control"})
-            control = archive.extractfile("./control").read().decode("utf-8")
-        self.assertIn("Version: 0.4.0\n", control)
-        self.assertNotIn("Depends:", control)
-
-        localized_path = "./Library/MobileSubstrate/DynamicLibraries/RUINResources.bundle/ja.lproj/Localizable.strings"
-        icon_path = "./Library/MobileSubstrate/DynamicLibraries/RUINResources.bundle/icons/tabler-eye@2x.png"
-        with tarfile.open(fileobj=io.BytesIO(members[2][1]), mode="r:gz") as archive:
-            self.assertEqual(archive.extractfile(localized_path).read(),
-                             (self.resources / "ja.lproj/Localizable.strings").read_bytes())
-            self.assertEqual(archive.extractfile(icon_path).read(), b"tabler-eye@2x.png")
-            for path in self.resources.rglob("*"):
-                if path.is_file():
-                    member = f"./Library/MobileSubstrate/DynamicLibraries/RUINResources.bundle/{path.relative_to(self.resources).as_posix()}"
-                    self.assertIsNotNone(archive.extractfile(member), member)
-            self.assertIn("./Library/MobileSubstrate/DynamicLibraries/RUIN.plist",
-                          archive.getnames())
-            filter_plist = plistlib.loads(archive.extractfile(
-                "./Library/MobileSubstrate/DynamicLibraries/RUIN.plist").read())
-            self.assertEqual(filter_plist["Filter"]["Bundles"], ["jp.naver.line"])
-            self.assertIsNotNone(archive.extractfile(
-                "./usr/share/doc/com.tqmane.ruin/RUIN-ThirdPartyNotices.txt"))
-
-        with zipfile.ZipFile(manual) as archive:
-            self.assertEqual(archive.read(localized_path[2:]),
-                             (self.resources / "ja.lproj/Localizable.strings").read_bytes())
-            for path in self.resources.rglob("*"):
-                if path.is_file():
-                    member = f"Library/MobileSubstrate/DynamicLibraries/RUINResources.bundle/{path.relative_to(self.resources).as_posix()}"
-                    self.assertIn(member, archive.namelist())
-            self.assertIn("Library/MobileSubstrate/DynamicLibraries/RUIN.dylib",
-                          archive.namelist())
-            self.assertIn("usr/share/doc/com.tqmane.ruin/RUIN-ThirdPartyNotices.txt",
-                          archive.namelist())
-        self.assertTrue((self.output / "RUIN-ThirdPartyNotices.txt").is_file())
-        self.assertIn(b"fishhook", notices.read_bytes())
-        self.assertIn(b"MIT License", notices.read_bytes())
-        checksum_text = sums.read_text(encoding="ascii")
-        for artifact in (standalone, package, manual, notices):
-            self.assertIn(
-                f"{hashlib.sha256(artifact.read_bytes()).hexdigest()}  {artifact.name}",
-                checksum_text)
-
+        expected = [("rootful", "", "iphoneos-arm"),
+                    ("rootless", "var/jb/", "iphoneos-arm64"),
+                    ("jailed", "", "iphoneos-arm64")]
+        for package, (variant, prefix, architecture) in zip(artifacts[:3], expected):
+            members = self.read_ar(package)
+            self.assertEqual([name for name, _ in members],
+                             ["debian-binary", "control.tar.gz", "data.tar.gz"])
+            self.assertEqual(members[0][1], b"2.0\n")
+            with tarfile.open(fileobj=io.BytesIO(members[1][1]), mode="r:gz") as archive:
+                self.assertEqual(set(archive.getnames()), {".", "./control"})
+                control = archive.extractfile("./control").read().decode("utf-8")
+            self.assertIn("Version: 0.4.0\n", control)
+            self.assertIn(f"Architecture: {architecture}\n", control)
+            self.assertIn(f"X-RUIN-Variant: {variant}\n", control)
+            if variant == "jailed":
+                self.assertNotIn("Depends:", control)
+            else:
+                self.assertIn("Depends: firmware (>= 18.0), mobilesubstrate\n", control)
+            install = "./" + prefix + "Library/MobileSubstrate/DynamicLibraries/"
+            with tarfile.open(fileobj=io.BytesIO(members[2][1]), mode="r:gz") as archive:
+                self.assertEqual(archive.extractfile(install + "RUIN.dylib").read(),
+                                 self.dylib.read_bytes())
+                for path in self.resources.rglob("*"):
+                    if path.is_file():
+                        member = install + "RUINResources.bundle/" + path.relative_to(self.resources).as_posix()
+                        self.assertEqual(archive.extractfile(member).read(), path.read_bytes())
+                filter_plist = plistlib.loads(archive.extractfile(install + "RUIN.plist").read())
+                self.assertEqual(filter_plist["Filter"]["Bundles"], ["jp.naver.line"])
+                notices = archive.extractfile("./" + prefix +
+                    "usr/share/doc/com.tqmane.ruin/RUIN-ThirdPartyNotices.txt").read()
+                self.assertIn(b"fishhook", notices)
+                self.assertIn(b"MIT License", notices)
+                self.assertTrue(all(member.name.startswith("./" + prefix)
+                                    for member in archive.getmembers() if member.isfile()))
+        checksum_text = artifacts[-1].read_text(encoding="ascii")
+        self.assertEqual(len(checksum_text.splitlines()), 3)
+        for artifact in artifacts[:3]:
+            self.assertIn(f"{hashlib.sha256(artifact.read_bytes()).hexdigest()}  {artifact.name}",
+                          checksum_text)
         second = [path.read_bytes() for path in distribute.build_distribution(
             self.dylib, self.resources, self.output, "0.4.0", epoch=123456789)]
         self.assertEqual(first, second)

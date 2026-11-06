@@ -1,5 +1,6 @@
 #import "MIDLookup.h"
 #import "LINEPrivateCalls.h"
+#import "../core/TargetMetadata.h"
 
 #import <objc/runtime.h>
 #import <stdatomic.h>
@@ -22,9 +23,7 @@ static atomic_uint_fast64_t gMIDRequests, gMIDAccepted, gMIDRejected;
 
 static BOOL RUINMIDTargetMatches(NSDictionary *info)
 {
-    return [info[@"RUINOriginalBundleIdentifier"] isEqual:@"jp.naver.line"] &&
-        [info[@"CFBundleShortVersionString"] isEqual:@"26.16.0"] &&
-        [info[@"CFBundleVersion"] isEqual:@"2026.1006.1718"];
+    return RUINTargetMetadataMatchesInfo(info);
 }
 
 static NSURL *RUINMIDURL(id input)

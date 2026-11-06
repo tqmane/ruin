@@ -53,6 +53,7 @@ check-fixtures: check-host build/check_native_theme_registration build/check_nat
 	./build/check_native_theme_install "$(THEME_ARCHIVE)"
 
 HOST_FIXTURES := \
+	build/check_bundle_identity \
 	build/check_client_version_advertisement \
 	build/check_local_appearance \
 	build/check_localization \
@@ -93,6 +94,7 @@ $(HOST_FIXTURES): $(wildcard src/*/*.h)
 check-host: check-portable $(HOST_FIXTURES)
 	@set -e; for fixture in $(filter build/%,$^); do codesign --force --sign - "$$fixture"; done
 	./build/check_native_tab_availability
+	./build/check_bundle_identity
 	./build/check_read_range_codec
 	./build/check_native_range_queue
 	./build/check_features
@@ -133,6 +135,11 @@ check-host: check-portable $(HOST_FIXTURES)
 	./build/check_localization "$(CURDIR)/resources/RUINResources.bundle"
 	./build/check_legacy_messaging_configuration
 	python3 tests/check_theme_archive.py
+
+build/check_bundle_identity: $(call source,src/platform/BundleIdentity.m) src/platform/BundleIdentity.h
+	mkdir -p build
+	$(HOST_CC) -DRUIN_BUNDLE_IDENTITY_HOST_CHECK=1 -fobjc-arc -fblocks $(HOST_WARNINGS) $(CPPFLAGS) \
+		$(call source,src/platform/BundleIdentity.m) -framework Foundation -o $@
 
 build/check_native_theme_validation: $(call source,src/themes/NativeThemeValidation.m) \
 	src/themes/NativeThemeValidation.h
