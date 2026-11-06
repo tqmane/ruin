@@ -170,8 +170,14 @@
 	<string>보조 기기 로그인</string>
 	<key>ショッピング</key>
 	<string>쇼핑</string>
+	<key>ショップ</key>
+	<string>샵</string>
 	<key>スタンプをGIFでコピー</key>
 	<string>스티커를 GIF로 복사</string>
+	<key>スタンプショップ</key>
+	<string>스티커샵</string>
+	<key>スタンプショップを開けませんでした</key>
+	<string>스티커샵을 열 수 없습니다</string>
 	<key>ストアURLからダウンロード</key>
 	<string>스토어 URL에서 다운로드</string>
 	<key>ストアURLから名前・商品ID・バージョンを取得</key>

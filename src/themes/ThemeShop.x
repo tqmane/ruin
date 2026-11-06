@@ -23,6 +23,8 @@
 // The complete fixed shop URL is in this binary at 0x10a44eb50.
 // See docs/theme-persistence.md. No native theme/purchase model is edited.
 static NSString * const RUINThemeShopURLString = @"line://shop/theme";
+// LINE Developers documents /R/shop/sticker/hot as the Sticker Shop ranking entry.
+static NSString * const RUINStickerShopURLString = @"line://shop/sticker/hot";
 static const char * const RUINThemeShopDelegateClass = "_TtC4LINE11AppDelegate";
 static const char * const RUINThemeShopSelector = "openURLForObjC:";
 
@@ -365,8 +367,10 @@ static NSString *RUINThemeShopGateStatusName(void)
     }
 }
 
-static RUINThemeShopStatus RUINThemeShopDispatch(id delegate, NSDictionary *info)
+static RUINThemeShopStatus RUINThemeShopDispatchURL(id delegate, NSDictionary *info, NSString *URLString)
 {
+    if (![URLString isEqual:RUINThemeShopURLString] && ![URLString isEqual:RUINStickerShopURLString])
+        return RUINThemeShopRecord(RUINThemeShopRouteRejected);
     if (!RUINThemeShopTargetMatches(info)) return RUINThemeShopRecord(RUINThemeShopVersionGated);
     if (!RUINThemeShopRouterAvailable(delegate)) return RUINThemeShopRecord(RUINThemeShopRouterUnavailable);
 #if !defined(RUIN_THEMESHOP_HOST_CHECK)
@@ -376,7 +380,7 @@ static RUINThemeShopStatus RUINThemeShopDispatch(id delegate, NSDictionary *info
     atomic_fetch_add(&gThemeShopRequests, 1);
     @try {
         BOOL accepted = [(id<RUINThemeURLRouting>)delegate
-            openURLForObjC:[NSURL URLWithString:RUINThemeShopURLString]];
+            openURLForObjC:[NSURL URLWithString:URLString]];
         atomic_fetch_add(accepted ? &gThemeShopAccepted : &gThemeShopRejected, 1);
         return RUINThemeShopRecord(accepted ? RUINThemeShopRouteAccepted : RUINThemeShopRouteRejected);
     } @catch (__unused NSException *exception) {
@@ -385,6 +389,12 @@ static RUINThemeShopStatus RUINThemeShopDispatch(id delegate, NSDictionary *info
     }
 }
 
+#if defined(RUIN_THEMESHOP_HOST_CHECK)
+static RUINThemeShopStatus RUINThemeShopDispatch(id delegate, NSDictionary *info) {
+    return RUINThemeShopDispatchURL(delegate, info, RUINThemeShopURLString);
+}
+#endif
+
 NSDictionary<NSString *, id> *RUINThemeShopDiagnostics(void)
 {
     NSMutableDictionary *result = [@{
@@ -392,6 +402,7 @@ NSDictionary<NSString *, id> *RUINThemeShopDiagnostics(void)
         @"expectedVersion": @"26.16.0",
         @"expectedBuild": @"2026.1006.1718",
         @"fixedURL": RUINThemeShopURLString,
+        @"stickerURL": RUINStickerShopURLString,
         @"nativeEntry": @"AppDelegate -openURLForObjC:",
         @"nativeABI": @"B24@0:8@16",
         @"lastStatus": RUINThemeShopStatusName(atomic_load(&gThemeShopStatus)),
@@ -431,10 +442,10 @@ NSDictionary<NSString *, id> *RUINThemeShopDiagnostics(void)
 
 #if !defined(RUIN_THEMESHOP_HOST_CHECK)
 
-void RUINOpenThemeShop(UIViewController *source)
+static void RUINOpenShop(UIViewController *source, BOOL sticker)
 {
     if (!NSThread.isMainThread) {
-        dispatch_async(dispatch_get_main_queue(), ^{ RUINOpenThemeShop(source); });
+        dispatch_async(dispatch_get_main_queue(), ^{ RUINOpenShop(source, sticker); });
         return;
     }
     UINavigationController *navigation = [source isKindOfClass:UINavigationController.class]
@@ -449,18 +460,22 @@ void RUINOpenThemeShop(UIViewController *source)
         RUINThemeShopRecord(RUINThemeShopSourceUnavailable);
         return;
     }
-    RUINThemeShopStatus status = RUINThemeShopDispatch(UIApplication.sharedApplication.delegate,
-        NSBundle.mainBundle.infoDictionary);
+    RUINThemeShopStatus status = RUINThemeShopDispatchURL(UIApplication.sharedApplication.delegate,
+        NSBundle.mainBundle.infoDictionary, sticker ? RUINStickerShopURLString : RUINThemeShopURLString);
     if (status == RUINThemeShopRouteAccepted) return;
     if (navigation.topViewController != visible || visible.presentedViewController || !visible.viewIfLoaded.window) return;
-    NSString *message = status == RUINThemeShopVersionGated || status == RUINThemeShopRouterUnavailable
+    NSString *message = sticker ? RUINLocalizedString(@"スタンプショップを開けませんでした") :
+        status == RUINThemeShopVersionGated || status == RUINThemeShopRouterUnavailable
         ? RUINLocalizedString(@"このLINEバージョンでは着せかえショップへの移動を利用できません。")
         : RUINLocalizedString(@"LINEに着せかえショップの表示を要求しましたが、受け付けられませんでした。");
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:RUINLocalizedString(@"着せかえショップを開けませんでした")
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:RUINLocalizedString(sticker ? @"スタンプショップを開けませんでした" : @"着せかえショップを開けませんでした")
         message:message preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"閉じる") style:UIAlertActionStyleCancel handler:nil]];
     [visible presentViewController:alert animated:YES completion:nil];
 }
+
+void RUINOpenThemeShop(UIViewController *source) { RUINOpenShop(source, NO); }
+void RUINOpenStickerShop(UIViewController *source) { RUINOpenShop(source, YES); }
 
 #else
 #import <assert.h>
@@ -637,12 +652,13 @@ static void RUINThemeShopCheckGate(void)
     puts("PASS exact native caller chains, mode-0-only primary projection, migration exclusion, unchanged stored role, reentry and exception cleanup");
 }
 
+static NSString *testExpectedShopURL = @"line://shop/theme";
 static NSUInteger testCalls;
 static BOOL testReply = YES, testThrows;
 static BOOL RUINThemeShopTestRouter(id receiver, SEL selector, NSURL *url)
 {
     (void)receiver; (void)selector;
-    assert([url isKindOfClass:NSURL.class] && [url.absoluteString isEqual:@"line://shop/theme"]);
+    assert([url isKindOfClass:NSURL.class] && [url.absoluteString isEqual:testExpectedShopURL]);
     assert(!url.query && !url.fragment && !url.user && !url.password);
     testCalls++;
     if (testThrows) @throw [NSException exceptionWithName:@"HostProbe" reason:nil userInfo:nil];
@@ -678,6 +694,9 @@ int main(int argc, const char *argv[])
             assert([diagnostics[@"nativeRouteRejected"] unsignedIntegerValue] == 1);
             assert([diagnostics[@"nativeExceptions"] unsignedIntegerValue] == 1);
             assert(![diagnostics[@"storeLoadVerified"] boolValue] && ![diagnostics[@"gateOverrideInstalled"] boolValue]);
+            testThrows = NO; testReply = YES; testExpectedShopURL = RUINStickerShopURLString;
+            assert(RUINThemeShopDispatchURL(delegate, info, RUINStickerShopURLString) == RUINThemeShopRouteAccepted && testCalls == 4);
+            assert(RUINThemeShopDispatchURL(delegate, info, @"line://unrelated") == RUINThemeShopRouteRejected && testCalls == 4);
         }
         puts("PASS fixed in-process theme-shop URL, version/class/ABI gates, acceptance/rejection/exception accounting");
     }
