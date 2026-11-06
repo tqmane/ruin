@@ -3,6 +3,9 @@
 #import <stdatomic.h>
 
 #import "fishhook.h"
+// Imported C symbols intentionally use fishhook: Logos' internal backend does
+// not support %hookf, and this jailed-compatible dylib has no Substrate runtime.
+// Rebinding imports keeps executable text and the input IPA unchanged.
 
 static NSString *const RUINOldAppAccessGroup = @"ZW4U99SQQ3.jp.naver.line";
 static NSString *const RUINOldSharedAccessGroup = @"ZW4U99SQQ3.com.linecorp.trident.shared";

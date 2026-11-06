@@ -12,20 +12,25 @@ LINE 26.16.0（2026.1006.1718 / arm64 / iOS 18以降）向けの、個人端末�
 | `src/interface/` | LINE内の設定入口、表示制御、確認操作、ID検索 |
 | `src/platform/` | サイドロードの互換処理、キーチェーン、サブ端末ログイン |
 | `tests/` | ホスト側の検証プログラム、実機結果の確認、入力フィクスチャ |
-| `tools/` | 署名・パッケージ作成と、対象バイナリを限定した適用処理 |
+| `tools/` | 署名・パッケージ作成と、実行ファイルを変更しない整合性検証 |
 | `vendor/fishhook/` | 外部ライブラリとライセンス表記 |
+| `vendor/logos/` | バージョンを固定したLogosプリプロセッサと上流ライセンス |
 | `build/`, `dist/` | ローカル生成物（Git管理対象外） |
 
 ## ビルドと確認
 
-XcodeのiOS SDK、macOS SDK、Python 3、Node.jsを使います。
+XcodeのiOS SDK、macOS SDK、Perl、Python 3、Node.jsを使います。Logosはリポジトリに同梱しており、Theos全体やSubstrateのインストールは不要です。
 
 ```sh
 make -j4 all
+make check-host
+# 元アプリのモデルと取得済みの着せかえも検証する場合:
 make check
 ```
 
-`make check` のネイティブモデル検証には、`build/unsigned/Payload/LINE.app/` の対象アプリと、ローカルに取得済みの着せかえアーカイブを使用します。未取得の環境では、対応するチェックが必要な入力パスを表示して停止します。署名に使う証明書・プロビジョニングプロファイル・パスワードはリポジトリへ保存しません。
+`make check-host` はmacOS上で合成フィクスチャを使うテストを実行します。`make logos` と `make check-portable` はLinuxでも実行でき、すべてのLogosソースを警告もエラーとして処理し、パッケージの整合性チェックを検証します。`make check-packaging` は自前の小さなiOS実行ファイルを生成し、実際の `insert_dylib` とAppleのアドホック署名を通して整合性を確認します。証明書や元IPAは必要ありません。GitHub Actionsはこれらに加え、arm64向けiOS dylibのビルドと依存ライブラリの確認を実行します。
+
+`make check` のネイティブモデル検証には、`build/unsigned/Payload/LINE.app/` の対象アプリと、ローカルに取得済みの着せかえアーカイブを使用します。別の場所にある場合は `LINE_APP=... THEME_ARCHIVE=...` を指定します。未取得の環境では、対応するチェックが必要な入力パスを表示して停止します。IPA、証明書・プロビジョニングプロファイル・パスワードはリポジトリへ保存しません。
 
 ```sh
 python3 tools/package.py --help
@@ -33,7 +38,25 @@ python3 tools/package.py --help
 
 対応する元IPA・プロファイル・証明書・パスワードファイル・端末IDを指定してパッケージを作成します。元IPAは変更せず、署名用コピーを `build/signed/` に、IPAを `dist/` に出力します。署名検証の成功後にインストールしてください。
 
+## フックとパッケージの方針
+
+Objective-Cメソッドのフックは `.x` のLogos `%hook` / `%orig` で記述し、追加メソッドは型を明示した `%new`、対象の確認と初期化は `%group` / `%init` を使います。生成されたObjective-Cは `build/logos/` に置き、通常の非フック処理は `.m` / `.swift` のままです。`internal` generatorを使うため、フック処理は `RUIN.dylib` 内に収まり、外部のSubstrateやlibhookerに依存しません。C関数のインポート先変更には既存のfishhookを使います。これは実行コードの書き換えを必要とせず、jailed環境でも利用できる方式です。
+
+機能のためにIPA内のMach-O命令・定数・Swiftメタデータを直接変更する処理はありません。以前の `patch_theme_persistence.py` は廃止しました。サブ端末の着せかえ保存は、dylib内の設定読み取りフックで対象ビルドの保存処理からの呼び出しだけを補正します。アカウントの保存値と、保存処理に続くネイティブの着せかえ妥当性チェックを保持します。
+
+解析した呼び出し経路、UUID、命令位置、検証方法は [着せかえ保存の実装メモ](docs/theme-persistence.md) に記録しています。
+
+タブ・フォントの既存Swiftプロトコルwitness table補正は、Objective-CメソッドではないためLogosの対象外です。型を検証する既存のSwift呼出規約付きアダプターをdylib内に残し、実行時のデータポインタだけを差し替えます。これらもIPA内のファイルや実行命令は変更しません。
+
+サイドロードIPAを作る際は、dylibをロードする `LC_LOAD_DYLIB` の追加と、署名・Bundle IDなどのパッケージ用メタデータ更新を行います。パッケージ処理はロードコマンド追加後と署名後に、既存のMach-Oセクションすべてのヘッダ・内容が元と一致することを検証します。既存ロードコマンド、メモリ保護属性、署名以外の `__LINKEDIT` も照合し、追加依存や許可していない変更があればIPAを出力しません。次のコマンドでも読み取り専用で照合できます。
+
+```sh
+python3 tools/macho_integrity.py original.ipa --packaged dist/RUIN-LINE-26.16.0.ipa
+```
+
 ## 現在の確認状況
+
+以下の実機確認はLogos移行前の実装に対する記録です。移行版についてはホストテストとビルド検証に加え、実機での起動・着せかえ適用後の再起動・既読制御などを再確認する必要があります。
 
 着せかえはLINE本来のマイ着せかえから適用・再ダウンロードし、サブ端末でもプロセス再起動後に保持されることを確認しています。タブの非表示はLINE本来の項目生成に反映し、変更は再起動後に適用します。動作に必要なタブを残し、非表示にできない組み合わせは設定画面で制限します。LINEのTabViewを使用します。
 
