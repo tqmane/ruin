@@ -1,0 +1,18 @@
+{
+  "repository": "https://github.com/tabler/tabler-icons",
+  "observed_head": "ed177a085b652fe04ec4f37ced867c94621e7840",
+  "observed_date": "2026-11-06",
+  "source_files": [
+    "icons/outline/eye.svg",
+    "icons/outline/eye-off.svg",
+    "LICENSE"
+  ],
+  "renderer": "resvg-py 0.5.0",
+  "render_overrides": {
+    "currentColor": "#000000",
+    "stroke-width": "1.5",
+    "background": "transparent"
+  },
+  "output_sizes_px": [48, 72],
+  "source_svg_modified": false
+}

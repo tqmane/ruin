@@ -44,6 +44,7 @@ int main(void) { @autoreleasepool {
 
 #import <CoreData/CoreData.h>
 #import <UIKit/UIKit.h>
+#import <QuartzCore/QuartzCore.h>
 #import <objc/message.h>
 #import <objc/runtime.h>
 #import <os/lock.h>
@@ -755,19 +756,86 @@ static BOOL RUINReadExceptionEnabled(NSString *key)
     return [exceptions containsObject:key];
 }
 
+static UIImage *RUINReadExceptionSymbol(BOOL exempt) {
+    NSString *path = [NSBundle.mainBundle pathForResource:@"RUINResources" ofType:@"bundle"];
+    NSBundle *bundle = path ? [NSBundle bundleWithPath:path] : nil;
+    return [[UIImage imageNamed:exempt ? @"tabler-eye" : @"tabler-eye-off"
+        inBundle:bundle compatibleWithTraitCollection:nil] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+}
+
+static UIColor *RUINDisplayedIconColor(UIImageView *view) {
+    if (!view.image || CGRectIsEmpty(view.bounds)) return nil;
+    // Native buttons may paint a black image while exposing UIKit's default
+    // blue tint. Read the rendered image layer, not that unrelated tint value.
+    uint8_t pixels[24 * 24 * 4] = {0};
+    CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
+    CGContextRef context = CGBitmapContextCreate(pixels, 24, 24, 8, 24 * 4, space,
+        kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
+    CGColorSpaceRelease(space);
+    if (!context) return nil;
+    CGContextScaleCTM(context, 24 / view.bounds.size.width, 24 / view.bounds.size.height);
+    CGContextTranslateCTM(context, -view.bounds.origin.x, -view.bounds.origin.y);
+    [view.layer renderInContext:context];
+    CGContextRelease(context);
+    NSUInteger red = 0, green = 0, blue = 0, alpha = 0;
+    for (NSUInteger i = 0; i < sizeof(pixels); i += 4) {
+        red += pixels[i]; green += pixels[i + 1]; blue += pixels[i + 2]; alpha += pixels[i + 3];
+    }
+    if (!alpha) return nil;
+    return [UIColor colorWithRed:MIN(1, (CGFloat)red / alpha)
+        green:MIN(1, (CGFloat)green / alpha) blue:MIN(1, (CGFloat)blue / alpha) alpha:1];
+}
+
+static UIColor *RUINPeerImageTint(UIView *view, NSUInteger depth) {
+    if (depth > 4 || view.hidden) return nil;
+    if ([view isKindOfClass:UIImageView.class]) {
+        UIColor *color = RUINDisplayedIconColor((UIImageView *)view);
+        if (color) return color;
+    }
+    for (UIView *child in view.subviews) {
+        UIColor *color = RUINPeerImageTint(child, depth + 1);
+        if (color) return color;
+    }
+    return nil;
+}
+
+static UIColor *RUINReadExceptionTint(UIViewController *controller, UIButton *custom) {
+    if ([custom.superview isKindOfClass:UIStackView.class]) {
+        for (UIView *peer in ((UIStackView *)custom.superview).arrangedSubviews.reverseObjectEnumerator) {
+            if (peer == custom) continue;
+            UIColor *color = RUINPeerImageTint(peer, 0);
+            if (color) return color;
+        }
+    }
+    for (UIBarButtonItem *peer in controller.navigationItem.rightBarButtonItems) {
+        if (peer == objc_getAssociatedObject(controller, &gReadExceptionButtonKey)) continue;
+        UIColor *color = peer.customView ? RUINPeerImageTint(peer.customView, 0) : nil;
+        if (color) return color;
+    }
+    return UIColor.labelColor;
+}
+
 static void RUINUpdateReadExceptionButton(UIViewController *controller, NSString *key)
 {
     UIBarButtonItem *item = objc_getAssociatedObject(controller, &gReadExceptionButtonKey);
     UIButton *custom = objc_getAssociatedObject(controller, &gCustomReadExceptionButtonKey);
     BOOL enabled = [NSUserDefaults.standardUserDefaults boolForKey:RUINReadControlEnabledDefaultsKey];
     BOOL exempt = key && RUINReadExceptionEnabled(key);
-    UIImage *image = [UIImage systemImageNamed:exempt ? @"eye" : @"eye.slash"];
+    UIImage *image = RUINReadExceptionSymbol(exempt);
     NSString *label = exempt ? @"このトークの既読抑制を有効にする" : @"このトークを既読抑制の例外にする";
     NSString *hint = enabled ? @"このトークだけ既読制御を切り替えます" : @"全体の既読抑制はオフです。例外設定は保存されます";
+    UIColor *tint = RUINReadExceptionTint(controller, custom);
     item.enabled = RUINValidReadExceptionKey(key); item.image = image;
+    item.tintColor = tint;
     item.accessibilityLabel = label; item.accessibilityHint = hint;
     custom.enabled = RUINValidReadExceptionKey(key);
-    [custom setImage:image forState:UIControlStateNormal];
+    UIButtonConfiguration *configuration = custom.configuration;
+    if (configuration) {
+        configuration.image = image;
+        configuration.baseForegroundColor = tint;
+        custom.configuration = configuration;
+    } else [custom setImage:image forState:UIControlStateNormal];
+    custom.tintColor = tint;
     custom.accessibilityLabel = label; custom.accessibilityHint = hint;
 }
 
@@ -780,10 +848,11 @@ static void RUINAttachReadExceptionButton(UIViewController *controller)
         UIButton *button = objc_getAssociatedObject(controller, &gCustomReadExceptionButtonKey);
         if (!button) {
             UIButtonConfiguration *config = UIButtonConfiguration.plainButtonConfiguration;
-            config.image = [UIImage systemImageNamed:@"eye.slash"];
-            config.preferredSymbolConfigurationForImage = [UIImageSymbolConfiguration configurationWithPointSize:17 weight:UIImageSymbolWeightRegular];
+            config.image = RUINReadExceptionSymbol(NO);
             config.contentInsets = NSDirectionalEdgeInsetsMake(4, 4, 4, 4);
+            config.baseForegroundColor = UIColor.labelColor;
             button = [UIButton buttonWithConfiguration:config primaryAction:nil];
+            button.accessibilityIdentifier = @"ruin.chat.read-exception";
             [button addTarget:controller action:sel_registerName("ruin_nativeToggleReadException:") forControlEvents:UIControlEventTouchUpInside];
             [button setContentCompressionResistancePriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisHorizontal];
             objc_setAssociatedObject(controller, &gCustomReadExceptionButtonKey, button, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -793,7 +862,7 @@ static void RUINAttachReadExceptionButton(UIViewController *controller)
         UINavigationItem *navigationItem = controller.navigationItem;
         UIBarButtonItem *item = objc_getAssociatedObject(controller, &gReadExceptionButtonKey);
         if (!item) {
-            item = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"eye.slash"] style:UIBarButtonItemStylePlain target:controller action:sel_registerName("ruin_nativeToggleReadException:")];
+            item = [[UIBarButtonItem alloc] initWithImage:RUINReadExceptionSymbol(NO) style:UIBarButtonItemStylePlain target:controller action:sel_registerName("ruin_nativeToggleReadException:")];
             objc_setAssociatedObject(controller, &gReadExceptionButtonKey, item, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         }
         NSArray *items = navigationItem.rightBarButtonItems ?: @[];
