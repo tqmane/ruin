@@ -20,14 +20,20 @@ Unsent</string>
 	<string>Send to a group of %ld members?</string>
 	<key>%lu件</key>
 	<string>%lu items</string>
+	<key>%lu件のトークを変更中</key>
+	<string>%lu chats modified</string>
 	<key>0以上の人数を入力してください。</key>
 	<string>Please enter 0 or more members.</string>
 	<key>1対1のトークで、既読非表示・トーク別の例外・返信時の切替を実機で確認済みです。グループやオープンチャット、手動で既読にする操作は検証中です。</key>
 	<string>Read receipt suppression, per-chat exceptions, and reply switching have been verified on physical devices in 1-on-1 chats. Group chats, OpenChat, and manual mark-as-read are still under testing.</string>
+	<key>1対1トーク</key>
+	<string>Direct Chats</string>
 	<key>1対1トークでの受信済みテキスト保持と「取消済」表示を確認済みです。添付ファイル・グループ・オープンチャットでの保持は検証中です。既読者一覧には、この端末で記録した名前と日時を表示します。</key>
 	<string>Retaining received text and displaying "Unsent" in 1-on-1 chats have been verified. Retaining attachments, group chats, and OpenChat are still under testing. The "Read by" list displays names and timestamps recorded on this device.</string>
 	<key>1対1・グループトークの新着のみ通知します。アプリ停止中の即時受信には対応していません。</key>
 	<string>Notifies only for new messages in 1-on-1 and group chats. Instant delivery while the app is closed is not supported.</string>
+	<key>24h送信取消・ミュートメッセージ</key>
+	<string>24h Unsend &amp; Silent Messages</string>
 	<key>Agent-iバーを非表示</key>
 	<string>Hide Agent-i Bar</string>
 	<key>GIFでコピー</key>
@@ -126,8 +132,12 @@ Unsent</string>
 	<string>Preview is not supported for this file. You can manage it from the share menu.</string>
 	<key>この環境ではLINEの着せかえ記録を取得できません。</key>
 	<string>Unable to retrieve LINE theme records in this environment.</string>
+	<key>この端末でのトーク名だけを変更します。相手には反映されません。</key>
+	<string>Changes chat name on this device only. Others will not see this change.</string>
 	<key>この端末での表示名</key>
 	<string>Display Name on This Device</string>
+	<key>この端末での表示名だけを変更します。相手には反映されません。一覧に反映されない場合はLINEを再起動してください。</key>
+	<string>Changes display names on this device only. Others will not see this change. If the list does not update, please restart LINE.</string>
 	<key>この端末で表示する名前</key>
 	<string>Name to display on this device</string>
 	<key>この端末の別名</key>
@@ -136,6 +146,8 @@ Unsent</string>
 	<string>Testers</string>
 	<key>てすたーず (2)</key>
 	<string>Testers (2)</string>
+	<key>アカウントが変わりました。トーク一覧を開き直してください。</key>
+	<string>Account changed. Please reopen your chat list.</string>
 	<key>アプリの動作に必要なタブは、常に表示されます。</key>
 	<string>Tabs required for app operation are always shown.</string>
 	<key>アプリアイコンを変更できませんでした。</key>
@@ -148,6 +160,8 @@ Unsent</string>
 	<string>Wallet</string>
 	<key>オンにする</key>
 	<string>Turn On</string>
+	<key>オープンチャット</key>
+	<string>OpenChat</string>
 	<key>カスタムフォント</key>
 	<string>Custom Font</string>
 	<key>カメラの確認</key>
@@ -162,6 +176,8 @@ Unsent</string>
 	<string>Cancel</string>
 	<key>グループへの送信確認</key>
 	<string>Confirm Sending to Group</string>
+	<key>グループトーク</key>
+	<string>Group Chats</string>
 	<key>グループ人数を確認できません。送信しますか？</key>
 	<string>Unable to verify group member count. Send anyway?</string>
 	<key>サブ端末では、現在のメイン端末でQRコードを読み取り、ログインを承認します。</key>
@@ -206,8 +222,16 @@ Unsent</string>
 	<string>Please check your download settings and current status.</string>
 	<key>トーク</key>
 	<string>Chats</string>
+	<key>トークが見つかりません</key>
+	<string>No chats found</string>
+	<key>トークの表示名</key>
+	<string>Chat Display Name</string>
 	<key>トークの識別IDを確認してください。</key>
 	<string>Please check the chat identifier ID.</string>
+	<key>トークを読み込み中…</key>
+	<string>Loading chats…</string>
+	<key>トーク一覧を一度開いてから、もう一度お試しください。</key>
+	<string>Please open your chat list once and try again.</string>
 	<key>ニュース</key>
 	<string>News</string>
 	<key>バージョン</key>
@@ -278,6 +302,8 @@ Unsent</string>
 	<string>Set Local Display Name</string>
 	<key>ローカル設定・診断</key>
 	<string>Local Settings &amp; Diagnostics</string>
+	<key>一覧にないトーク（%lu）</key>
+	<string>Unlisted Chats (%lu)</string>
 	<key>一覧の更新に失敗しました。前回取得した内容を表示しています。</key>
 	<string>Failed to update the list. Showing previously retrieved content.</string>
 	<key>一覧を取得できませんでした</key>
@@ -300,6 +326,10 @@ Unsent</string>
 	<string>Saved Files (%lu)</string>
 	<key>保有</key>
 	<string>Owned</string>
+	<key>元の名前に戻す</key>
+	<string>Reset to Original Name</string>
+	<key>元の名前：%@</key>
+	<string>Original name: %@</string>
 	<key>全体の既読抑制はオフです。例外設定は保存されます</key>
 	<string>Global read receipt suppression is off. Exception settings are saved</string>
 	<key>全機能の対応表</key>
@@ -324,10 +354,14 @@ Unsent</string>
 	<string>Unsent</string>
 	<key>名前</key>
 	<string>Name</string>
+	<key>名前とアイコンから、通常通り既読をつけるトークを選べます。変更はすぐに反映されます。</key>
+	<string>Select chats to send read receipts normally using names and icons. Changes take effect immediately.</string>
 	<key>名前のない着せかえ</key>
 	<string>Unnamed Theme</string>
 	<key>名前は改行を含めず、256文字以内で入力してください。</key>
 	<string>Please enter a name within 256 characters without line breaks.</string>
+	<key>名前やトーク名で検索</key>
+	<string>Search by name or chat title</string>
 	<key>名前を入力してください。</key>
 	<string>Please enter a name.</string>
 	<key>名前を確認中…</key>
@@ -476,6 +510,8 @@ Version: %@%@</string>
 	<string>Group size including yourself. 0 specifies no limit.</string>
 	<key>表示の管理</key>
 	<string>Manage display</string>
+	<key>表示名を変更するトークを選ぶ</key>
+	<string>Select a Chat to Rename</string>
 	<key>表示名を編集</key>
 	<string>Edit display name</string>
 	<key>記録はありません</key>
@@ -532,6 +568,8 @@ Version: %@%@</string>
 	<string>Confirm ending call</string>
 	<key>通話開始の確認</key>
 	<string>Confirm starting call</string>
+	<key>選択中：%lu件</key>
+	<string>%lu selected</string>
 	<key>閉じる</key>
 	<string>Close</string>
 	<key>開始</key>

@@ -53,6 +53,8 @@ check-fixtures: check-host build/check_native_theme_registration build/check_nat
 	./build/check_native_theme_install "$(THEME_ARCHIVE)"
 
 HOST_FIXTURES := \
+	build/check_chat_catalog \
+	build/check_chat_picker \
 	build/check_bundle_identity \
 	build/check_client_version_advertisement \
 	build/check_local_appearance \
@@ -95,6 +97,8 @@ check-host: check-portable $(HOST_FIXTURES)
 	@set -e; for fixture in $(filter build/%,$^); do codesign --force --sign - "$$fixture"; done
 	./build/check_native_tab_availability
 	./build/check_bundle_identity
+	./build/check_chat_picker
+	./build/check_chat_catalog
 	./build/check_read_range_codec
 	./build/check_native_range_queue
 	./build/check_features
@@ -135,6 +139,16 @@ check-host: check-portable $(HOST_FIXTURES)
 	./build/check_localization "$(CURDIR)/resources/RUINResources.bundle"
 	./build/check_legacy_messaging_configuration
 	python3 tests/check_theme_archive.py
+
+build/check_chat_catalog: $(call source,src/interface/ChatCatalog.m) src/interface/ChatCatalog.h
+	mkdir -p build
+	$(HOST_CC) -DRUIN_CHAT_CATALOG_HOST_CHECK=1 -fobjc-arc -fblocks $(HOST_WARNINGS) $(CPPFLAGS) \
+		$(call source,src/interface/ChatCatalog.m) -framework Foundation -framework CoreData -o $@
+
+build/check_chat_picker: src/interface/ChatPicker.m src/interface/ChatPicker.h
+	mkdir -p build
+	$(HOST_CC) -DRUIN_CHAT_PICKER_HOST_CHECK=1 -fobjc-arc -fblocks $(HOST_WARNINGS) $(CPPFLAGS) \
+		src/interface/ChatPicker.m -framework Foundation -o $@
 
 build/check_bundle_identity: $(call source,src/platform/BundleIdentity.m) src/platform/BundleIdentity.h
 	mkdir -p build
