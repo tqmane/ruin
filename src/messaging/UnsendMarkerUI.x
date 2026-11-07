@@ -1,5 +1,6 @@
 %config(generator=internal);
 
+#import "TargetMetadata.h"
 #import "MessagingPrivateAPI.h"
 #import "UnsendMarkerUI.h"
 #import "UnsendOperation.h"
@@ -38,10 +39,7 @@
  */
 
 static BOOL UITargetMatches(void) {
-    NSBundle *bundle = NSBundle.mainBundle; NSDictionary *info = bundle.infoDictionary;
-    return ([bundle.bundleIdentifier isEqual:RUINTargetBundleIdentifier] ||
-        [info[@"RUINOriginalBundleIdentifier"] isEqual:RUINTargetBundleIdentifier]) &&
-        [info[@"CFBundleShortVersionString"] isEqual:RUINTargetVersion] && [info[@"CFBundleVersion"] isEqual:RUINTargetBuild];
+    return RUINTargetMetadataMatchesInfo(NSBundle.mainBundle.infoDictionary);
 }
 static BOOL UIEnabled(void) { return UITargetMatches() && [NSUserDefaults.standardUserDefaults boolForKey:RUINKeepUnsentMessagesKey]; }
 static NSString *UIServerNumber(id value) {

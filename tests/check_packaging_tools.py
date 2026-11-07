@@ -9,6 +9,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
 from macho_integrity import verify_packaged
+from distribute import verify_dylib
 
 
 def run(*args):
@@ -19,6 +20,7 @@ def run(*args):
 
 
 def main():
+    verify_dylib(ROOT / 'build/RUIN.dylib')
     sdk = run('xcrun', '--sdk', 'iphoneos', '--show-sdk-path')
     with tempfile.TemporaryDirectory(prefix='ruin-packaging-') as temporary:
         directory = Path(temporary)
@@ -39,6 +41,20 @@ def main():
         run('codesign', '--verify', '--strict', packaged)
         count = verify_packaged(original_bytes, packaged.read_bytes())
         print(f'PASS: pinned insert_dylib and Apple ad-hoc signing preserve {count} original sections.')
+
+        library = directory / 'fixture.dylib'
+        run('xcrun', '--sdk', 'iphoneos', 'clang', '-arch', 'arm64', '-isysroot', sdk,
+            '-miphoneos-version-min=18.0', '-dynamiclib', '-Wl,-no_adhoc_codesign',
+            '-Wl,-install_name,@rpath/RUIN.dylib', source, '-o', library)
+        try:
+            verify_dylib(library)
+        except subprocess.CalledProcessError:
+            pass
+        else:
+            raise AssertionError('Unsigned dylib passed distribution verification')
+        run('codesign', '--force', '--sign', '-', '--timestamp=none', library)
+        verify_dylib(library)
+        print('PASS: distribution rejects unsigned dylibs and accepts a valid ad-hoc signature.')
 
 
 if __name__ == '__main__':

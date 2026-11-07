@@ -44,6 +44,8 @@
 	<string>ID별 로컬 표시 이름</string>
 	<key>ID別の表示名を追加</key>
 	<string>ID별 표시 이름 추가</string>
+	<key>LINE %@（ビルド %@）は完全には検証されていないため、一部の機能を利用できない可能性があります。</key>
+	<string>LINE %@ (빌드 %@)은 완전히 검증되지 않아 일부 기능을 사용하지 못할 수 있습니다.</string>
 	<key>LINE STOREの着せかえURLを入力してください。</key>
 	<string>LINE STORE 테마 URL을 입력해 주세요.</string>
 	<key>LINEが保存している記録です。現在の適用状態とファイルの存在は確認していません。</key>
@@ -96,6 +98,10 @@
 	<string>RUIN 설정</string>
 	<key>chat:MID または squareChat:MID をカンマ区切りで入力します。空欄で全て解除します。</key>
 	<string>chat:MID 또는 squareChat:MID를 쉼표로 구분하여 입력하세요. 비워두면 모두 해제됩니다.</string>
+	<key>compatibility.partial.continue</key>
+	<string>계속</string>
+	<key>compatibility.partial.title</key>
+	<string>호환성 주의</string>
 	<key>iPad扱いでサブ端末ログイン</key>
 	<string>iPad 방식으로 보조 기기 로그인</string>
 	<key>iPad扱いのサブ端末モード</key>
@@ -148,6 +154,8 @@
 	<string>테스터즈 (2)</string>
 	<key>アカウントが変わりました。トーク一覧を開き直してください。</key>
 	<string>계정이 변경되었습니다. 대화방 목록을 다시 열어 주세요.</string>
+	<key>アプリ</key>
+	<string>앱</string>
 	<key>アプリの動作に必要なタブは、常に表示されます。</key>
 	<string>앱 작동에 필요한 탭은 항상 표시됩니다.</string>
 	<key>アプリアイコンを変更できませんでした。</key>
@@ -220,6 +228,8 @@
 	<string>다운로드 및 파일 확인 중…</string>
 	<key>ダウンロード設定と現在の処理状況を確認してください。</key>
 	<string>다운로드 설정과 현재 처리 상태를 확인해 주세요.</string>
+	<key>データ保護のため処理を開始できません</key>
+	<string>데이터 보호를 위해 시작할 수 없습니다</string>
 	<key>トーク</key>
 	<string>대화</string>
 	<key>トークが見つかりません</key>
@@ -410,6 +420,8 @@ LINE의 저장 기록입니다. 현재 적용 상태는 확인되지 않았습�
 	<string>새로운 로컬 알림</string>
 	<key>新着メッセージを受信しました</key>
 	<string>새 메시지를 수신했습니다</string>
+	<key>既存のトーク履歴と鍵を保護するため、操作を開始できません。署名および保存先の診断状態を確認してください。</key>
+	<string>기존 대화 기록과 키를 보호하기 위해 작업을 시작할 수 없습니다. 서명 및 저장소 진단 상태를 확인해 주세요.</string>
 	<key>既存の別名</key>
 	<string>기존 별칭</string>
 	<key>既読の例外</key>

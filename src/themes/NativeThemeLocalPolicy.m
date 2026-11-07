@@ -1,5 +1,8 @@
 #import "NativeThemeLocalPolicy.h"
 #import "NativeThemeReceipt.h"
+#import "../known/ThemeMappings.h"
+#import "../known/KnownMappings.h"
+#import <mach-o/dyld.h>
 #import <os/lock.h>
 #include <dirent.h>
 #include <fcntl.h>
@@ -15,12 +18,28 @@ static NSUInteger gLocalGeneration;
 static atomic_uint_fast64_t gLocalScans, gLocalMatches, gPredicateRewrites, gProjectedObjects, gReadonlyProjectedObjects;
 static atomic_uint_fast64_t gRevocationScansIsolated;
 
+static const RUINThemeLocalPolicyMapping *RUINVerifiedLocalPolicyMapping(void)
+{
+    static const RUINThemeLocalPolicyMapping *verified;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        const RUINHostIdentity *host = RUINKnownHostForInfo(NSBundle.mainBundle.infoDictionary);
+        const RUINThemeMappings *mapping = RUINThemeMappingsForHost(host);
+        if (!mapping || !mapping->localPolicy.verified) return;
+        const struct mach_header_64 *header = (const void *)_dyld_get_image_header(0);
+        intptr_t slide = _dyld_get_image_vmaddr_slide(0);
+        if (RUINVerifyHostImage(host, header) &&
+            RUINVerifyInstructions(header, slide, mapping->localPolicy.anchors,
+                mapping->localPolicy.anchorCount)) verified = &mapping->localPolicy;
+    });
+    return verified;
+}
+
 BOOL RUINNativeThemeRevocationFetchPCsMatch(const uintptr_t *PCs, NSUInteger count)
 {
     // Actual fetch stacks: native owned-theme repository -> server sync's
     // revocation scan. My Themes' separate read-only fetch does not match.
-    return PCs && count >= 2 && PCs[0] == 0x1057f9058 &&
-        (PCs[1] == 0x1057fdda0 || PCs[1] == 0x1057fd5d4);
+    return RUINThemeLocalPolicyCallersMatch(RUINVerifiedLocalPolicyMapping(), PCs, count);
 }
 
 NSPredicate *RUINNativeThemeRevocationPredicate(NSPredicate *predicate, NSSet<NSString *> *IDs)
@@ -200,8 +219,10 @@ void RUINProjectNativeLocalThemeObjects(NSArray *objects, NSManagedObjectContext
             [[object valueForKey:@"defaultOrder"] integerValue] < 0)
             [object setPrimitiveValue:@NO forKey:@"grantedByDefault"];
         if (object.entity.attributesByName[@"applicationVersionRange"].attributeType == NSStringAttributeType &&
-            ![[object valueForKey:@"applicationVersionRange"] length])
+            ![[object valueForKey:@"applicationVersionRange"] length]) {
+            // This is the local package compatibility floor, not the running LINE version.
             [object setPrimitiveValue:@"0,1000.0.0,1,26.16.0" forKey:@"applicationVersionRange"];
+        }
         atomic_fetch_add(&gProjectedObjects, 1);
         if (object.objectID.persistentStore.isReadOnly) atomic_fetch_add(&gReadonlyProjectedObjects, 1);
     }
@@ -209,9 +230,15 @@ void RUINProjectNativeLocalThemeObjects(NSArray *objects, NSManagedObjectContext
 
 NSDictionary *RUINNativeThemeLocalPolicyDiagnostics(void)
 {
+    const RUINHostIdentity *host = RUINKnownHostForInfo(NSBundle.mainBundle.infoDictionary);
+    const RUINThemeMappings *mapping = RUINThemeMappingsForHost(host);
     return @{@"scans":@(atomic_load(&gLocalScans)), @"localPackages":@(atomic_load(&gLocalMatches)),
         @"predicateLeavesAdapted":@(atomic_load(&gPredicateRewrites)),
         @"objectsProjected":@(atomic_load(&gProjectedObjects)),
         @"readonlyObjectsProjected":@(atomic_load(&gReadonlyProjectedObjects)),
-        @"serverRevocationScansIsolated":@(atomic_load(&gRevocationScansIsolated)), @"contextSavePerformed":@NO};
+        @"serverRevocationScansIsolated":@(atomic_load(&gRevocationScansIsolated)),
+        @"serverRevocationMappingVerified":@(RUINVerifiedLocalPolicyMapping() != NULL),
+        @"serverRevocationMappingStatus":mapping && mapping->localPolicy.verified
+            ? @"verified" : host ? @"unported_for_host" : @"unknown_host",
+        @"contextSavePerformed":@NO};
 }

@@ -88,6 +88,7 @@ def verify_dylib(path):
     if not path.is_file():
         raise ValueError(f"Dylib not found: {path}")
     subprocess.run(["lipo", str(path), "-verify_arch", "arm64"], check=True)
+    subprocess.run(["codesign", "--verify", "--strict", str(path)], check=True)
     result = subprocess.run(["otool", "-L", str(path)], check=True,
                             capture_output=True, text=True)
     dependencies = dependencies_from_otool(result.stdout)

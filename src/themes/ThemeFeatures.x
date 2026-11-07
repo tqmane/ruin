@@ -1,5 +1,6 @@
 %config(generator=internal)
 
+#import "TargetMetadata.h"
 #import "ThemePrivateAPI.h"
 #import "ThemeFeatures.h"
 #import "SwiftFields.h"
@@ -101,12 +102,7 @@ static BOOL RUINThemeFail(NSError **error, NSString *operation)
 
 static BOOL RUINThemeTargetMatches(void)
 {
-    NSDictionary *info = [NSBundle mainBundle].infoDictionary ?: @{};
-    NSString *bundleIdentifier = [NSBundle mainBundle].bundleIdentifier ?: @"";
-    BOOL bundleMatches = [bundleIdentifier isEqualToString:@"jp.naver.line"] ||
-        [info[@"RUINOriginalBundleIdentifier"] isEqual:@"jp.naver.line"];
-    return bundleMatches && [info[@"CFBundleShortVersionString"] isEqual:@"26.16.0"] &&
-        [info[@"CFBundleVersion"] isEqual:@"2026.1006.1718"];
+    return RUINTargetMetadataMatchesInfo(NSBundle.mainBundle.infoDictionary);
 }
 
 static Method RUINThemeOwnMethod(Class cls, SEL selector)

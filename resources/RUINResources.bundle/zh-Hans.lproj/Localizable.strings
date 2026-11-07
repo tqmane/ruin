@@ -44,6 +44,8 @@
 	<string>按ID设置的本地显示名称</string>
 	<key>ID別の表示名を追加</key>
 	<string>添加按ID设置的显示名称</string>
+	<key>LINE %@（ビルド %@）は完全には検証されていないため、一部の機能を利用できない可能性があります。</key>
+	<string>LINE %@（内部版本 %@）未经完全验证，部分功能可能无法使用。</string>
 	<key>LINE STOREの着せかえURLを入力してください。</key>
 	<string>请输入LINE STORE主题URL。</string>
 	<key>LINEが保存している記録です。現在の適用状態とファイルの存在は確認していません。</key>
@@ -96,6 +98,10 @@
 	<string>RUIN设置</string>
 	<key>chat:MID または squareChat:MID をカンマ区切りで入力します。空欄で全て解除します。</key>
 	<string>请输入以逗号分隔的chat:MID或squareChat:MID。留空以全部清除。</string>
+	<key>compatibility.partial.continue</key>
+	<string>继续</string>
+	<key>compatibility.partial.title</key>
+	<string>兼容性提示</string>
 	<key>iPad扱いでサブ端末ログイン</key>
 	<string>作为iPad副设备登录</string>
 	<key>iPad扱いのサブ端末モード</key>
@@ -148,6 +154,8 @@
 	<string>测试者们 (2)</string>
 	<key>アカウントが変わりました。トーク一覧を開き直してください。</key>
 	<string>账号已更改，请重新打开聊天列表。</string>
+	<key>アプリ</key>
+	<string>应用</string>
 	<key>アプリの動作に必要なタブは、常に表示されます。</key>
 	<string>应用运行所需的标签页将始终显示。</string>
 	<key>アプリアイコンを変更できませんでした。</key>
@@ -220,6 +228,8 @@
 	<string>正在检查下载与文件…</string>
 	<key>ダウンロード設定と現在の処理状況を確認してください。</key>
 	<string>请检查下载设置和当前处理状态。</string>
+	<key>データ保護のため処理を開始できません</key>
+	<string>为保护数据无法开始</string>
 	<key>トーク</key>
 	<string>聊天</string>
 	<key>トークが見つかりません</key>
@@ -410,6 +420,8 @@ LINEの保存記録です。現在の適用状態は確認していません。<
 	<string>新的本地通知</string>
 	<key>新着メッセージを受信しました</key>
 	<string>收到新消息</string>
+	<key>既存のトーク履歴と鍵を保護するため、操作を開始できません。署名および保存先の診断状態を確認してください。</key>
+	<string>为保护现有的聊天记录与密钥，无法开始此操作。请检查签名及存储位置的诊断状态。</string>
 	<key>既存の別名</key>
 	<string>现有别名</string>
 	<key>既読の例外</key>

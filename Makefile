@@ -1,6 +1,7 @@
 SDK = $(shell xcrun --sdk iphoneos --show-sdk-path)
 CC := xcrun --sdk iphoneos clang
-HOST_CC := xcrun --sdk macosx clang -DRUIN_HOST_CHECK=1
+HOST_COMMON := $(wildcard src/known/*.m)
+HOST_CC = xcrun --sdk macosx clang -DRUIN_HOST_CHECK=1 $(HOST_COMMON)
 HOST_WARNINGS := -Wall -Wextra -Werror
 RUIN_BUILD_VERSION ?= $(shell cat VERSION)
 HEADER_DIRS := $(sort $(dir $(wildcard src/*/*.h))) vendor/fishhook
@@ -27,7 +28,7 @@ OBJECTS := $(SOURCES:%.m=build/%.o) $(LOGOS_SOURCES:%.x=build/%.o) build/fishhoo
 all: build/RUIN.dylib build/insert_dylib
 FORCE:
 # ponytail: rebuild the single version owner; use a generated header if this becomes expensive.
-build/src/core/RUIN.o: FORCE
+build/src/core/Tweak.o: FORCE
 version:
 	@printf '%s\n' "$(RUIN_BUILD_VERSION)"
 dist: build/RUIN.dylib
@@ -37,7 +38,7 @@ check: check-fixtures check-packaging
 check-portable: logos
 	python3 -m unittest discover -s tests -p 'test_*.py' -v
 
-check-packaging: build/insert_dylib
+check-packaging: build/insert_dylib build/RUIN.dylib
 	python3 tests/check_packaging_tools.py
 
 # These two integration checks require private, locally supplied fixtures.
@@ -56,6 +57,10 @@ HOST_FIXTURES := \
 	build/check_chat_catalog \
 	build/check_chat_picker \
 	build/check_bundle_identity \
+	build/check_known_mappings \
+	build/check_keychain \
+	build/check_sideload \
+	build/check_app_group_storage \
 	build/check_client_version_advertisement \
 	build/check_local_appearance \
 	build/check_localization \
@@ -91,12 +96,16 @@ HOST_FIXTURES := \
 	build/check_native_theme_validation \
 	build/check_native_read_positions \
 	build/check_local_notifications
-$(HOST_FIXTURES): $(wildcard src/*/*.h)
+$(HOST_FIXTURES): $(wildcard src/*/*.h) $(wildcard src/known/*.def) $(HOST_COMMON)
 
 check-host: check-portable $(HOST_FIXTURES)
 	@set -e; for fixture in $(filter build/%,$^); do codesign --force --sign - "$$fixture"; done
 	./build/check_native_tab_availability
 	./build/check_bundle_identity
+	./build/check_known_mappings
+	./build/check_keychain
+	./build/check_sideload
+	./build/check_app_group_storage
 	./build/check_chat_picker
 	./build/check_chat_catalog
 	./build/check_read_range_codec
@@ -154,6 +163,26 @@ build/check_bundle_identity: $(call source,src/platform/BundleIdentity.m) src/pl
 	mkdir -p build
 	$(HOST_CC) -DRUIN_BUNDLE_IDENTITY_HOST_CHECK=1 -fobjc-arc -fblocks $(HOST_WARNINGS) $(CPPFLAGS) \
 		$(call source,src/platform/BundleIdentity.m) -framework Foundation -o $@
+
+build/check_keychain: tests/check_keychain.m src/platform/Keychain.m
+	mkdir -p build
+	$(HOST_CC) -fobjc-arc -fblocks $(HOST_WARNINGS) $(CPPFLAGS) \
+		tests/check_keychain.m -framework Foundation -framework Security -o $@
+
+build/check_known_mappings: tests/check_known_mappings.m
+	mkdir -p build
+	$(HOST_CC) -fobjc-arc -fblocks $(HOST_WARNINGS) $(CPPFLAGS) \
+		tests/check_known_mappings.m -framework Foundation -o $@
+
+build/check_sideload: $(call source,src/platform/Sideload.m)
+	mkdir -p build
+	$(HOST_CC) -DRUIN_SIDELOAD_HOST_CHECK=1 -fobjc-arc -fblocks $(HOST_WARNINGS) $(CPPFLAGS) \
+		$(call source,src/platform/Sideload.m) -framework Foundation -o $@
+
+build/check_app_group_storage: src/platform/AppGroupStorage.m tests/check_app_group_storage.m
+	mkdir -p build
+	$(HOST_CC) -fobjc-arc -fblocks $(HOST_WARNINGS) $(CPPFLAGS) \
+		src/platform/AppGroupStorage.m tests/check_app_group_storage.m -framework Foundation -o $@
 
 build/check_native_theme_validation: $(call source,src/themes/NativeThemeValidation.m) \
 	src/themes/NativeThemeValidation.h
@@ -291,11 +320,11 @@ build/logos/%.m: %.x $(LOGOS_DEPS)
 	$(PERL) $(LOGOS) -c generator=internal -c warnings=error $< > $@.tmp
 	mv $@.tmp $@
 
-build/%.o: build/logos/%.m $(wildcard src/*/*.h) vendor/fishhook/fishhook.h VERSION
+build/%.o: build/logos/%.m $(wildcard src/*/*.h) $(wildcard src/known/*.def) vendor/fishhook/fishhook.h VERSION
 	mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 
-build/%.o: %.m $(wildcard src/*/*.h) vendor/fishhook/fishhook.h VERSION
+build/%.o: %.m $(wildcard src/*/*.h) $(wildcard src/known/*.def) vendor/fishhook/fishhook.h VERSION
 	mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 
@@ -309,6 +338,7 @@ build/SwiftFields.o: src/core/SwiftFields.swift src/core/SwiftFields.h
 
 build/RUIN.dylib: $(OBJECTS)
 	xcrun --sdk iphoneos swiftc -sdk $(SDK) -target arm64-apple-ios18.0 -emit-library $(OBJECTS) -framework Foundation -framework UIKit -framework CoreText -framework WebKit -framework CoreGraphics -framework Security -framework CoreData -framework ImageIO -framework UniformTypeIdentifiers -framework UserNotifications -lsqlite3 -lz -Xlinker -install_name -Xlinker @rpath/RUIN.dylib -o $@
+	codesign --force --sign - --timestamp=none $@
 
 # Upstream: https://github.com/Tyilo/insert_dylib, pinned for reproducible builds.
 build/insert_dylib.c:
@@ -324,7 +354,7 @@ clean:
 
 build/check_native_title: $(call source,src/interface/NativeChatControls.m)
 	mkdir -p build
-	$(HOST_CC) -DRUIN_NATIVE_TITLE_HOST_CHECK=1 -fobjc-arc -fblocks $(HOST_WARNINGS) \
+	$(HOST_CC) -DRUIN_NATIVE_TITLE_HOST_CHECK=1 -fobjc-arc -fblocks $(HOST_WARNINGS) $(CPPFLAGS) \
 		$(call source,src/interface/NativeChatControls.m) -framework Foundation -o $@
 
 build/check_gif: $(call source,src/messaging/GIFEncoder.m) src/messaging/GIFEncoder.h tests/check_gif.m

@@ -1,5 +1,6 @@
 %config(generator=internal)
 
+#import "TargetMetadata.h"
 #import "ThemePrivateAPI.h"
 #import "ThemeStoreDownload.h"
 #import "ThemeFeatures.h"
@@ -45,13 +46,7 @@ static BOOL RUINThemeStoreDownloadTargetMatches(void)
 #if defined(RUIN_THEME_STORE_DOWNLOAD_HOST_CHECK)
     return YES;
 #else
-    NSDictionary *info = NSBundle.mainBundle.infoDictionary ?: @{};
-    NSString *bundleID = NSBundle.mainBundle.bundleIdentifier ?: @"";
-    BOOL bundleMatches = [bundleID isEqualToString:@"jp.naver.line"] ||
-        [info[@"RUINOriginalBundleIdentifier"] isEqual:@"jp.naver.line"];
-    return bundleMatches &&
-        [info[@"CFBundleShortVersionString"] isEqual:@"26.16.0"] &&
-        [info[@"CFBundleVersion"] isEqual:@"2026.1006.1718"];
+    return RUINTargetMetadataMatchesInfo(NSBundle.mainBundle.infoDictionary);
 #endif
 }
 

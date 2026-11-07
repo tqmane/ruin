@@ -80,7 +80,10 @@ def main():
     bundle_id = a.bundle_id if a.bundle_id is not None else original_bundle_id
     binary = app / info['CFBundleExecutable']
     original_executable = binary.read_bytes()
-    verify_source(original_executable)
+    source_identity = verify_source(original_executable)
+    if (info.get('CFBundleShortVersionString'), info.get('CFBundleVersion')) != (
+            source_identity['version'], source_identity['build']):
+        raise ValueError('App metadata does not match the verified executable version/build.')
     # Extension signing/hosting has not yet been validated with this profile.
     for name in ('PlugIns', 'Extensions', 'Watch', 'SC_Info', '_MASReceipt'):
         shutil.rmtree(app / name, ignore_errors=True)
@@ -187,7 +190,7 @@ def main():
                     run('security', 'delete-keychain', keychain, capture=True)
     dist = ROOT / 'dist'
     dist.mkdir(exist_ok=True)
-    ipa = dist / 'RUIN-LINE-26.16.0.ipa'
+    ipa = dist / f'RUIN-LINE-{source_identity["version"]}.ipa'
     staging_ipa = ipa.with_suffix('.tmp.ipa')
     run('/usr/bin/ditto', '-c', '-k', '--keepParent', out / 'Payload', staging_ipa)
     staging_ipa.replace(ipa)

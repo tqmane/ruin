@@ -1,5 +1,6 @@
 %config(generator=internal);
 
+#import "TargetMetadata.h"
 #import "InterfaceFeatures.h"
 
 #import <UIKit/UIKit.h>
@@ -16,6 +17,7 @@ extern NSDictionary *RUINNativeEntryDiagnostics(void);
 NSString * const RUINHideVOOMTabDefaultsKey = @"RUINInterfaceHideVOOMTab";
 NSString * const RUINHideWalletTabDefaultsKey = @"RUINInterfaceHideWalletTab";
 NSString * const RUINHideShoppingTabDefaultsKey = @"RUINInterfaceHideShoppingTab";
+NSString * const RUINHideAppsTabDefaultsKey = @"RUINInterfaceHideAppsTab";
 NSString * const RUINHideNewsCallTabsDefaultsKey = @"RUINInterfaceHideNewsCallTabs";
 NSString * const RUINHideSettingsTabDefaultsKey = @"RUINInterfaceHideSettingsTab";
 NSString * const RUINStartupTabFixedDefaultsKey = @"RUINInterfaceStartupTabFixed";
@@ -33,6 +35,7 @@ NSString * const RUINInterfaceTabShopping = @"shopping";
 NSString * const RUINInterfaceTabNews = @"news";
 NSString * const RUINInterfaceTabCall = @"call";
 NSString * const RUINInterfaceTabSettings = @"settings";
+NSString * const RUINInterfaceTabApps = @"apps";
 
 typedef enum {
     RUINHookPending,
@@ -197,7 +200,8 @@ typedef enum {
     RUINTabShoppingKind,
     RUINTabNewsKind,
     RUINTabCallKind,
-    RUINTabSettingsKind
+    RUINTabSettingsKind,
+    RUINTabAppsKind
 } RUINTabKind;
 
 static NSString *RUINTargetStatusName(RUINHookStatus status)
@@ -214,21 +218,9 @@ static NSString *RUINTargetStatusName(RUINHookStatus status)
     }
 }
 
-static BOOL RUINInfoStringEquals(NSDictionary *info, NSString *key, NSString *expected)
-{
-    id value = info[key];
-    return [value isKindOfClass:NSString.class] && [value isEqualToString:expected];
-}
-
 static BOOL RUINTargetMatches(void)
 {
-    NSBundle *bundle = NSBundle.mainBundle;
-    NSDictionary *info = bundle.infoDictionary ?: @{};
-    BOOL bundleMatches = [bundle.bundleIdentifier isEqualToString:RUINTargetBundleIdentifier] ||
-        RUINInfoStringEquals(info, @"RUINOriginalBundleIdentifier", RUINTargetBundleIdentifier);
-    return bundleMatches &&
-        RUINInfoStringEquals(info, @"CFBundleShortVersionString", RUINTargetVersion) &&
-        RUINInfoStringEquals(info, @"CFBundleVersion", RUINTargetBuild);
+    return RUINTargetMetadataMatchesInfo(NSBundle.mainBundle.infoDictionary);
 }
 
 // Separate Logos groups keep original implementations scoped to each
@@ -1138,6 +1130,7 @@ static NSString *RUINTabIdentifier(RUINTabKind kind)
         case RUINTabNewsKind: return RUINInterfaceTabNews;
         case RUINTabCallKind: return RUINInterfaceTabCall;
         case RUINTabSettingsKind: return RUINInterfaceTabSettings;
+        case RUINTabAppsKind: return RUINInterfaceTabApps;
         default: return nil;
     }
 }
@@ -1152,6 +1145,7 @@ static RUINTabKind RUINKindForIdentifier(NSString *identifier)
     if ([identifier isEqualToString:RUINInterfaceTabNews]) return RUINTabNewsKind;
     if ([identifier isEqualToString:RUINInterfaceTabCall]) return RUINTabCallKind;
     if ([identifier isEqualToString:RUINInterfaceTabSettings]) return RUINTabSettingsKind;
+    if ([identifier isEqualToString:RUINInterfaceTabApps]) return RUINTabAppsKind;
     return RUINTabUnknown;
 }
 
@@ -1185,8 +1179,10 @@ static RUINTabKind RUINKindForControllerClass(UIViewController *controller)
         "_TtC10LineWallet20WalletViewController", "WalletViewController"
     };
     static const char * const shopping[] = {
-        "_TtC17LineTWCommerceTab27TWCommerceTabViewController"
+        "_TtC17LineTWCommerceTab27TWCommerceTabViewController",
+        "_TtC15LineCommerceTab25CommerceTabViewController"
     };
+    static const char * const apps[] = {"_TtC10LineWallet21MiniTabViewController"};
     static const char * const news[] = {
         "_TtC14LineNewsRowTab24NewsRowTabViewController", "NewsRowTabViewController",
         "LINE.NewsMainViewController"
@@ -1202,6 +1198,7 @@ static RUINTabKind RUINKindForControllerClass(UIViewController *controller)
     if (RUINControllerHasClass(controller, voom, sizeof(voom) / sizeof(voom[0]))) return RUINTabVOOMKind;
     if (RUINControllerHasClass(controller, wallet, sizeof(wallet) / sizeof(wallet[0]))) return RUINTabWalletKind;
     if (RUINControllerHasClass(controller, shopping, sizeof(shopping) / sizeof(shopping[0]))) return RUINTabShoppingKind;
+    if (RUINControllerHasClass(controller, apps, sizeof(apps) / sizeof(apps[0]))) return RUINTabAppsKind;
     if (RUINControllerHasClass(controller, news, sizeof(news) / sizeof(news[0]))) return RUINTabNewsKind;
     if (RUINControllerHasClass(controller, call, sizeof(call) / sizeof(call[0]))) return RUINTabCallKind;
     if (RUINControllerHasClass(controller, settings, sizeof(settings) / sizeof(settings[0]))) return RUINTabSettingsKind;
@@ -1221,6 +1218,8 @@ static RUINTabKind RUINKindForTitle(NSString *title)
     if (RUINTabTitleMatchesNativeKey(title, @"common.action.chat", @"トーク")) return RUINTabTalkKind;
     if ([title isEqualToString:@"VOOM"]) return RUINTabVOOMKind;
     if (RUINTabTitleMatchesNativeKey(title, @"walletTab.title", @"ウォレット")) return RUINTabWalletKind;
+    if (RUINTabTitleMatchesNativeKey(title, @"walletTab.title.shopping", @"ショッピング")) return RUINTabShoppingKind;
+    if (RUINTabTitleMatchesNativeKey(title, @"gnb.mini", @"アプリ")) return RUINTabAppsKind;
     if (RUINTabTitleMatchesNativeKey(title, @"news.title", @"ニュース")) return RUINTabNewsKind;
     if (RUINTabTitleMatchesNativeKey(title, @"settings.call.selecttab.call", @"通話")) return RUINTabCallKind;
     if (RUINTabTitleMatchesNativeKey(title, @"access.settings", @"設定")) return RUINTabSettingsKind;
@@ -1249,6 +1248,7 @@ static BOOL RUINShouldHideTab(RUINTabKind kind)
         case RUINTabVOOMKind: return [defaults boolForKey:RUINHideVOOMTabDefaultsKey];
         case RUINTabWalletKind: return [defaults boolForKey:RUINHideWalletTabDefaultsKey];
         case RUINTabShoppingKind: return [defaults boolForKey:RUINHideShoppingTabDefaultsKey];
+        case RUINTabAppsKind: return [defaults boolForKey:RUINHideAppsTabDefaultsKey];
         case RUINTabNewsKind:
         case RUINTabCallKind: return [defaults boolForKey:RUINHideNewsCallTabsDefaultsKey];
         case RUINTabSettingsKind:
@@ -1543,7 +1543,7 @@ static NSArray<NSString *> *RUINNativeTabIdentifiersOnMain(BOOL includeHiddenCho
     }
     NSArray *canonical = @[RUINInterfaceTabHome, RUINInterfaceTabTalk, RUINInterfaceTabShopping,
                            RUINInterfaceTabVOOM, RUINInterfaceTabWallet, RUINInterfaceTabNews,
-                           RUINInterfaceTabCall, RUINInterfaceTabSettings];
+                           RUINInterfaceTabCall, RUINInterfaceTabSettings, RUINInterfaceTabApps];
     if (includeHiddenChoices && [available containsObject:RUINInterfaceTabHome] && [available containsObject:RUINInterfaceTabTalk])
         [available addObjectsFromArray:RUINObservedNativeTabChoices()];
     NSMutableArray *result = [NSMutableArray array];

@@ -7,6 +7,7 @@ FOUNDATION_EXPORT NSString * const RUINHideWalletTabDefaultsKey;
 FOUNDATION_EXPORT NSString * const RUINHideShoppingTabDefaultsKey;
 FOUNDATION_EXPORT NSString * const RUINHideNewsCallTabsDefaultsKey;
 FOUNDATION_EXPORT NSString * const RUINHideSettingsTabDefaultsKey;
+FOUNDATION_EXPORT NSString * const RUINHideAppsTabDefaultsKey;
 FOUNDATION_EXPORT NSString * const RUINStartupTabFixedDefaultsKey;
 FOUNDATION_EXPORT NSString * const RUINStartupTabDefaultsKey;
 FOUNDATION_EXPORT NSString * const RUINHideAdsDefaultsKey;
@@ -23,6 +24,7 @@ FOUNDATION_EXPORT NSString * const RUINInterfaceTabShopping;
 FOUNDATION_EXPORT NSString * const RUINInterfaceTabNews;
 FOUNDATION_EXPORT NSString * const RUINInterfaceTabCall;
 FOUNDATION_EXPORT NSString * const RUINInterfaceTabSettings;
+FOUNDATION_EXPORT NSString * const RUINInterfaceTabApps;
 
 /** Installs version-gated LINE interface hooks. All preferences default off. */
 FOUNDATION_EXPORT void RUINInstallInterfaceFeatures(void);

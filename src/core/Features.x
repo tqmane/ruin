@@ -1,6 +1,7 @@
 %config(generator=internal);
 
 #import "Features.h"
+#import "TargetMetadata.h"
 #import "LINEPrivateCalls.h"
 
 #import <objc/runtime.h>
@@ -12,8 +13,14 @@
 #import <string.h>
 
 NSString * const RUINTargetBundleIdentifier = @"jp.naver.line";
-NSString * const RUINTargetVersion = @"26.16.0";
-NSString * const RUINTargetBuild = @"2026.1006.1718";
+// Legacy public constants describe the newest build, not the compatibility gate.
+#define RUIN_KNOWN_HOST(version, build, uuid, hash, complete)
+#define RUIN_LATEST_HOST(version, build, uuid, hash, complete) \
+    NSString * const RUINTargetVersion = @version; \
+    NSString * const RUINTargetBuild = @build;
+#include "../known/KnownHosts.def"
+#undef RUIN_LATEST_HOST
+#undef RUIN_KNOWN_HOST
 NSString * const RUINReadControlEnabledDefaultsKey = @"RUINReadControlEnabled";
 NSString * const RUINLocalNamesDefaultsKey = @"RUINLocalNames";
 NSString * const RUINLocalNamesByIdentityDefaultsKey = @"RUINLocalNamesByIdentity";
@@ -110,12 +117,14 @@ static BOOL RUINTargetMatches(BOOL *bundleMatches, BOOL *versionMatches, BOOL *b
     NSDictionary *info = bundle.infoDictionary ?: @{};
     BOOL matchesBundle = [bundle.bundleIdentifier isEqualToString:RUINTargetBundleIdentifier] ||
         RUINInfoStringEquals(info, @"RUINOriginalBundleIdentifier", RUINTargetBundleIdentifier);
-    BOOL matchesVersion = RUINInfoStringEquals(info, @"CFBundleShortVersionString", RUINTargetVersion);
-    BOOL matchesBuild = RUINInfoStringEquals(info, @"CFBundleVersion", RUINTargetBuild);
+    BOOL matchesVersion = NO;
+    for (size_t i = 0; i < RUINKnownHostCount; i++)
+        matchesVersion |= RUINInfoStringEquals(info, @"CFBundleShortVersionString", @(RUINKnownHosts[i].version));
+    BOOL matchesBuild = RUINKnownHostForVersion(info[@"CFBundleShortVersionString"], info[@"CFBundleVersion"]) != NULL;
     if (bundleMatches) *bundleMatches = matchesBundle;
     if (versionMatches) *versionMatches = matchesVersion;
     if (buildMatches) *buildMatches = matchesBuild;
-    return matchesBundle && matchesVersion && matchesBuild;
+    return RUINTargetMetadataMatchesInfo(info);
 }
 
 /* Verified in the manifest-matching LINE Mach-O, using decode_objc.py:
@@ -624,7 +633,8 @@ NSDictionary *RUINFeatureDiagnostics(void)
             @"versionMatches": @(versionMatches),
             @"build": build,
             @"buildMatches": @(buildMatches),
-            @"supported": @(supported)
+            @"supported": @(supported),
+            @"fullyVerified": @(RUINFullySupportedTargetMatchesInfo(info))
         },
         @"readControl": @{
             @"enabled": @(atomic_load(&gReadControlEnabled)),

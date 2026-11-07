@@ -1,5 +1,6 @@
 %config(generator=internal)
 
+#import "TargetMetadata.h"
 #import "NativeThemeRegistration.h"
 #import "NativeThemeLocalPolicy.h"
 #if !defined(RUIN_NATIVE_THEME_REGISTRATION_HOST_CHECK)
@@ -73,11 +74,7 @@ static dispatch_queue_t RUINRegistrationQueue(void)
 
 static BOOL RUINTargetBuildMatches(void)
 {
-    NSDictionary *info = NSBundle.mainBundle.infoDictionary ?: @{};
-    BOOL bundleMatches = [NSBundle.mainBundle.bundleIdentifier isEqual:@"jp.naver.line"] ||
-        [info[@"RUINOriginalBundleIdentifier"] isEqual:@"jp.naver.line"];
-    return bundleMatches && [info[@"CFBundleShortVersionString"] isEqual:@"26.16.0"] &&
-        [info[@"CFBundleVersion"] isEqual:@"2026.1006.1718"];
+    return RUINTargetMetadataMatchesInfo(NSBundle.mainBundle.infoDictionary);
 }
 
 static BOOL RUINAttributeHasType(NSEntityDescription *entity, NSString *name, NSAttributeType type)
@@ -787,7 +784,8 @@ void RUINRegisterNativeThemeMetadata(NSDictionary<NSString *, id> *metadata,
                 if (isNewRUINLocalTheme && versionRange.attributeType == NSStringAttributeType &&
                     !versionRange.isTransient && ![[object valueForKey:@"applicationVersionRange"] length]) {
                     // LINE's range format stores an upper/lower comparison pair.
-                    // This adapter is restricted to the verified 26.16 client.
+                    // Native range policy: accept the supported 26.16+ clients.
+                    // This lower bound is not a host identity or code mapping.
                     [object setValue:@"0,1000.0.0,1,26.16.0" forKey:@"applicationVersionRange"];
                 }
                 [object setValue:validated[@"imagePath"] forKey:@"imagePath"];

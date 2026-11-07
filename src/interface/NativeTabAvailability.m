@@ -1,4 +1,6 @@
 #import "NativeTabAvailability.h"
+#import "NativeTabMappings.h"
+#import "BinaryVerifier.h"
 #import "InterfaceFeatures.h"
 #import "Features.h"
 #import "../core/TargetMetadata.h"
@@ -25,10 +27,28 @@ static atomic_uint lastTimelineEvaluated = 255;
 // ponytail: the iPhone has one root provider; scope by scene if multi-window roots are introduced.
 static atomic_uint effectiveTimeline = 255;
 static atomic_uint observedChoices;
+static atomic_uint nativeTimeline = 255, nativeMoreKind = 255;
+static atomic_bool nativeMoreAvailable, nativeFallbackMoreAvailable;
 static atomic_int status;
-enum { ChoiceVOOM=1, ChoiceShopping=2, ChoiceNews=4, ChoiceWallet=8, ChoiceSettings=16 };
+#if !defined(RUIN_NATIVE_TAB_AVAILABILITY_HOST_CHECK)
+static uintptr_t menuStartVA, menuEndVA;
+static intptr_t imageSlide;
+#endif
+static BOOL menuScopeVerified, recoveryMode;
+#if defined(RUIN_NATIVE_TAB_AVAILABILITY_HOST_CHECK)
+static BOOL testMenuCaller = YES;
+#endif
+enum { ChoiceVOOM=1, ChoiceShopping=2, ChoiceNews=4, ChoiceWallet=8, ChoiceSettings=16, ChoiceApps=32 };
+enum { TimelineSquare=0, TimelineVOOM=1, TimelineShopping=2, TimelineTWShopping=3, TimelineNone=4 };
 
 static BOOL Enabled(NSString *key) { return [NSUserDefaults.standardUserDefaults boolForKey:key]; }
+static unsigned ChoiceForTimeline(uint8_t value) {
+    switch (value) {
+        case TimelineVOOM: return ChoiceVOOM;
+        case TimelineShopping: case TimelineTWShopping: return ChoiceShopping;
+        default: return 0;
+    }
+}
 static uint8_t Result(unsigned slot, uint8_t original, uint8_t result) {
     (void)slot; (void)original;
     if (slot == 0x28) atomic_store(&effectiveTimeline,result);
@@ -58,35 +78,74 @@ static uint8_t Result(unsigned slot, uint8_t original, uint8_t result) {
 }
 static uint8_t Original(unsigned slot, const void *metadata, const void *witness, void *context) {
     NativeGetter getter = slot / 8 < 23 ? originals[slot / 8] : NULL;
-    return getter ? getter(metadata, witness, context) : 0;
+    uint8_t value = getter ? getter(metadata, witness, context) : 0;
+    if (getter) {
+        if (slot == 0x28) {
+            atomic_store(&nativeTimeline,value);
+            atomic_store(&lastTimelineEvaluated,value);
+        }
+        else if (slot == 0x78) atomic_store(&nativeMoreKind,value);
+        else if (slot == 0x80) atomic_store(&nativeMoreAvailable,value != 0);
+        else if (slot == 0x98) atomic_store(&nativeFallbackMoreAvailable,value != 0);
+    }
+    return value;
 }
-static BOOL TimelineRemains(void) {
-    unsigned timeline = atomic_load(&effectiveTimeline);
-    atomic_store(&lastTimelineEvaluated,timeline);
-    return timeline < 4;
+
+BOOL RUINNativeTabCanHideService(NSString *key) {
+    if (menuScopeVerified) return YES;
+    if ([key isEqual:RUINHideShoppingTabDefaultsKey] || [key isEqual:RUINHideVOOMTabDefaultsKey]) {
+        if (!atomic_load(&nativeMoreAvailable) && !atomic_load(&nativeFallbackMoreAvailable)) return NO;
+        unsigned more = atomic_load(&nativeMoreKind);
+        NSString *peer = more == 0 ? RUINHideSettingsTabDefaultsKey : more == 1 ? RUINHideAppsTabDefaultsKey : more == 2 ? RUINHideWalletTabDefaultsKey : nil;
+        // Native apps/consolidated More layouts still supply the required
+        // service, even when they have no Settings/Wallet hide switch.
+        return !peer || !Enabled(peer);
+    }
+    if ([key isEqual:RUINHideSettingsTabDefaultsKey] || [key isEqual:RUINHideWalletTabDefaultsKey] || [key isEqual:RUINHideAppsTabDefaultsKey]) {
+        unsigned timeline = atomic_load(&nativeTimeline);
+        if (timeline >= TimelineNone) return NO;
+        unsigned choice = ChoiceForTimeline((uint8_t)timeline);
+        NSString *peer = choice == ChoiceShopping ? RUINHideShoppingTabDefaultsKey :
+            choice == ChoiceVOOM ? RUINHideVOOMTabDefaultsKey : nil;
+        return !peer || !Enabled(peer);
+    }
+    return YES;
 }
-static uint8_t Filter(unsigned slot, const void *metadata, const void *witness, void *context) {
+static BOOL IsMenuCaller(uintptr_t caller) {
+#if defined(RUIN_NATIVE_TAB_AVAILABILITY_HOST_CHECK)
+    (void)caller;
+    return testMenuCaller;
+#else
+    uintptr_t unslid = caller - (uintptr_t)imageSlide;
+    return menuScopeVerified && unslid >= menuStartVA && unslid < menuEndVA;
+#endif
+}
+static uint8_t Filter(unsigned slot, const void *metadata, const void *witness, void *context, uintptr_t caller) {
     atomic_fetch_add(&calls,1);
     uint8_t value = Original(slot, metadata, witness, context);
-    if (slot == 0x28 ? (value == 0 || value >= 4) : !value) return Result(slot,value,value);
+    // The same getters construct required internal services. Change only the
+    // native menu generator's reads; factories and all other consumers retain
+    // LINE's actual availability even when every optional tab is hidden.
+    if (recoveryMode || !IsMenuCaller(caller)) return value;
+    if (slot == 0x28 ? (value == TimelineSquare || value >= TimelineNone) : !value)
+        return Result(slot,value,value);
     unsigned choice = 0;
     NSString *key = nil;
     switch (slot) {
         case 0x28:
-            if (value == 1) { choice=ChoiceVOOM; key=RUINHideVOOMTabDefaultsKey; }
-            else { choice=ChoiceShopping; key=RUINHideShoppingTabDefaultsKey; }
+            choice = ChoiceForTimeline(value);
+            if (choice == ChoiceVOOM) key = RUINHideVOOMTabDefaultsKey;
+            else if (choice == ChoiceShopping) key = RUINHideShoppingTabDefaultsKey;
             break;
         case 0x50:
             if (!Original(0x58,metadata,witness,context)) break;
             choice=ChoiceNews; key=RUINHideNewsCallTabsDefaultsKey; break;
         case 0x70: choice=ChoiceNews; key=RUINHideNewsCallTabsDefaultsKey; break;
         case 0x80: case 0x98: {
-            // MoreTab: settings=0, apps=1, wallet=2. Keep the consolidated
-            // layout's 0x98 predicate unchanged; that predicate is also used
-            // by the native early branch before individual menus are built.
-            if (slot == 0x98 && Original(0xa0,metadata,witness,context)) return Result(slot,value,value);
+            // MoreTab: settings=0, apps=1, wallet=2.
             uint8_t more = Original(0x78,metadata,witness,context);
             if (more == 2) { choice=ChoiceWallet; key=RUINHideWalletTabDefaultsKey; }
+            else if (more == 1) { choice=ChoiceApps; key=RUINHideAppsTabDefaultsKey; }
             else if (more == 0) { choice=ChoiceSettings; key=RUINHideSettingsTabDefaultsKey; }
             break;
         }
@@ -97,25 +156,17 @@ static uint8_t Filter(unsigned slot, const void *metadata, const void *witness, 
 #if !defined(RUIN_NATIVE_TAB_AVAILABILITY_HOST_CHECK)
         extern NSDictionary *RUINNativeEntryDiagnostics(void);
         NSDictionary *entry = RUINNativeEntryDiagnostics();
-        hide = hide && ([entry[@"homeHookInstalled"] boolValue] || [entry[@"friendHomeHookInstalled"] boolValue]);
+        hide = hide && [entry[@"homeEntryAvailable"] boolValue];
 #endif
-    }
-    if (hide && ((slot == 0x28 && !Original(0x80,metadata,witness,context) &&
-            !Original(0x98,metadata,witness,context)) ||
-            ((slot == 0x80 || slot == 0x98) && !TimelineRemains()))) {
-        // The root requires a timeline or more service. NewsRow alone does
-        // not satisfy it. Preserve an existing service; never invent a tab.
-        atomic_fetch_add(&requiredServiceKept,1);
-        return Result(slot,value,value);
     }
     if (hide) { atomic_fetch_add(&filtered,1); return Result(slot,value,slot == 0x28 ? 4 : 0); }
     return Result(slot,value,value);
 }
 #define GATE(name, offset) \
-static uint8_t __attribute__((swiftcall)) name(const void *m, const void *w, \
-    void *c __attribute__((swift_context))) { return Filter(offset,m,w,c); }
-// Optional<TimelineTab>: 0=square, 1=VOOM, 2=shopping, 3=TW shopping,
-// 4=none. The native availableMenus switch explicitly skips case 4.
+static uint8_t __attribute__((swiftcall,noinline,disable_tail_calls)) name(const void *m, const void *w, \
+    void *c __attribute__((swift_context))) { return Filter(offset,m,w,c,(uintptr_t)__builtin_extract_return_addr(__builtin_return_address(0))); }
+// LINE's TimelineTab cases are squareTab, voom, shopping, twShopping; case 4
+// is the native none sentinel and is skipped by availableMenus.
 GATE(GateTimeline,0x28)
 GATE(GateCustomizable,0x50)
 GATE(GateNewsRow,0x70)
@@ -131,6 +182,7 @@ NSArray<NSString *> *RUINObservedNativeTabChoices(void) {
     if (choices & ChoiceNews) [result addObject:@"news"];
     if (choices & ChoiceWallet) [result addObject:@"wallet"];
     if (choices & ChoiceSettings) [result addObject:@"settings"];
+    if (choices & ChoiceApps) [result addObject:@"apps"];
     return result;
 }
 
@@ -138,6 +190,10 @@ NSDictionary *RUINNativeTabAvailabilityDiagnostics(void) {
     return @{@"status":@(atomic_load(&status)), @"calls":@(atomic_load(&calls)),
         @"filtered":@(atomic_load(&filtered)), @"nativeChoices":RUINObservedNativeTabChoices(),
         @"requiredServiceKept":@(atomic_load(&requiredServiceKept)),
+        @"nativeTimeline":@(atomic_load(&nativeTimeline)), @"nativeMoreKind":@(atomic_load(&nativeMoreKind)),
+        @"nativeMoreAvailable":@(atomic_load(&nativeMoreAvailable) || atomic_load(&nativeFallbackMoreAvailable)),
+        @"menuOnlyScopeVerified":@(menuScopeVerified), @"tabFilterRecoveryMode":@(recoveryMode),
+        @"nativeServiceAvailabilityChanged":@NO,
         @"nativeMenuAndIndexGenerationPreserved":@YES, @"customTabViewsAdded":@NO};
 }
 
@@ -147,24 +203,30 @@ void RUINInstallNativeTabAvailability(void) {
     dispatch_once(&once, ^{
         NSDictionary *info = NSBundle.mainBundle.infoDictionary;
         if (!RUINTargetMetadataMatchesInfo(info)) { atomic_store(&status,1); return; }
+        const RUINNativeTabMapping *mapping = RUINNativeTabMappingForHost(RUINKnownHostForInfo(info));
+        if (!mapping || !RUINCurrentHostImageMatches(RUINKnownHostForInfo(info))) { atomic_store(&status,1); return; }
         intptr_t slide = _dyld_get_image_vmaddr_slide(0);
-        const uint32_t *bridge = (const void *)(slide + 0x100010f38);
-        static const uint32_t expectedBridge[] = {0xaa1603e0,0xaa1503e1,0xd61f0100};
-        NativeGetter *table = (void *)(slide + 0x10bee1590);
-        const uintptr_t expected[] = {0x10072529c,0x100725304,
-            0x100725440,0x1007254c8,0x100725520};
-        const unsigned slots[] = {0x28,0x50,0x70,0x80,0x98};
-        NativeGetter replacements[] = {GateTimeline,GateCustomizable,
-            GateNewsRow,GateMore,GateFallbackMore};
-        static const int32_t expectedCases[] = {0x24,0x10,0x20,0x18,0x40};
-        if (memcmp((const void *)(slide + 0x107d5cf48),expectedCases,sizeof(expectedCases)) ||
-            memcmp(bridge,expectedBridge,sizeof(expectedBridge)) ||
-            (uintptr_t)table[0] != (uintptr_t)(slide + 0x109670bf0) ||
-            (uintptr_t)table[0xb0/8] != (uintptr_t)(slide + 0x100725540)) { atomic_store(&status,2); return; }
+        const struct mach_header_64 *header = (const void *)_dyld_get_image_header(0);
+        RUINInstructionAnchor bridge = {mapping->bridgeVA,3,{0}};
+        memcpy(bridge.words,mapping->bridgeWords,sizeof(mapping->bridgeWords));
+        int32_t cases[5];
+        NativeGetter snapshot[23];
+        if (!RUINVerifyInstructions(header,slide,&bridge,1) ||
+            !RUINVerifyInstructions(header,slide,&mapping->menuGenerator,1) ||
+            mapping->menuGeneratorEndVA <= mapping->menuGenerator.address ||
+            !RUINReadImageBytes(header,slide,mapping->caseTableVA,cases,sizeof(cases),"__TEXT") ||
+            memcmp(cases,mapping->caseWords,sizeof(cases)) ||
+            !RUINReadImageBytes(header,slide,mapping->witnessTableVA,snapshot,sizeof(snapshot),"__DATA_CONST") ||
+            (uintptr_t)snapshot[0] != (uintptr_t)(slide + mapping->firstWitnessVA) ||
+            (uintptr_t)snapshot[0xb0/8] != (uintptr_t)(slide + mapping->lastWitnessVA)) { atomic_store(&status,2); return; }
+        NativeGetter replacements[] = {GateTimeline,GateCustomizable,GateNewsRow,GateMore,GateFallbackMore};
         for (unsigned i=0;i<5;i++)
-            if ((uintptr_t)table[slots[i]/8] != (uintptr_t)(slide + expected[i])) { atomic_store(&status,2); return; }
-        memcpy(originals,table,sizeof(originals));
+            if (mapping->slots[i]/8 >= 23 ||
+                (uintptr_t)snapshot[mapping->slots[i]/8] != (uintptr_t)(slide + mapping->getters[i])) { atomic_store(&status,2); return; }
+        memcpy(originals,snapshot,sizeof(originals));
+        NativeGetter *table = (void *)(slide + mapping->witnessTableVA);
         vm_address_t page = (vm_address_t)table & ~((vm_address_t)vm_page_size-1);
+        if ((uintptr_t)table - page > vm_page_size - sizeof(originals)) { atomic_store(&status,3); return; }
         vm_address_t region = page; vm_size_t size = 0;
         vm_region_basic_info_data_64_t regionInfo;
         mach_msg_type_number_t count = VM_REGION_BASIC_INFO_COUNT_64;
@@ -176,12 +238,17 @@ void RUINInstallNativeTabAvailability(void) {
             vm_protect(mach_task_self(),page,vm_page_size,FALSE,VM_PROT_READ|VM_PROT_WRITE|VM_PROT_COPY) != KERN_SUCCESS) {
             atomic_store(&status,3); return;
         }
-        for (unsigned i=0;i<5;i++) __atomic_store_n(&table[slots[i]/8],replacements[i],__ATOMIC_RELEASE);
+        for (unsigned i=0;i<5;i++) __atomic_store_n(&table[mapping->slots[i]/8],replacements[i],__ATOMIC_RELEASE);
         if (vm_protect(mach_task_self(),page,vm_page_size,FALSE,regionInfo.protection) != KERN_SUCCESS) {
-            for (unsigned i=0;i<5;i++) __atomic_store_n(&table[slots[i]/8],originals[slots[i]/8],__ATOMIC_RELEASE);
+            for (unsigned i=0;i<5;i++) __atomic_store_n(&table[mapping->slots[i]/8],originals[mapping->slots[i]/8],__ATOMIC_RELEASE);
             vm_protect(mach_task_self(),page,vm_page_size,FALSE,regionInfo.protection);
             atomic_store(&status,4); return;
         }
+        imageSlide = slide;
+        menuStartVA = mapping->menuGenerator.address;
+        menuEndVA = mapping->menuGeneratorEndVA;
+        recoveryMode = [NSProcessInfo.processInfo.environment[@"RUIN_DISABLE_TAB_HIDING"] isEqual:@"1"];
+        menuScopeVerified = YES;
         atomic_store(&status,5);
     });
 #endif
@@ -195,6 +262,7 @@ NSString *const RUINHideShoppingTabDefaultsKey=@"RUINInterfaceHideShoppingTab";
 NSString *const RUINHideNewsCallTabsDefaultsKey=@"RUINInterfaceHideNewsCallTabs";
 NSString *const RUINHideWalletTabDefaultsKey=@"RUINInterfaceHideWalletTab";
 NSString *const RUINHideSettingsTabDefaultsKey=@"RUINInterfaceHideSettingsTab";
+NSString *const RUINHideAppsTabDefaultsKey=@"RUINInterfaceHideAppsTab";
 static unsigned originalCalls;
 static uint8_t __attribute__((swiftcall)) TestGetter(const void *m,const void *w,
     void *c __attribute__((swift_context))) {
@@ -202,34 +270,41 @@ static uint8_t __attribute__((swiftcall)) TestGetter(const void *m,const void *w
 }
 static uint8_t __attribute__((swiftcall)) TestMore(const void *m,const void *w,
     void *c __attribute__((swift_context))) { (void)m;(void)w;(void)c;return 0; }
-static uint8_t __attribute__((swiftcall)) TestShopping(const void *m,const void *w,
-    void *c __attribute__((swift_context))) { (void)m;(void)w;(void)c;return 2; }
 static uint8_t __attribute__((swiftcall)) TestAvailable(const void *m,const void *w,
     void *c __attribute__((swift_context))) { (void)m;(void)w;(void)c;return 1; }
 int main(void) { @autoreleasepool {
     for (unsigned i=0;i<23;i++) originals[i]=TestGetter;
     originals[0x78/8]=TestMore;
     originals[0x80/8]=TestAvailable; originals[0x98/8]=TestAvailable; originals[0xa0/8]=TestAvailable;
-    uint8_t yes=1,shopping=2,none=4;
-    [NSUserDefaults.standardUserDefaults setVolatileDomain:@{} forName:NSArgumentDomain];
-    assert(GateTimeline((void *)1,(void *)2,&shopping)==2 && originalCalls==1);
-    [NSUserDefaults.standardUserDefaults setVolatileDomain:@{RUINHideShoppingTabDefaultsKey:@YES,
-        RUINHideNewsCallTabsDefaultsKey:@YES,RUINHideSettingsTabDefaultsKey:@YES} forName:NSArgumentDomain];
-    assert(GateTimeline((void *)1,(void *)2,&shopping)==4 && originalCalls==2);
-    assert(GateTimeline((void *)1,(void *)2,&none)==4 && originalCalls==3);
+    uint8_t yes=1,square=TimelineSquare,shopping=TimelineShopping,
+        twShopping=TimelineTWShopping,none=TimelineNone;
+    menuScopeVerified = YES;
+    [NSUserDefaults.standardUserDefaults setVolatileDomain:@{
+        RUINHideShoppingTabDefaultsKey:@YES, RUINHideAppsTabDefaultsKey:@YES,
+        RUINHideNewsCallTabsDefaultsKey:@YES, RUINHideSettingsTabDefaultsKey:@YES} forName:NSArgumentDomain];
+    // Factories retain actual services while the menu hides both optional slots.
+    originals[0x78/8]=TestAvailable;
+    testMenuCaller = NO;
+    assert(GateTimeline((void *)1,(void *)2,&shopping)==TimelineShopping);
+    assert(GateMore((void *)1,(void *)2,&yes)==1);
+    assert(GateNewsRow((void *)1,(void *)2,&yes)==1);
+    testMenuCaller = YES;
+    assert(GateTimeline((void *)1,(void *)2,&shopping)==TimelineNone);
+    assert(GateTimeline((void *)1,(void *)2,&twShopping)==TimelineNone);
+    assert(GateTimeline((void *)1,(void *)2,&square)==TimelineSquare);
+    assert(GateTimeline((void *)1,(void *)2,&none)==TimelineNone);
+    assert(GateMore((void *)1,(void *)2,&yes)==0);
+    assert(GateFallbackMore((void *)1,(void *)2,&yes)==0);
     assert(GateNewsRow((void *)1,(void *)2,&yes)==0);
     assert(GateCustomizable((void *)1,(void *)2,&yes)==0);
-    assert(GateMore((void *)1,(void *)2,&yes)==1); // Native timeline already returned none.
-    assert(GateTimeline((void *)1,(void *)2,&yes)==1);
-    assert(GateMore((void *)1,(void *)2,&yes)==0); // An actual native timeline remains.
-    assert(GateFallbackMore((void *)1,(void *)2,&yes)==1);
-    originals[0x28/8]=TestShopping;
-    assert(GateTimeline((void *)1,(void *)2,&shopping)==4);
-    assert(GateMore((void *)1,(void *)2,&yes)==1); // Both services requested hidden: retain native more.
-    originals[0x80/8]=TestMore; originals[0x98/8]=TestMore;
-    assert(GateTimeline((void *)1,(void *)2,&shopping)==2); // No native more: retain native timeline.
-    assert(atomic_load(&requiredServiceKept)==3);
+    assert(RUINNativeTabCanHideService(RUINHideShoppingTabDefaultsKey));
+    assert(RUINNativeTabCanHideService(RUINHideAppsTabDefaultsKey));
+    recoveryMode = YES;
+    assert(GateTimeline((void *)1,(void *)2,&shopping)==TimelineShopping);
+    assert(GateMore((void *)1,(void *)2,&yes)==1);
+    recoveryMode = NO;
     assert([RUINObservedNativeTabChoices() containsObject:@"shopping"]);
+    assert([RUINObservedNativeTabChoices() containsObject:@"apps"]);
     puts("PASS native scalar tab gates preserve original availability and Swift self forwarding");
 } return 0; }
 #endif

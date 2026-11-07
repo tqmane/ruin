@@ -1,6 +1,7 @@
 %config(generator=internal);
 
 #define RUIN_CONFIRMATIONS_INTERNAL 1
+#import "TargetMetadata.h"
 #import "Confirmations.h"
 #import "../core/Localization.h"
 #import "SwiftFields.h"
@@ -19,9 +20,6 @@ NSString * const RUINConfirmCallEnabledDefaultsKey = @"RUINConfirmCallEnabled";
 NSString * const RUINConfirmCameraOnEnabledDefaultsKey = @"RUINConfirmCameraOnEnabled";
 NSString * const RUINConfirmDisconnectEnabledDefaultsKey = @"RUINConfirmDisconnectEnabled";
 
-static NSString * const RUINTargetBundleIdentifier = @"jp.naver.line";
-static NSString * const RUINTargetVersion = @"26.16.0";
-static NSString * const RUINTargetBuild = @"2026.1006.1718";
 static const char * const RUINChatInputBarClass = "_TtC15LineMessagingUI12ChatInputBar";
 static const char * const RUINChatViewControllerClass = "_TtC15LineMessagingUI18ChatViewController";
 static const char * const RUINManagedChatClass = "ManagedChat";
@@ -370,20 +368,9 @@ static atomic_uint_fast64_t gUnknownCameraState = ATOMIC_VAR_INIT(0);
 %end
 %end
 
-static BOOL RUINStringEquals(id value, NSString *expected)
-{
-    return [value isKindOfClass:NSString.class] && [(NSString *)value isEqualToString:expected];
-}
-
 static BOOL RUINIsCompatible(void)
 {
-    NSBundle *bundle = NSBundle.mainBundle;
-    NSDictionary *info = bundle.infoDictionary ?: @{};
-    BOOL bundleMatches = [bundle.bundleIdentifier isEqualToString:RUINTargetBundleIdentifier] ||
-        RUINStringEquals(info[@"RUINOriginalBundleIdentifier"], RUINTargetBundleIdentifier);
-    return bundleMatches &&
-        RUINStringEquals(info[@"CFBundleShortVersionString"], RUINTargetVersion) &&
-        RUINStringEquals(info[@"CFBundleVersion"], RUINTargetBuild);
+    return RUINTargetMetadataMatchesInfo(NSBundle.mainBundle.infoDictionary);
 }
 
 static Method RUINOwnMethod(Class cls, SEL selector)
@@ -1166,8 +1153,8 @@ NSDictionary *RUINConfirmationDiagnostics(void)
 
     return @{
         @"compatible": @(RUINIsCompatible()),
-        @"version": RUINTargetVersion,
-        @"build": RUINTargetBuild,
+        @"version": NSBundle.mainBundle.infoDictionary[@"CFBundleShortVersionString"] ?: @"unknown",
+        @"build": NSBundle.mainBundle.infoDictionary[@"CFBundleVersion"] ?: @"unknown",
         @"preferences": @{
             @"confirmSend": @([defaults boolForKey:RUINConfirmSendEnabledDefaultsKey]),
             @"minimumGroupMemberCount": thresholdConfigured ? @(minimum) : NSNull.null,

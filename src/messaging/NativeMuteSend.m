@@ -1,3 +1,4 @@
+#import "TargetMetadata.h"
 #import "NativeMuteSend.h"
 
 #import "../core/Features.h"
@@ -10,21 +11,9 @@ static const char * const kNativeMuteSendClass = "_TtC15LineMessagingUI12ChatInp
 static const char * const kNativeMuteSendSelector = "longPressDidActivate:";
 static const char * const kNativeMuteSendEncoding = "v24@0:8@16";
 
-static BOOL RUINNativeMuteSendInfoStringEquals(NSDictionary *info, NSString *key, NSString *expected)
-{
-    id value = info[key];
-    return [value isKindOfClass:NSString.class] && [value isEqualToString:expected];
-}
-
 static BOOL RUINNativeMuteSendTargetMatches(void)
 {
-    NSBundle *bundle = NSBundle.mainBundle;
-    NSDictionary *info = bundle.infoDictionary ?: @{};
-    BOOL bundleMatches = [bundle.bundleIdentifier isEqualToString:RUINTargetBundleIdentifier] ||
-        RUINNativeMuteSendInfoStringEquals(info, @"RUINOriginalBundleIdentifier", RUINTargetBundleIdentifier);
-    return bundleMatches &&
-        RUINNativeMuteSendInfoStringEquals(info, @"CFBundleShortVersionString", RUINTargetVersion) &&
-        RUINNativeMuteSendInfoStringEquals(info, @"CFBundleVersion", RUINTargetBuild);
+    return RUINTargetMetadataMatchesInfo(NSBundle.mainBundle.infoDictionary);
 }
 
 NSDictionary<NSString *, id> *RUINNativeMuteSendDiagnostics(void)

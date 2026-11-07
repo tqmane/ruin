@@ -44,6 +44,8 @@ Unsent</string>
 	<string>Local Display Names by ID</string>
 	<key>ID別の表示名を追加</key>
 	<string>Add Display Name by ID</string>
+	<key>LINE %@（ビルド %@）は完全には検証されていないため、一部の機能を利用できない可能性があります。</key>
+	<string>LINE %@ (Build %@) has not been fully verified. Some features may be unavailable.</string>
 	<key>LINE STOREの着せかえURLを入力してください。</key>
 	<string>Please enter the LINE STORE theme URL.</string>
 	<key>LINEが保存している記録です。現在の適用状態とファイルの存在は確認していません。</key>
@@ -96,6 +98,10 @@ Unsent</string>
 	<string>RUIN Settings</string>
 	<key>chat:MID または squareChat:MID をカンマ区切りで入力します。空欄で全て解除します。</key>
 	<string>Enter chat:MID or squareChat:MID separated by commas. Leave empty to clear all.</string>
+	<key>compatibility.partial.continue</key>
+	<string>Continue</string>
+	<key>compatibility.partial.title</key>
+	<string>Compatibility Notice</string>
 	<key>iPad扱いでサブ端末ログイン</key>
 	<string>Log In as Secondary Device (iPad)</string>
 	<key>iPad扱いのサブ端末モード</key>
@@ -148,6 +154,8 @@ Unsent</string>
 	<string>Testers (2)</string>
 	<key>アカウントが変わりました。トーク一覧を開き直してください。</key>
 	<string>Account changed. Please reopen your chat list.</string>
+	<key>アプリ</key>
+	<string>Apps</string>
 	<key>アプリの動作に必要なタブは、常に表示されます。</key>
 	<string>Tabs required for app operation are always shown.</string>
 	<key>アプリアイコンを変更できませんでした。</key>
@@ -220,6 +228,8 @@ Unsent</string>
 	<string>Checking download and files…</string>
 	<key>ダウンロード設定と現在の処理状況を確認してください。</key>
 	<string>Please check your download settings and current status.</string>
+	<key>データ保護のため処理を開始できません</key>
+	<string>Unable to Proceed to Protect Data</string>
 	<key>トーク</key>
 	<string>Chats</string>
 	<key>トークが見つかりません</key>
@@ -410,6 +420,8 @@ Version: %@%@</string>
 	<string>New Local Notification</string>
 	<key>新着メッセージを受信しました</key>
 	<string>New message received</string>
+	<key>既存のトーク履歴と鍵を保護するため、操作を開始できません。署名および保存先の診断状態を確認してください。</key>
+	<string>To protect existing chat history and keys, this operation cannot be started. Please check the signing and storage diagnostics.</string>
 	<key>既存の別名</key>
 	<string>Existing alias</string>
 	<key>既読の例外</key>

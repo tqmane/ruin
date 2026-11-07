@@ -1,5 +1,6 @@
 %config(generator=internal);
 
+#import "TargetMetadata.h"
 #import <Foundation/Foundation.h>
 
 // Preserve only the member-count suffix actually rendered by LINE's group
@@ -164,15 +165,7 @@ typedef void (^RUINNativeChatIdentityCompletion)(RUINNativeChatIdentity * _Nulla
 
 static BOOL RUINNativeTargetMatches(void)
 {
-    NSBundle *bundle = NSBundle.mainBundle;
-    NSDictionary *info = bundle.infoDictionary ?: @{};
-    id originalBundleIdentifier = info[@"RUINOriginalBundleIdentifier"];
-    BOOL bundleMatches = [bundle.bundleIdentifier isEqualToString:RUINTargetBundleIdentifier] ||
-        ([originalBundleIdentifier isKindOfClass:NSString.class] &&
-         [originalBundleIdentifier isEqualToString:RUINTargetBundleIdentifier]);
-    return bundleMatches &&
-        [info[@"CFBundleShortVersionString"] isEqualToString:RUINTargetVersion] &&
-        [info[@"CFBundleVersion"] isEqualToString:RUINTargetBuild];
+    return RUINTargetMetadataMatchesInfo(NSBundle.mainBundle.infoDictionary);
 }
 
 static Method RUINNativeOwnMethod(Class cls, SEL selector)

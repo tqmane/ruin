@@ -1,5 +1,6 @@
 %config(generator=internal);
 
+#import "TargetMetadata.h"
 #import "ClientVersionAdvertisement.h"
 
 #import "../core/Features.h"
@@ -11,8 +12,23 @@
 static NSString *const kLegacyClientVersion = @"15.16.1";
 static NSString *const kLegacyBundleVersion = @"2025.926.1805";
 static NSString *const kLegacyAppStoreVersionID = @"878450687";
-static NSString *const kCurrentClientVersion = @"26.16.0";
-static NSString *const kCurrentBundleVersion = @"2026.1006.1718";
+#if defined(RUIN_CLIENT_VERSION_ADVERTISEMENT_HOST_CHECK)
+static NSString *testCurrentVersion = @"26.16.0", *testCurrentBuild = @"2026.1006.1718";
+#endif
+static NSString *RUINCurrentClientVersion(void) {
+#if defined(RUIN_CLIENT_VERSION_ADVERTISEMENT_HOST_CHECK)
+    return testCurrentVersion;
+#else
+    return [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
+#endif
+}
+static NSString *RUINCurrentBundleVersion(void) {
+#if defined(RUIN_CLIENT_VERSION_ADVERTISEMENT_HOST_CHECK)
+    return testCurrentBuild;
+#else
+    return [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"];
+#endif
+}
 static const char *const kRequestSelectorName = "dataTaskWithRequest:";
 static const char *const kRequestCompletionSelectorName = "dataTaskWithRequest:completionHandler:";
 
@@ -85,20 +101,12 @@ NSString *const RUINLocalLYPEnabledDefaultsKey = @"RUINLocalLYPEnabled";
 NSString *const RUINLegacyMessagingEnabledDefaultsKey = @"RUINLegacyMessagingEnabled";
 #endif
 
-static BOOL RUINInfoStringEquals(NSDictionary *info, NSString *key, NSString *expected)
-{
-    id value = info[key];
-    return [value isKindOfClass:NSString.class] && [value isEqualToString:expected];
-}
-
 static BOOL RUINClientVersionAdvertisementTargetMatchesMetadata(NSString *bundleIdentifier,
                                                                  NSDictionary *info)
 {
-    BOOL bundleMatches = [bundleIdentifier isEqualToString:RUINTargetBundleIdentifier] ||
-        RUINInfoStringEquals(info, @"RUINOriginalBundleIdentifier", RUINTargetBundleIdentifier);
-    return bundleMatches &&
-        RUINInfoStringEquals(info, @"CFBundleShortVersionString", RUINTargetVersion) &&
-        RUINInfoStringEquals(info, @"CFBundleVersion", RUINTargetBuild);
+    NSMutableDictionary *logicalInfo = [info mutableCopy] ?: [NSMutableDictionary dictionary];
+    logicalInfo[@"CFBundleIdentifier"] = bundleIdentifier ?: @"";
+    return RUINTargetMetadataMatchesInfo(logicalInfo);
 }
 
 static BOOL RUINClientVersionAdvertisementTargetMatches(void)
@@ -165,7 +173,7 @@ static RUINHeaderRewriteResult RUINRewriteXLineApplication(NSString *value, NSSt
         [parts[0] isEqualToString:@"IPAD"] || [parts[0] isEqualToString:@"IOSIPAD"]) ||
         parts[2].length == 0 || !RUINIsDottedVersion(parts[1], 3, 3) ||
         !RUINIsDottedVersion(parts[3], 2, 3)) return RUINHeaderMalformed;
-    if (![parts[1] isEqualToString:kCurrentClientVersion]) return RUINHeaderUnchanged;
+    if (![parts[1] isEqualToString:RUINCurrentClientVersion()]) return RUINHeaderUnchanged;
     NSMutableArray<NSString *> *updated = [parts mutableCopy];
     updated[1] = kLegacyClientVersion;
     if (rewritten) *rewritten = [updated componentsJoinedByString:@"\t"];
@@ -177,7 +185,7 @@ static RUINHeaderRewriteResult RUINRewriteApplicationVersion(NSString *value, NS
 {
     (void)secondaryChange;
     if (!RUINIsDottedVersion(value, 3, 3)) return RUINHeaderMalformed;
-    if (![value isEqualToString:kCurrentClientVersion]) return RUINHeaderUnchanged;
+    if (![value isEqualToString:RUINCurrentClientVersion()]) return RUINHeaderUnchanged;
     if (rewritten) *rewritten = kLegacyClientVersion;
     return RUINHeaderChanged;
 }
@@ -248,14 +256,14 @@ static RUINHeaderRewriteResult RUINRewriteUserAgent(NSString *value, NSString **
     if (style == RUINObservedUAStyleOther) return RUINHeaderUnrecognized;
     NSString *version = [value substringWithRange:versionRange];
     NSString *updated = value;
-    BOOL versionEligible = [version isEqualToString:kCurrentClientVersion] || [version isEqualToString:kLegacyClientVersion];
+    BOOL versionEligible = [version isEqualToString:RUINCurrentClientVersion()] || [version isEqualToString:kLegacyClientVersion];
     if (!versionEligible) return RUINHeaderUnchanged;
-    if ([version isEqualToString:kCurrentClientVersion])
+    if ([version isEqualToString:RUINCurrentClientVersion()])
         updated = [updated stringByReplacingCharactersInRange:versionRange withString:kLegacyClientVersion];
     NSRange buildRange = NSMakeRange(0, 0);
     NSString *build = RUINUserAgentBuildVersionRange(updated, &buildRange) ?
         [updated substringWithRange:buildRange] : nil;
-    BOOL buildChanged = [build isEqualToString:kCurrentBundleVersion];
+    BOOL buildChanged = [build isEqualToString:RUINCurrentBundleVersion()];
     if (buildChanged)
         updated = [updated stringByReplacingCharactersInRange:buildRange withString:kLegacyBundleVersion];
     if (buildTokenChanged) *buildTokenChanged = buildChanged;
@@ -296,10 +304,10 @@ static void RUINObserveUserAgent(NSDictionary *requestHeaders, NSDictionary *ses
     RUINRecordObservedUAStyle(style);
     if (style == RUINObservedUAStyleOther) return;
     NSString *version = [value substringWithRange:versionRange];
-    if ([version isEqualToString:kCurrentClientVersion]) atomic_store(&gUAContainsCurrentVersion, true);
+    if ([version isEqualToString:RUINCurrentClientVersion()]) atomic_store(&gUAContainsCurrentVersion, true);
     NSRange buildRange = NSMakeRange(0, 0);
     if (RUINUserAgentBuildVersionRange(value, &buildRange) &&
-        [[value substringWithRange:buildRange] isEqualToString:kCurrentBundleVersion])
+        [[value substringWithRange:buildRange] isEqualToString:RUINCurrentBundleVersion()])
         atomic_store(&gUAContainsCurrentBuild, true);
 }
 
@@ -742,6 +750,14 @@ int main(void)
         assert(![diagnostics[@"containsCurrentVersion"] boolValue]);
         assert(![diagnostics[@"containsCurrentBuild"] boolValue]);
 
+        testCurrentVersion = @"26.17.0"; testCurrentBuild = @"2026.1103.1841";
+        NSString *updatedVersion = nil;
+        assert(RUINRewriteApplicationVersion(@"26.17.0", &updatedVersion, NULL) == RUINHeaderChanged);
+        assert([updatedVersion isEqual:@"15.16.1"]);
+        assert(RUINRewriteApplicationVersion(@"26.16.0", NULL, NULL) == RUINHeaderUnchanged);
+        RUINObserveUserAgent(@{@"User-Agent":@"Line/26.17.0;BuildVersion: 2026.1103.1841"}, @{});
+        diagnostics = RUINClientVersionAdvertisementDiagnostics();
+        assert([diagnostics[@"containsCurrentVersion"] boolValue] && [diagnostics[@"containsCurrentBuild"] boolValue]);
         puts("PASS client-version rewriting preserves platform and OS fields; scopes hosts and fails closed");
     }
     return 0;
