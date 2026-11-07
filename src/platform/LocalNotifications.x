@@ -1,5 +1,6 @@
 %config(generator=internal);
 
+#import "TargetMetadata.h"
 #import "LocalNotifications.h"
 #import "../core/Localization.h"
 #import <CoreFoundation/CoreFoundation.h>
@@ -329,11 +330,7 @@ static void RUINLocalInstallFetchOperationServiceHooks(void);
 
 static BOOL RUINLocalTargetBuildMatches(void)
 {
-    NSDictionary *info = NSBundle.mainBundle.infoDictionary ?: @{};
-    BOOL bundleMatches = [NSBundle.mainBundle.bundleIdentifier isEqual:RUINTargetBundleIdentifier] ||
-        [info[@"RUINOriginalBundleIdentifier"] isEqual:RUINTargetBundleIdentifier];
-    return bundleMatches && [info[@"CFBundleShortVersionString"] isEqual:RUINTargetVersion] &&
-        [info[@"CFBundleVersion"] isEqual:RUINTargetBuild];
+    return RUINTargetMetadataMatchesInfo(NSBundle.mainBundle.infoDictionary);
 }
 
 static Method RUINLocalOwnMethod(Class cls, SEL selector)

@@ -1,5 +1,6 @@
 %config(generator=internal);
 
+#import "TargetMetadata.h"
 #import "MessagingPrivateAPI.h"
 #import "MenuExtras.h"
 #import "../core/Localization.h"
@@ -94,17 +95,7 @@ typedef NS_ENUM(NSInteger, RUINMenuExtrasHookStatus) {
 
 static BOOL RUINMenuExtrasTargetMatches(void)
 {
-    NSBundle *bundle = NSBundle.mainBundle;
-    NSDictionary *info = bundle.infoDictionary ?: @{};
-    id originalBundleID = info[@"RUINOriginalBundleIdentifier"];
-    BOOL bundleMatches = [bundle.bundleIdentifier isEqualToString:RUINTargetBundleIdentifier] ||
-        ([originalBundleID isKindOfClass:NSString.class] &&
-         [originalBundleID isEqualToString:RUINTargetBundleIdentifier]);
-    return bundleMatches &&
-        [info[@"CFBundleShortVersionString"] isKindOfClass:NSString.class] &&
-        [info[@"CFBundleShortVersionString"] isEqualToString:RUINTargetVersion] &&
-        [info[@"CFBundleVersion"] isKindOfClass:NSString.class] &&
-        [info[@"CFBundleVersion"] isEqualToString:RUINTargetBuild];
+    return RUINTargetMetadataMatchesInfo(NSBundle.mainBundle.infoDictionary);
 }
 
 static BOOL RUINMenuExtrasPreferenceEnabled(NSString *key)

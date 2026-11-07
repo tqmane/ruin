@@ -1,6 +1,8 @@
 %config(generator=internal);
 
 #import "SecondaryLogin.h"
+#import "Sideload.h"
+#import "Keychain.h"
 #import "../core/Localization.h"
 #import "Features.h"
 #import "../core/TargetMetadata.h"
@@ -20,6 +22,20 @@ static BOOL autoQROpened;
 static atomic_ulong appIdiomRequests;
 static char gestureKey;
 static NSString *lastLoginScreen;
+
+static BOOL RUINMigrationPreflight(UIViewController *controller) {
+    RUINInstallCompatibility();
+    RUINInstallKeychainCompatibility();
+    if (RUINStorageMigrationReady() && RUINKeychainCompatibilityReady()) return YES;
+    if (!controller.presentedViewController) {
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:RUINLocalizedString(@"データ保護のため処理を開始できません")
+            message:RUINLocalizedString(@"既存のトーク履歴と鍵を保護するため、操作を開始できません。署名および保存先の診断状態を確認してください。")
+            preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"確認") style:UIAlertActionStyleDefault handler:nil]];
+        [controller presentViewController:alert animated:YES completion:nil];
+    }
+    return NO;
+}
 
 static BOOL RUINSecondaryLoginTargetMatches(void) {
     NSDictionary *info = NSBundle.mainBundle.infoDictionary;
@@ -134,6 +150,7 @@ static void RUINSecondaryLoginDidAppear(UIViewController *controller) {
 }
 - (void)loginButtonAction
 {
+    if (!RUINMigrationPreflight(self)) return;
     BOOL requested = [NSUserDefaults.standardUserDefaults boolForKey:RUINSecondaryLoginEnabledKey];
     if (requested != activeSecondaryMode) {
         RUINShowLoginRestartNotice(self);
@@ -155,6 +172,10 @@ static void RUINSecondaryLoginDidAppear(UIViewController *controller) {
 {
     %orig(animated);
     RUINSecondaryLoginDidAppear(self);
+}
+- (void)showQRCodeLoginButtonPressed {
+    if (!RUINMigrationPreflight(self)) return;
+    %orig;
 }
 %end
 %end
@@ -191,7 +212,8 @@ void RUINInstallSecondaryLogin(void) {
     }
     if (!secondaryScreenHookInstalled) {
         Class secondary = objc_getClass("_TtC20LineSecondaryLoginUI28SecondaryLoginViewController");
-        if (RUINSecondaryMethodMatches(secondary, "viewDidAppear:", "v20@0:8B16")) {
+        if (RUINSecondaryMethodMatches(secondary, "viewDidAppear:", "v20@0:8B16") &&
+            RUINSecondaryMethodMatches(secondary, "showQRCodeLoginButtonPressed", "v16@0:8")) {
             %init(RUINSecondaryLoginScreen, RUINSecondaryController = secondary);
             secondaryScreenHookInstalled = YES;
         }

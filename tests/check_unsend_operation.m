@@ -13,6 +13,8 @@ static IMP originalInfo, originalDirectories, systemFetch;
 static atomic_uint_fast64_t fixtureFetchCalls, fixtureDisplayCalls, outerCallbacks, actualDeletes;
 static NSException *fixtureFetchException;
 static id fixtureFetchOverride;
+static const uintptr_t *fixtureScopePCs;
+static size_t fixtureScopePCCount;
 static void Check(BOOL condition, NSString *reason) {
     if (!condition) @throw [NSException exceptionWithName:@"RUINUnsendOperationCheck" reason:reason userInfo:nil];
 }
@@ -49,9 +51,23 @@ static id FixtureFetch(id self, SEL selector, id request, NSError **error) {
 static void CaptureOperation(NSString *chat, NSString *message, long long type) {
     LineOperation *operation = [LineOperation new]; operation.type = type;
     operation.param1 = chat; operation.param2 = message; operation.param3 = @"0";
-    uintptr_t previous = testParam1Caller; testParam1Caller = 0x10461ef10;
+    uintptr_t previous = testParam1Caller;
+    testParam1Caller = selectedUnsendMapping ? selectedUnsendMapping->parserParam1ReturnAddress : 0;
     @try { Check([[operation param1] isEqual:chat], @"operation getter return was changed"); }
     @finally { testParam1Caller = previous; }
+}
+static void CheckVersionMappings(void) {
+    NSDictionary *info16 = @{@"RUINOriginalBundleIdentifier":@"jp.naver.line", @"CFBundleShortVersionString":@"26.16.0", @"CFBundleVersion":@"2026.1006.1718"};
+    NSDictionary *info17 = @{@"RUINOriginalBundleIdentifier":@"jp.naver.line", @"CFBundleShortVersionString":@"26.17.0", @"CFBundleVersion":@"2026.1103.1841"};
+    NSDictionary *unknown = @{@"RUINOriginalBundleIdentifier":@"jp.naver.line", @"CFBundleShortVersionString":@"26.99.0", @"CFBundleVersion":@"unknown"};
+    const RUINMessagingMapping *map16 = RUINMessagingMappingForInfo(info16);
+    const RUINMessagingMapping *map17 = RUINMessagingMappingForInfo(info17);
+    Check(map16 && map16->unsendOperation.parserParam1ReturnAddress &&
+        map16->unsendOperation.orderedLookupReturnAddressCount == 5, @"26.16 unsend mapping was not preserved");
+    Check(map17 && map17->readBoundary.callerReturnAddress && map17->readBoundary.anchorCount == 1 &&
+        map17->unsendOperation.parserParam1ReturnAddress && map17->unsendOperation.parserAnchorCount &&
+        map17->unsendOperation.orderedLookupReturnAddressCount == 0, @"26.17 mapping enabled an unproven unsend lookup");
+    Check(!RUINMessagingMappingForInfo(unknown), @"unknown host acquired a numeric messaging mapping");
 }
 static NSAttributeDescription *Attribute(NSString *name, NSAttributeType type) {
     NSAttributeDescription *a = [NSAttributeDescription new]; a.name = name; a.attributeType = type; a.optional = YES; return a;
@@ -106,6 +122,7 @@ int main(void) {
         __block NSManagedObjectContext *a, *b;
         NSPersistentStoreCoordinator *first, *second;
         @try {
+            CheckVersionMappings();
             originalInfo = method_setImplementation(infoMethod, (IMP)FixtureInfo);
             originalDirectories = method_setImplementation(directoriesMethod, (IMP)FixtureDirectories);
             systemFetch = method_setImplementation(fetchMethod, (IMP)FixtureFetch);
@@ -116,6 +133,9 @@ int main(void) {
                 ![RUINUnsendOperationDiagnostics()[@"fetchHook"] isEqual:@"installed"], @"image mismatch installed protection");
             IMP inherited = class_getMethodImplementation(RUINOperationMessageBase.class, @selector(displayedText));
             testImageMatches = YES; RUINInstallUnsendOperation(); RUINInstallUnsendOperation();
+            Check(selectedUnsendMapping && activeUnsendMapping, @"verified 26.16 mapping was not activated");
+            fixtureScopePCs = activeUnsendMapping->orderedLookupReturnAddresses;
+            fixtureScopePCCount = activeUnsendMapping->orderedLookupReturnAddressCount;
             Check([RUINUnsendOperationDiagnostics()[@"fetchHook"] isEqual:@"installed"] &&
                 [RUINUnsendOperationDiagnostics()[@"displayHook"] isEqual:@"installed"] &&
                 [RUINUnsendOperationDiagnostics()[@"operationParam1Hook"] isEqual:@"installed"] &&
@@ -132,7 +152,7 @@ int main(void) {
             __block ManagedMessage *off, *retained, *sameIDOtherChat, *sameIDOtherStore, *manual, *missingScope, *media;
             [a performBlockAndWait:^{
                 off = Insert(a, @"11", @"off-chat", @"RUIN TEST default off");
-                WithScope(scopePCs, sizeof(scopePCs) / sizeof(scopePCs[0]), ^{ Destroy(a, Request(@"11")); });
+                WithScope(fixtureScopePCs, fixtureScopePCCount, ^{ Destroy(a, Request(@"11")); });
                 Check(off.isDeleted && ![RUINUnsendOperationDiagnostics()[@"protectedMessages"] unsignedLongLongValue], @"default OFF prevented native deletion");
                 Check([a save:NULL], @"disabled deletion save failed");
             }];
@@ -151,7 +171,7 @@ int main(void) {
             [a performBlockAndWait:^{
                 uint_fast64_t callbacks = atomic_load(&outerCallbacks), deletes = atomic_load(&actualDeletes);
                 CaptureOperation(@"private-chat-sentinel", @"9007199254740993", 65);
-                WithScope(scopePCs, sizeof(scopePCs) / sizeof(scopePCs[0]), ^{ Destroy(a, Request(@"9007199254740993")); });
+                WithScope(fixtureScopePCs, fixtureScopePCCount, ^{ Destroy(a, Request(@"9007199254740993")); });
                 Check(!retained.isDeleted && [[retained plaintext] isEqual:@"RUIN TEST private-original-sentinel"] &&
                     atomic_load(&outerCallbacks) == callbacks + 1 && atomic_load(&actualDeletes) == deletes, @"confirmed local unsend lost body or enclosing callback");
                 uint_fast64_t displays = atomic_load(&fixtureDisplayCalls);
@@ -160,25 +180,25 @@ int main(void) {
                 Check([[retained valueForKey:@"text"] isEqual:@"RUIN TEST private-original-sentinel"] &&
                     [[retained valueForKey:@"contentType"] shortValue] == 0, @"retention mutated native text/type");
                 Check([a executeFetchRequest:Request(@"9007199254740993") error:NULL].count == 1, @"ordinary lookup was hidden by a persistent marker");
-                WithScope(scopePCs, sizeof(scopePCs) / sizeof(scopePCs[0]), ^{
+                WithScope(fixtureScopePCs, fixtureScopePCCount, ^{
                     Check([a executeFetchRequest:Request(@"9007199254740993") error:NULL].count == 1, @"consumed parser identity authorized another lookup");
                 });
                 CaptureOperation(@"wrong-chat", @"9007199254740993", 65);
-                WithScope(scopePCs, sizeof(scopePCs) / sizeof(scopePCs[0]), ^{
+                WithScope(fixtureScopePCs, fixtureScopePCCount, ^{
                     Check([a executeFetchRequest:Request(@"9007199254740993") error:NULL].count == 1, @"unsend identity crossed chat binding");
                 });
                 CaptureOperation(@"private-chat-sentinel", @"9007199254740993", 55);
-                WithScope(scopePCs, sizeof(scopePCs) / sizeof(scopePCs[0]), ^{
+                WithScope(fixtureScopePCs, fixtureScopePCCount, ^{
                     Check([a executeFetchRequest:Request(@"9007199254740993") error:NULL].count == 1, @"non-unsend operation authorized retention");
                 });
                 CaptureOperation(@"private-chat-sentinel", @"9007199254740993", 65);
-                WithScope(scopePCs, sizeof(scopePCs) / sizeof(scopePCs[0]), ^{ Destroy(a, Request(@"9007199254740993")); });
+                WithScope(fixtureScopePCs, fixtureScopePCCount, ^{ Destroy(a, Request(@"9007199254740993")); });
                 Check([RUINUnsendOperationDiagnostics()[@"markerCount"] unsignedIntegerValue] == 1, @"duplicate operation duplicated marker");
-                WithScope(scopePCs, 3, ^{ Destroy(a, Request(@"13")); });
+                WithScope(fixtureScopePCs, 3, ^{ Destroy(a, Request(@"13")); });
                 Check(missingScope.isDeleted, @"partial call chain suppressed unrelated delete");
                 [a deleteObject:manual]; Check(manual.isDeleted, @"manual user deletion was suppressed");
                 CaptureOperation(@"media-chat", @"14", 64);
-                WithScope(scopePCs, sizeof(scopePCs) / sizeof(scopePCs[0]), ^{ Destroy(a, Request(@"14")); });
+                WithScope(fixtureScopePCs, fixtureScopePCCount, ^{ Destroy(a, Request(@"14")); });
                 Check(!media.isDeleted && [[media displayedText] isEqual:@"native media caption"], @"media model was deleted or fabricated as plaintext");
                 Check([a save:NULL], @"post-operation save failed");
             }];
@@ -190,7 +210,7 @@ int main(void) {
             // differs from the requested ID. Original fetch still executes once.
             [a performBlockAndWait:^{
                 fixtureFetchOverride = @[retained];
-                WithScope(scopePCs, sizeof(scopePCs) / sizeof(scopePCs[0]), ^{
+                WithScope(fixtureScopePCs, fixtureScopePCCount, ^{
                     Check([a executeFetchRequest:Request(@"999") error:NULL].firstObject == retained, @"mismatched identity was hidden");
                     NSFetchRequest *broad = [NSFetchRequest fetchRequestWithEntityName:@"Message"];
                     Check([a executeFetchRequest:broad error:NULL].firstObject == retained, @"broad query was hidden");
@@ -202,13 +222,13 @@ int main(void) {
                 fixtureFetchOverride = nil;
                 CaptureOperation(@"private-chat-sentinel", @"9007199254740993", 65);
                 Check(sqlite3_exec(markerDatabase, "PRAGMA query_only=ON", NULL, NULL, NULL) == SQLITE_OK, @"marker failure fixture failed");
-                WithScope(scopePCs, sizeof(scopePCs) / sizeof(scopePCs[0]), ^{
+                WithScope(fixtureScopePCs, fixtureScopePCCount, ^{
                     Check([a executeFetchRequest:Request(@"9007199254740993") error:NULL].count == 1, @"marker storage failure falsely reported retention");
                 });
                 Check(sqlite3_exec(markerDatabase, "PRAGMA query_only=OFF", NULL, NULL, NULL) == SQLITE_OK, @"marker write restoration failed");
                 fixtureFetchException = [NSException exceptionWithName:@"FixtureFetchFailure" reason:@"expected" userInfo:nil];
                 NSException *caught;
-                @try { WithScope(scopePCs, sizeof(scopePCs) / sizeof(scopePCs[0]), ^{ (void)[a executeFetchRequest:Request(@"9007199254740993") error:NULL]; }); }
+                @try { WithScope(fixtureScopePCs, fixtureScopePCCount, ^{ (void)[a executeFetchRequest:Request(@"9007199254740993") error:NULL]; }); }
                 @catch (NSException *exception) { caught = exception; }
                 Check(caught == fixtureFetchException && fetchDepth == 0, @"original fetch exception swallowed or depth leaked"); fixtureFetchException = nil;
             }];
@@ -218,21 +238,33 @@ int main(void) {
             [a performBlockAndWait:^{
                 Check([[retained displayedText] isEqual:@"RUIN TEST private-original-sentinel"], @"disabling did not restore original display");
                 CaptureOperation(@"private-chat-sentinel", @"9007199254740993", 65);
-                WithScope(scopePCs, sizeof(scopePCs) / sizeof(scopePCs[0]), ^{
+                WithScope(fixtureScopePCs, fixtureScopePCCount, ^{
                     Check([a executeFetchRequest:Request(@"9007199254740993") error:NULL].count == 1, @"disabled retention did not restore native lookup");
                 });
             }];
             [defaults setBool:YES forKey:RUINKeepUnsentMessagesKey];
             fixtureInfo = @{@"RUINOriginalBundleIdentifier":@"jp.naver.line", @"CFBundleShortVersionString":@"26.16.0", @"CFBundleVersion":@"unsupported"};
             [a performBlockAndWait:^{
-                WithScope(scopePCs, sizeof(scopePCs) / sizeof(scopePCs[0]), ^{ Check([a executeFetchRequest:Request(@"9007199254740993") error:NULL].count == 1, @"unsupported build did not fail open"); });
+                WithScope(fixtureScopePCs, fixtureScopePCCount, ^{ Check([a executeFetchRequest:Request(@"9007199254740993") error:NULL].count == 1, @"unsupported build did not fail open"); });
             }];
             fixtureInfo = @{@"RUINOriginalBundleIdentifier":@"jp.naver.line", @"CFBundleShortVersionString":@"26.16.0", @"CFBundleVersion":@"2026.1006.1718"};
             testImageMatches = NO; RUINInstallUnsendOperation();
-            [a performBlockAndWait:^{ WithScope(scopePCs, sizeof(scopePCs) / sizeof(scopePCs[0]), ^{
+            [a performBlockAndWait:^{ WithScope(fixtureScopePCs, fixtureScopePCCount, ^{
                 Check([a executeFetchRequest:Request(@"9007199254740993") error:NULL].count == 1, @"loaded-code mismatch did not fail open");
             }); }];
             testImageMatches = YES; RUINInstallUnsendOperation();
+            fixtureInfo = @{ @"RUINOriginalBundleIdentifier":@"jp.naver.line", @"CFBundleShortVersionString":@"26.17.0", @"CFBundleVersion":@"2026.1103.1841" };
+            RUINInstallUnsendOperation();
+            Check(![RUINUnsendOperationDiagnostics()[@"nativeCodeVerified"] boolValue] &&
+                ![RUINUnsendOperationDiagnostics()[@"retentionMappingSupported"] boolValue],
+                @"26.17 retention enabled without a verified ordered lookup chain");
+            [a performBlockAndWait:^{ WithScope(fixtureScopePCs, fixtureScopePCCount, ^{
+                Check([a executeFetchRequest:Request(@"9007199254740993") error:NULL].count == 1,
+                    @"26.17 unproven lookup scope hid a message");
+            }); }];
+            fixtureInfo = @{ @"RUINOriginalBundleIdentifier":@"jp.naver.line", @"CFBundleShortVersionString":@"26.16.0", @"CFBundleVersion":@"2026.1006.1718" };
+            RUINInstallUnsendOperation();
+            Check([RUINUnsendOperationDiagnostics()[@"nativeCodeVerified"] boolValue], @"26.16 mapping did not recover after a gated host");
             Check(RUINClearUnsendOperationMarkers() && [RUINUnsendOperationDiagnostics()[@"markerCount"] unsignedIntegerValue] == 0, @"marker clear failed");
             [a performBlockAndWait:^{ Check([[retained displayedText] isEqual:@"RUIN TEST private-original-sentinel"], @"cleared marker still rendered a label"); }];
             NSString *diagnostics = [RUINUnsendOperationDiagnostics() description];

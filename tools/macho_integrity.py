@@ -4,10 +4,20 @@ import argparse
 import hashlib
 from pathlib import Path
 import plistlib
+import re
 import struct
+import uuid
 import zipfile
 
-SOURCE_SHA256 = 'e1ad61171b021566f4a318c93ba1260747bfb220c81a79d5a80121311787d6ad'
+def known_hosts():
+    """Share the runtime identity table without importing build dependencies."""
+    source = (Path(__file__).resolve().parents[1] / 'src/known/KnownHosts.def').read_text()
+    records = re.findall(r'RUIN_(?:KNOWN|LATEST)_HOST\("([^"]+)",\s*"([^"]+)",\s*"([^"]+)",\s*"([^"]+)",\s*(?:YES|NO)\)', source)
+    if not records:
+        raise ValueError('Known host identity table is empty.')
+    return [dict(zip(('version', 'build', 'uuid', 'sha256'), record)) for record in records]
+
+
 RUIN_LOAD_PATH = '@executable_path/Frameworks/RUIN.dylib'
 MH_MAGIC_64, CPU_TYPE_ARM64, MH_EXECUTE = 0xFEEDFACF, 0x0100000C, 2
 LC_SEGMENT_64, LC_LOAD_DYLIB, LC_SYMTAB, LC_CODE_SIGNATURE = 0x19, 0xC, 0x2, 0x1D
@@ -90,9 +100,16 @@ def sections(data):
 
 
 def verify_source(data):
-    if hashlib.sha256(data).hexdigest() != SOURCE_SHA256:
-        raise ValueError('Source executable does not match the unmodified LINE 26.16.0 build.')
+    digest = hashlib.sha256(data).hexdigest()
+    host = next((record for record in known_hosts() if record['sha256'] == digest), None)
+    if not host:
+        raise ValueError('Source executable does not match a known unmodified LINE build.')
+    _, commands, _ = _commands(data)
+    uuids = [command[8:24] for kind, command in commands if kind == 0x1B and len(command) == 24]
+    if uuids != [uuid.UUID(host['uuid']).bytes]:
+        raise ValueError('Source UUID does not match the known LINE build.')
     sections(data)
+    return host
 
 
 def _signing_layout(data, commands, command_end):
@@ -206,12 +223,12 @@ def main():
     parser.add_argument('--packaged', type=Path, help='Also compare a packaged IPA or executable')
     args = parser.parse_args()
     original = read_executable(args.source)
-    verify_source(original)
+    host = verify_source(original)
     if args.packaged:
         count = verify_packaged(original, read_executable(args.packaged))
         print(f'PASS: all {count} original Mach-O sections preserved; only RUIN dependency added.')
     else:
-        print('PASS: recognized unmodified LINE 26.16.0 arm64 executable (read only).')
+        print(f'PASS: recognized unmodified LINE {host["version"]} / {host["build"]} arm64 executable (read only).')
 
 
 if __name__ == '__main__':

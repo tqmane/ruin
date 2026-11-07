@@ -1,19 +1,160 @@
 #!/usr/bin/env python3
-"""Read-only verification of the native theme-save evidence in a supplied IPA."""
+"""Read-only verification of the versioned native-theme mappings."""
 import argparse
+from bisect import bisect_right
+import hashlib
+import json
 from pathlib import Path
 import re
 import struct
 import sys
-import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-from macho_integrity import read_executable, sections, verify_source
+from macho_integrity import _commands, read_executable, sections, verify_source
+
+ROOT = Path(__file__).resolve().parents[1]
+PROOF = ROOT / 'build/upgrade-2617/theme-mapping-proof.json'
+MAP_SOURCE = ROOT / 'src/known/ThemeMappings.m'
 
 
-def check(source):
+def mapping_anchors(version):
+    suffix = {'26.16.0': '2616', '26.17.0': '2617'}.get(version)
+    if not suffix:
+        raise AssertionError(f'No theme mappings for known LINE version {version}')
+    source = MAP_SOURCE.read_text()
+    arrays = {}
+    for name, body in re.findall(
+            r'static const RUINInstructionAnchor (\w+)\[\]\s*=\s*\{(.*?)\};', source, re.S):
+        if not name.endswith(suffix):
+            continue
+        rows = []
+        for address, count, values in re.findall(
+                r'\{\s*(0x[0-9a-fA-F]+)\s*,\s*(\d+)\s*,\s*\{([^}]+)\}\s*\}', body):
+            words = [int(value.strip(), 16) for value in values.split(',')]
+            assert len(words) == int(count), name
+            rows.append({'address': int(address, 16), 'wordCount': int(count), 'words': words})
+        arrays[name] = rows
+    required = ({'kShopNavigation2616', 'kShopEligibility2616', 'kThemeValidation2616',
+                 'kThemeLocalPolicy2616'} if suffix == '2616' else
+                {'kShopNavigation2617', 'kThemeValidation2617', 'kThemeLocalPolicy2617'})
+    assert set(arrays) == required, (version, set(arrays))
+    return arrays
+
+
+def function_reader(data):
+    _, image_sections, _ = sections(data)
+    text_header, _ = image_sections[('__TEXT', '__text')]
+    text_start, text_size, text_offset = struct.unpack_from('<QQI', text_header, 32)
+    text_end = text_start + text_size
+    commands = _commands(data)[1]
+    base = None
+    table = None
+    for command, raw in commands:
+        if command == 0x19 and raw[8:24].split(b'\0', 1)[0] == b'__TEXT':
+            base = struct.unpack_from('<Q', raw, 24)[0]
+        elif command == 0x26:
+            table = struct.unpack_from('<II', raw, 8)
+    if base is None or table is None:
+        raise AssertionError('Missing __TEXT or LC_FUNCTION_STARTS')
+    offset, length = table
+    cursor, limit, address = offset, offset + length, base
+    starts = []
+    while cursor < limit:
+        delta = shift = 0
+        while True:
+            if cursor >= limit:
+                raise AssertionError('Truncated LC_FUNCTION_STARTS ULEB128')
+            byte = data[cursor]
+            cursor += 1
+            delta |= (byte & 0x7f) << shift
+            if not byte & 0x80:
+                break
+            shift += 7
+            if shift > 63:
+                raise AssertionError('Invalid LC_FUNCTION_STARTS ULEB128')
+        if not delta:
+            break
+        address += delta
+        starts.append(address)
+    starts.append(text_end)
+
+    def read(address):
+        index = bisect_right(starts, address) - 1
+        if index < 0 or address >= text_end:
+            raise AssertionError(f'No function owner for {address:#x}')
+        start, stop = starts[index], starts[index + 1]
+        file_offset = text_offset + start - text_start
+        raw = data[file_offset:file_offset + stop - start]
+        if len(raw) != stop - start:
+            raise AssertionError(f'Function bytes outside __TEXT,__text: {start:#x}')
+        return {'start': hex(start), 'stop': hex(stop), 'size': stop - start,
+                'sha256': hashlib.sha256(raw).hexdigest()}
+    return read
+
+
+def verify_local_policy_functions(data, local_policy, version):
+    read_function = function_reader(data)
+    revision = '26.16' if version == '26.16.0' else '26.17'
+
+    def verify_function(expected):
+        actual = read_function(int(expected['start'], 16))
+        assert all(actual[key] == expected[key] for key in ('start', 'stop', 'size', 'sha256'))
+
+    helper = local_policy['helper'][revision]
+    verify_function(helper['function'])
+    call_site = int(helper['call']['callSite'], 16)
+    assert hex(call_site + 4) == helper['call']['returnPC']
+    assert branch_target_from_bytes(data, call_site) == int(helper['call']['target'], 16)
+
+    family_key = 'baseline26_16' if version == '26.16.0' else 'candidate26_17'
+    for family in local_policy['closureFamilies']:
+        sites = family[family_key]
+        for name in ('function', 'closureFactory', 'closureThunk'):
+            verify_function(sites[name])
+        call_site = int(sites['helperCall']['callSite'], 16)
+        assert hex(call_site + 4) == sites['helperCall']['returnPC']
+        assert branch_target_from_bytes(data, call_site) == int(sites['helperCall']['target'], 16)
+        reference = sites['closureEntryReference']
+        add_site = int(reference['addSite'], 16)
+        actual = bytes_at(data, add_site - 4, 8)
+        assert actual == struct.pack('<2I', *(int(word, 16) for word in reference['words']))
+        assert adrp_add_target_from_bytes(data, add_site - 4) == int(reference['target'], 16)
+
+
+def bytes_at(data, address, size):
+    _, image_sections, _ = sections(data)
+    for header, digest in image_sections.values():
+        start, length, offset = struct.unpack_from('<QQI', header, 32)
+        if digest and start <= address and address + size <= start + length:
+            return data[offset + address - start:offset + address - start + size]
+    raise AssertionError(f'Address outside file-backed sections: {address:#x}')
+
+
+def branch_target_from_bytes(data, address):
+    instruction = struct.unpack('<I', bytes_at(data, address, 4))[0]
+    assert instruction & 0xfc000000 == 0x94000000
+    value = instruction & 0x03ffffff
+    if value & (1 << 25):
+        value -= 1 << 26
+    return address + value * 4
+
+
+def adrp_add_target_from_bytes(data, address):
+    adrp, add = struct.unpack('<2I', bytes_at(data, address, 8))
+    assert adrp & 0x9f000000 == 0x90000000
+    register = adrp & 31
+    assert add & 0xffc00000 == 0x91000000 and add & 31 == register and (add >> 5) & 31 == register
+    immediate = ((adrp >> 29) & 3) | (((adrp >> 5) & 0x7ffff) << 2)
+    if immediate & (1 << 20):
+        immediate -= 1 << 21
+    return (address & ~0xfff) + (immediate << 12) + ((add >> 10) & 0xfff)
+
+
+def check(source, proof_path):
     data = read_executable(source)
-    verify_source(data)
+    host = verify_source(data)
+    version = host['version']
+    arrays = mapping_anchors(version)
     _, image_sections, _ = sections(data)
 
     def at(address, size):
@@ -29,52 +170,112 @@ def check(source):
     def signed(value, bits):
         return value - (1 << bits) if value & (1 << (bits - 1)) else value
 
-    implementation = (Path(__file__).resolve().parents[1] / 'src/themes/ThemeShop.x').read_text()
-    sites = implementation.split('sites[] = {', 1)[1].split('    };', 1)[0]
-    matches = re.findall(r'\{(0x[0-9a-fA-F]+),\s*(\d+),\s*\{([^}]+)\}\}', sites)
-    assert matches, 'No runtime fingerprints found'
-    for pc, count, values in matches:
-        expected = [int(value.strip(), 16) for value in values.split(',')]
-        assert len(expected) == int(count)
-        assert at(int(pc, 16), len(expected) * 4) == struct.pack('<' + 'I' * len(expected), *expected), pc
+    def adrp_add_target(pc):
+        adrp, add = word(pc), word(pc + 4)
+        assert adrp & 0x9f000000 == 0x90000000
+        register = adrp & 31
+        assert add & 0xffc00000 == 0x91000000 and (add & 31) == register and ((add >> 5) & 31) == register
+        delta = signed(((adrp >> 5) & 0x7ffff) << 2 | ((adrp >> 29) & 3), 21)
+        return (pc & ~0xfff) + (delta << 12) + ((add >> 10) & 0xfff)
 
-    cursor = 32
-    image_uuid = None
-    for _ in range(struct.unpack_from('<I', data, 16)[0]):
-        command, size = struct.unpack_from('<II', data, cursor)
-        if command == 0x1B:
-            image_uuid = data[cursor + 8:cursor + 24]
-        cursor += size
-    assert image_uuid == uuid.UUID('292883e8-e011-3583-adf5-f02241e3277b').bytes
-    declaration = implementation.split('expectedUUID[16] = {', 1)[1].split('}', 1)[0]
-    assert bytes(int(part.strip(), 16) for part in declaration.split(',')) == image_uuid
+    def branch_target(pc):
+        instruction = word(pc)
+        assert instruction & 0xfc000000 == 0x94000000
+        return pc + (signed(instruction & 0x03ffffff, 26) << 2)
 
-    # The constructor supplies a zero-context Swift closure at 0x100233a1c.
-    pc = 0x105DF505C
-    adrp, add = word(pc), word(pc + 4)
-    assert adrp & 0x9F00001F == 0x90000003  # ADRP x3, page
-    assert add & 0xFFC003FF == 0x91000063   # ADD x3, x3, imm12
-    delta = signed(((adrp >> 5) & 0x7FFFF) << 2 | ((adrp >> 29) & 3), 21)
-    callback = (pc & ~0xFFF) + (delta << 12) + ((add >> 10) & 0xFFF)
-    assert callback == 0x100233A1C
-    call = word(0x100233A34)
-    assert call & 0xFC000000 == 0x94000000
-    assert 0x100233A34 + (signed(call & 0x3FFFFFF, 26) << 2) == 0x10285E424
-    assert struct.unpack('<Q', at(0x10D33F148, 8))[0] == 32
-    assert word(0x105DF1834) == 0xD63F0120  # BLR x9 through isPrimaryAccount
+    def encoded_rows(rows):
+        return [{'address': hex(row['address']), 'wordCount': row['wordCount'],
+                 'words': [hex(word) for word in row['words']]} for row in rows]
 
-    # Both independent branches remain intact and target the native return.
-    for branch_pc in (0x105DF1838, 0x105DF184C):
-        branch = word(branch_pc)
-        assert branch & 0xFFF8001F == 0x36000000  # TBZ w0, bit 0
-        assert branch_pc + (signed((branch >> 5) & 0x3FFF, 14) << 2) == 0x105DF1890
-    validity_call = word(0x105DF1848)
-    assert validity_call & 0xFC000000 == 0x94000000
-    assert 0x105DF1848 + (signed(validity_call & 0x3FFFFFF, 26) << 2) == 0x105DF18A8
-    print(f'PASS: {len(matches)} runtime fingerprints, UUID, Swift closure and both unmodified theme-save branches (read only).')
+    for name, rows in arrays.items():
+        for row in rows:
+            raw = at(row['address'], row['wordCount'] * 4)
+            assert raw == struct.pack('<' + 'I' * row['wordCount'], *row['words']), (name, hex(row['address']))
+
+    # Identity fields are owned by KnownHosts.def; each theme row points at
+    # that canonical host record and carries only feature data.
+    mapping_header = (ROOT / 'src/known/ThemeMappings.h').read_text()
+    mapping_source = MAP_SOURCE.read_text()
+    assert 'const RUINHostIdentity *host;' in mapping_header
+    assert '.host = &RUINKnownHosts[0]' in mapping_source
+    assert '.host = &RUINKnownHosts[1]' in mapping_source
+    assert '.sourceSHA256 =' not in mapping_source and '.uuid =' not in mapping_source
+
+    if version == '26.16.0':
+        assert len(arrays['kShopEligibility2616']) == 23
+        assert len(arrays['kThemeLocalPolicy2616']) == 3
+        assert at(0x10a44eb50, len(b'line://shop/theme\0')) == b'line://shop/theme\0'
+        assert at(0x10a742270, len(b'validateTheme result:\0')) == b'validateTheme result:\0'
+
+        # The zero-context closure and two independent native save branches
+        # remain exactly as found in pristine 26.16.
+        assert adrp_add_target(0x105df505c) == 0x100233a1c
+        call = word(0x100233a34)
+        assert call & 0xfc000000 == 0x94000000
+        assert 0x100233a34 + (signed(call & 0x03ffffff, 26) << 2) == 0x10285e424
+        assert struct.unpack('<Q', at(0x10d33f148, 8))[0] == 32
+        assert word(0x105df1834) == 0xd63f0120
+        for branch_pc in (0x105df1838, 0x105df184c):
+            branch = word(branch_pc)
+            assert branch & 0xfff8001f == 0x36000000
+            assert branch_pc + (signed((branch >> 5) & 0x3fff, 14) << 2) == 0x105df1890
+        validity_call = word(0x105df1848)
+        assert validity_call & 0xfc000000 == 0x94000000
+        assert 0x105df1848 + (signed(validity_call & 0x03ffffff, 26) << 2) == 0x105df18a8
+    else:
+        assert len(arrays['kThemeValidation2617']) == 2
+        assert len(arrays['kThemeLocalPolicy2617']) == 4
+        assert at(0x10a647430, len(b'line://shop/theme\0')) == b'line://shop/theme\0'
+        assert at(0x10a93cbf0, len(b'validateTheme result:\0')) == b'validateTheme result:\0'
+        assert adrp_add_target(0x1057a5c94) == 0x10a93cbf0
+        assert branch_target(0x1057a5ce8) == 0x10961fd00
+        assert word(0x1025cc684) == 0x39402000
+        assert word(0x1025cc688) == 0xd65f03c0
+        assert arrays['kShopNavigation2617'][0]['address'] == 0x100043524
+        assert arrays['kThemeValidation2617'][1]['address'] + 8 == 0x1057a5cec
+        assert [row['address'] for row in arrays['kThemeLocalPolicy2617']] == [
+            0x105951164, 0x105955ea0, 0x1059556d4, 0x10595829c]
+        assert branch_target(0x105951168) == 0x1095c3048
+        assert branch_target(0x105955ea4) == 0x105951120
+        assert branch_target(0x1059556d8) == 0x105951120
+        assert branch_target(0x1059582a0) == 0x105951120
+
+    proof = None
+    if proof_path.is_file():
+        proof = json.loads(proof_path.read_text())
+    elif version == '26.17.0':
+        raise AssertionError(f'Missing 26.17 mapping proof: {proof_path}')
+    if proof:
+        record = proof['binaries'][version]
+        assert record['build'] == host['build'] and record['uuid'] == host['uuid']
+        assert record['sha256'] == host['sha256']
+        verify_local_policy_functions(data, record['localPolicy'], version)
+        for name, rows in arrays.items():
+            assert record['instructionAnchors'][name] == encoded_rows(rows), name
+        if version == '26.17.0':
+            assert record['shopNavigation']['status'] == 'ported'
+            assert record['themeValidation']['status'] == 'ported'
+            assert record['shopEligibility']['status'] == 'unported'
+            assert record['localPolicy']['status'] == 'ported'
+            assert record['shopNavigation']['implementation'] == '0x100043524'
+            assert record['themeValidation']['resultReturnPC'] == '0x1057a5cec'
+            assert record['localPolicy']['repositoryReturnPC'] == '0x10595116c'
+            assert record['localPolicy']['serverSyncReturnPCs'] == ['0x105955ea8', '0x1059556dc']
+            assert record['localPolicy']['readOnlyExcludedReturnPC'] == '0x1059582a4'
+            baseline_path = ROOT / 'build/unsigned/Payload/LINE.app/LINE'
+            if baseline_path.is_file():
+                baseline_data = read_executable(baseline_path)
+                baseline_host = verify_source(baseline_data)
+                assert baseline_host['version'] == '26.16.0'
+                verify_local_policy_functions(baseline_data,
+                    proof['binaries']['26.16.0']['localPolicy'], baseline_host['version'])
+
+    print(f"PASS: LINE {host['version']} / {host['build']}; {sum(map(len, arrays.values()))} bounded mapping anchors, UUID/SHA and read-only theme control-flow checks.")
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('source', type=Path, help='Pristine LINE 26.16.0 IPA or executable')
-    check(parser.parse_args().source)
+    parser.add_argument('source', type=Path, help='Pristine LINE IPA or executable')
+    parser.add_argument('--proof', type=Path, default=PROOF, help='Optional read-only theme mapping evidence JSON')
+    args = parser.parse_args()
+    check(args.source, args.proof)

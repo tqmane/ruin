@@ -1,6 +1,8 @@
 %config(generator=internal);
 
 #import "BundleIdentity.h"
+#import "BinaryVerifier.h"
+#import "TargetMetadata.h"
 #import <objc/runtime.h>
 #import <mach-o/dyld.h>
 #import <mach-o/loader.h>
@@ -17,24 +19,11 @@ static atomic_bool identityReady;
 static atomic_uint_fast64_t identifierReads, valueReads, dictionaryReads, cfReads, lineReads;
 static NSString *identityStatus = @"not_requested";
 static BOOL cfBindingInstalled;
+static BOOL verifiedBinary;
 
 static BOOL IdentityBinaryMatches(const struct mach_header_64 *header, NSDictionary *info) {
-    if (![info[@"CFBundleShortVersionString"] isEqual:@"26.16.0"] ||
-        ![info[@"CFBundleVersion"] isEqual:@"2026.1006.1718"] || !header ||
-        header->magic != MH_MAGIC_64 || header->cputype != CPU_TYPE_ARM64 ||
-        header->filetype != MH_EXECUTE || header->sizeofcmds > 1024 * 1024) return NO;
-    static const uint8_t uuid[16] = {
-        0x29,0x28,0x83,0xe8,0xe0,0x11,0x35,0x83,0xad,0xf5,0xf0,0x22,0x41,0xe3,0x27,0x7b
-    };
-    const uint8_t *p = (const void *)(header + 1), *end = p + header->sizeofcmds;
-    for (uint32_t i = 0; i < header->ncmds && p + sizeof(struct load_command) <= end; i++) {
-        const struct load_command *command = (const void *)p;
-        if (command->cmdsize < sizeof(*command) || command->cmdsize > (size_t)(end - p)) return NO;
-        if (command->cmd == LC_UUID && command->cmdsize == sizeof(struct uuid_command))
-            return !memcmp(((const struct uuid_command *)command)->uuid, uuid, sizeof(uuid));
-        p += command->cmdsize;
-    }
-    return NO;
+    const RUINHostIdentity *host = RUINKnownHostForVersion(info[@"CFBundleShortVersionString"], info[@"CFBundleVersion"]);
+    return RUINVerifyHostImage(host, header);
 }
 
 static BOOL IdentityScope(NSBundle *bundle, const void *image) {
@@ -63,6 +52,7 @@ NSDictionary *RUINActualMainBundleInfo(void) {
 
 NSDictionary *RUINBundleIdentityDiagnostics(void) {
     return @{@"status":identityStatus, @"installed":@(atomic_load(&identityReady)),
+        @"verifiedBinary":@(verifiedBinary),
         @"actualSignedIdentifier":RUINActualMainBundleInfo()[identifierKey] ?: (id)NSNull.null,
         @"applicationIdentifier":originalIdentifier,
         @"bundleIdentifierReads":@(atomic_load(&identifierReads)),
@@ -135,9 +125,13 @@ void RUINInstallBundleIdentity(void) {
         identityMainBundle = NSBundle.mainBundle;
         actualMainInfo = [identityMainBundle.infoDictionary copy] ?: @{};
         const struct mach_header_64 *header = (const void *)_dyld_get_image_header(0);
-        if (!IdentityBinaryMatches(header, actualMainInfo)) { identityStatus = @"unsupported_binary"; return; }
+        verifiedBinary = IdentityBinaryMatches(header, actualMainInfo);
         if (![actualMainInfo[identifierKey] isKindOfClass:NSString.class]) { identityStatus = @"missing_identity"; return; }
-        if ([actualMainInfo[identifierKey] isEqual:originalIdentifier]) { identityStatus = @"already_original"; return; }
+        // No projection is needed for the original identity. Keep public API
+        // compatibility available on new builds; private code maps stay gated.
+        if ([actualMainInfo[identifierKey] isEqual:originalIdentifier] &&
+            RUINTargetMetadataMatchesInfo(actualMainInfo)) { identityStatus = @"already_original"; return; }
+        if (!verifiedBinary) { identityStatus = @"unsupported_binary"; return; }
         Class cls = object_getClass(identityMainBundle);
         const SEL selectors[] = {@selector(bundleIdentifier), @selector(objectForInfoDictionaryKey:), @selector(infoDictionary)};
         const char *types[] = {"@16@0:8", "@24@0:8@16", "@16@0:8"};

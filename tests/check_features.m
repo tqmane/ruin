@@ -230,8 +230,8 @@ static int RUINRunChecks(void)
     int result = 0;
 
     @try {
-        CHECK([RUINTargetVersion isEqualToString:@"26.16.0"] &&
-              [RUINTargetBuild isEqualToString:@"2026.1006.1718"], @"target constants differ from researched build");
+        CHECK([RUINTargetVersion isEqualToString:@"26.17.0"] &&
+              [RUINTargetBuild isEqualToString:@"2026.1103.1841"], @"target constants differ from researched build");
         NSDictionary *stockTarget = @{
             @"CFBundleIdentifier": @"jp.naver.line",
             @"CFBundleShortVersionString": @"26.16.0",
@@ -247,7 +247,8 @@ static int RUINRunChecks(void)
         CHECK(RUINTargetMetadataMatchesInfo(sideloadTarget), @"sideload LINE metadata was rejected");
         NSMutableDictionary *wrongTarget = [stockTarget mutableCopy];
         wrongTarget[@"CFBundleShortVersionString"] = @"26.15.0";
-        CHECK(!RUINTargetMetadataMatchesInfo(wrongTarget), @"unknown app version passed target metadata gate");
+        CHECK(RUINTargetMetadataMatchesInfo(wrongTarget), @"structural hooks rejected a valid LINE version");
+        CHECK(!RUINVerifiedTargetMatchesInfo(wrongTarget), @"unverified version inherited a private binary mapping");
         wrongTarget = [stockTarget mutableCopy];
         wrongTarget[@"CFBundleVersion"] = @"unknown-build";
         CHECK(!RUINTargetMetadataMatchesInfo(wrongTarget), @"unknown app build passed target metadata gate");

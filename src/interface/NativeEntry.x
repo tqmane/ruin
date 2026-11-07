@@ -40,6 +40,10 @@ static UITableView *RUINFindSettingsTable(UIView *view) {
     return nil;
 }
 
+static NSString *RUINSettingsEntryAccessibilityLabel(void) {
+    return RUINLocalizedString(@"RUINの設定と診断");
+}
+
 static void RUINAttachSettingsEntry(UIViewController *controller) {
     UITableView *table = RUINFindSettingsTable(controller.view);
     if (!table) return;
@@ -65,7 +69,7 @@ static void RUINAttachSettingsEntry(UIViewController *controller) {
     entry.layer.cornerRadius = 12;
     entry.clipsToBounds = YES;
     entry.accessibilityIdentifier = @"ruin.line.settings.entry";
-    entry.accessibilityLabel = RUINLocalizedString(@"RUINの設定と診断");
+    entry.accessibilityLabel = RUINSettingsEntryAccessibilityLabel();
     entry.isAccessibilityElement = YES;
     UILabel *title = [UILabel new];
     title.text = @"RUIN";
@@ -106,13 +110,14 @@ static void RUINAttachSettingsEntry(UIViewController *controller) {
 }
 
 static void RUINAttachHomeSettingsButton(UIViewController *controller) {
-    if (![NSUserDefaults.standardUserDefaults boolForKey:RUINSecondaryLoginEnabledKey]) return;
+    BOOL isNativePad = UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad;
+    if (!isNativePad && ![NSUserDefaults.standardUserDefaults boolForKey:RUINSecondaryLoginEnabledKey]) return;
     if (!controller.navigationController || controller.navigationController.navigationBarHidden) return;
     UIBarButtonItem *item = objc_getAssociatedObject(controller, &homeItemKey);
     if (!item) {
         item = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"gearshape"]
             style:UIBarButtonItemStylePlain target:controller action:sel_registerName("ruin_openSettings:")];
-        item.accessibilityLabel = RUINLocalizedString(@"RUIN設定");
+        item.accessibilityLabel = RUINSettingsEntryAccessibilityLabel();
         objc_setAssociatedObject(controller, &homeItemKey, item, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
     NSArray *items = controller.navigationItem.rightBarButtonItems ?: @[];

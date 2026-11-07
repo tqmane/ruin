@@ -1,5 +1,6 @@
 %config(generator=internal)
 
+#import "TargetMetadata.h"
 #import "ThemePrivateAPI.h"
 #import "NativeThemeImages.h"
 #if !defined(RUIN_NATIVE_THEME_IMAGES_HOST_CHECK)
@@ -100,11 +101,7 @@ static const char *RUINCacheStatusName(int status)
 
 static BOOL RUINNativeThemeImagesTargetMatches(void)
 {
-    NSDictionary *info = NSBundle.mainBundle.infoDictionary ?: @{};
-    BOOL bundleMatches = [NSBundle.mainBundle.bundleIdentifier isEqual:@"jp.naver.line"] ||
-        [info[@"RUINOriginalBundleIdentifier"] isEqual:@"jp.naver.line"];
-    return bundleMatches && [info[@"CFBundleShortVersionString"] isEqual:@"26.16.0"] &&
-        [info[@"CFBundleVersion"] isEqual:@"2026.1006.1718"];
+    return RUINTargetMetadataMatchesInfo(NSBundle.mainBundle.infoDictionary);
 }
 
 static NSRegularExpression *RUINNativeThemeImagePathRegex(void)

@@ -1,5 +1,6 @@
 %config(generator=internal)
 
+#import "TargetMetadata.h"
 #import "ThemeStoreImages.h"
 
 NSString *RUINThemeStoreImagesScript(void)
@@ -40,11 +41,7 @@ static atomic_uint_fast64_t gScopedLoads, gScriptsAdded;
 
 static BOOL RUINThemeImagesTarget(void)
 {
-    NSDictionary *info = NSBundle.mainBundle.infoDictionary;
-    return ([NSBundle.mainBundle.bundleIdentifier isEqual:@"jp.naver.line"] ||
-        [info[@"RUINOriginalBundleIdentifier"] isEqual:@"jp.naver.line"]) &&
-        [info[@"CFBundleShortVersionString"] isEqual:@"26.16.0"] &&
-        [info[@"CFBundleVersion"] isEqual:@"2026.1006.1718"];
+    return RUINTargetMetadataMatchesInfo(NSBundle.mainBundle.infoDictionary);
 }
 
 %group RUINThemeStoreImages

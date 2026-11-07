@@ -1,5 +1,6 @@
 %config(generator=internal);
 
+#import "TargetMetadata.h"
 #import "MessagingPrivateAPI.h"
 #import "UnsendRetention.h"
 #import "MessageHistory.h"
@@ -217,11 +218,7 @@ RUINNativeUnsendState RUINUnsendStateForMetadata(NSDictionary *metadata) {
     return RUINNativeUnsendNone;
 }
 static BOOL TargetMatches(void) {
-    NSBundle *bundle = NSBundle.mainBundle;
-    NSDictionary *info = bundle.infoDictionary ?: @{};
-    return ([bundle.bundleIdentifier isEqual:RUINTargetBundleIdentifier] ||
-        [info[@"RUINOriginalBundleIdentifier"] isEqual:RUINTargetBundleIdentifier]) &&
-        [info[@"CFBundleShortVersionString"] isEqual:RUINTargetVersion] && [info[@"CFBundleVersion"] isEqual:RUINTargetBuild];
+    return RUINTargetMetadataMatchesInfo(NSBundle.mainBundle.infoDictionary);
 }
 static BOOL VerifyNativeKeys(void) {
     Class cls = objc_getClass("_TtC19LineSharedMessaging22MessageContentMetadata");

@@ -5,13 +5,14 @@
 #import "Features.h"
 #import "MessageHistory.h"
 #import "../core/Localization.h"
+#import "../core/TargetMetadata.h"
+#import "../known/MessagingMappings.h"
 #import <CoreData/CoreData.h>
 #import <TargetConditionals.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
 #import <os/lock.h>
 #import <mach-o/dyld.h>
-#import <mach-o/loader.h>
 #import <execinfo.h>
 #import <sqlite3.h>
 #import <stdatomic.h>
@@ -19,31 +20,10 @@
 #import <stdlib.h>
 #import <string.h>
 
-/* build/current-unsend-evidence.json records the manifest-matching binary.
- Current parser 0x10461eeec -> MessageDestroyOperation (Swift metadata):
- param1 ChatID, param2 positive Int64 MessageServerID, param3=="1" silent.
- type 64 -> recipient sender, 65 -> others (explicit CMPs, not enum memory).
- Dispatcher 0x1000bac30/44 -> parser -> destroy wrapper 0x103e29a24 ->
- body 0x103e29b38. Its FIRST message lookup returns nil for an empty fetch;
- nil exits before cleanup 0x103e2b3c4 or cancellation creation. Intercept that
- lookup through the standard Core Data ObjC API, with exact ordered return
- PCs AND a single-message ID predicate/result/context. No native ABI call or
- patch, broad deleteObject: suppression, operation mutation, or time window.
- */
-
-typedef struct { uintptr_t address; uint32_t word; } CodeAnchor;
-static const CodeAnchor anchors[] = {
-    {0x1000bac24, 0xf277053f}, {0x1000bac30, 0x951590af}, {0x1000bac44, 0x94f5bb78},
-    {0x103e29b2c, 0x94000003}, {0x103e29b7c, 0x9407fdd4}, {0x103e29b80, 0xb4000415},
-    {0x103e29c04, 0xb4fffc20}, {0x103e29dcc, 0x9400057e}, {0x1040292fc, 0x97fa9bd2},
-    {0x103ed03a8, 0x9554620e}, {0x103ed03c4, 0xb4000160}, {0x103ed03f4, 0xd2800017},
-    {0x10461ef0c, 0x9538eaa5}, {0x10461f234, 0xf10102bf}, {0x10461f23c, 0xf10106bf}
-};
-// Nearest first: fetch helper -> lookup wrapper -> destroy body -> incoming
-// wrapper -> operation dispatcher. Missing/reordered frames fail open.
-static const uintptr_t scopePCs[] = {0x103ed03ac, 0x104029300, 0x103e29b80, 0x103e29b30, 0x1000bac48};
 static _Atomic(uintptr_t) imageSlide;
 static atomic_bool codeVerified;
+static const RUINUnsendOperationMapping *selectedUnsendMapping;
+static const RUINUnsendOperationMapping *activeUnsendMapping;
 typedef NS_ENUM(int, OperationHookStatus) {
     OperationHookPending = 0,
     OperationHookGated = 1,
@@ -66,49 +46,46 @@ static _Thread_local uintptr_t testParam1Caller;
 #endif
 
 static BOOL TargetMatches(void) {
-    NSBundle *bundle = NSBundle.mainBundle;
-    NSDictionary *info = bundle.infoDictionary;
-    return ([bundle.bundleIdentifier isEqual:RUINTargetBundleIdentifier] ||
-        [info[@"RUINOriginalBundleIdentifier"] isEqual:RUINTargetBundleIdentifier]) &&
-        [info[@"CFBundleShortVersionString"] isEqual:RUINTargetVersion] &&
-        [info[@"CFBundleVersion"] isEqual:RUINTargetBuild];
+    return RUINTargetMetadataMatchesInfo(NSBundle.mainBundle.infoDictionary);
 }
 static BOOL Enabled(void) {
     return atomic_load(&codeVerified) && TargetMatches() &&
         [NSUserDefaults.standardUserDefaults boolForKey:RUINKeepUnsentMessagesKey];
 }
 static BOOL VerifyCode(void) {
+    NSDictionary *info = NSBundle.mainBundle.infoDictionary;
+    const RUINHostIdentity *host = RUINKnownHostForInfo(info);
+    const RUINMessagingMapping *mapping = RUINMessagingMappingForHost(host);
+    selectedUnsendMapping = mapping ? &mapping->unsendOperation : NULL;
+    activeUnsendMapping = NULL;
+    atomic_store(&imageSlide, 0);
+    if (!TargetMatches() || !host || !selectedUnsendMapping || !selectedUnsendMapping->parserAnchors ||
+        !selectedUnsendMapping->parserAnchorCount || !selectedUnsendMapping->parserParam1ReturnAddress) return NO;
 #if defined(RUIN_UNSEND_OPERATION_HOST_CHECK) && RUIN_UNSEND_OPERATION_HOST_CHECK
-    atomic_store(&imageSlide, 0); return testImageMatches;
+    atomic_store(&imageSlide, 0);
+    if (!testImageMatches || !selectedUnsendMapping->orderedLookupReturnAddresses ||
+        !selectedUnsendMapping->orderedLookupReturnAddressCount) return NO;
+    activeUnsendMapping = selectedUnsendMapping;
+    return YES;
 #else
     const struct mach_header_64 *header = (const void *)_dyld_get_image_header(0);
-    if (!header || header->magic != MH_MAGIC_64 || header->cputype != CPU_TYPE_ARM64 ||
-        header->sizeofcmds > 1024 * 1024) return NO;
-    const uint8_t *p = (const void *)(header + 1), *end = p + header->sizeofcmds;
-    uintptr_t textStart = 0, textEnd = 0, slide = (uintptr_t)_dyld_get_image_vmaddr_slide(0);
-    for (uint32_t i = 0; i < header->ncmds && p + sizeof(struct load_command) <= end; i++) {
-        const struct load_command *command = (const void *)p;
-        if (command->cmdsize < sizeof(*command) || command->cmdsize > (size_t)(end - p)) return NO;
-        if (command->cmd == LC_SEGMENT_64 && command->cmdsize >= sizeof(struct segment_command_64)) {
-            const struct segment_command_64 *segment = (const void *)p;
-            if (!strcmp(segment->segname, "__TEXT")) { textStart = segment->vmaddr; textEnd = textStart + segment->vmsize; }
-        }
-        p += command->cmdsize;
-    }
-    if (!textStart || textEnd <= textStart) return NO;
-    for (NSUInteger i = 0; i < sizeof(anchors) / sizeof(anchors[0]); i++) {
-        if (anchors[i].address < textStart || anchors[i].address > textEnd - sizeof(uint32_t)) return NO;
-        uint32_t actual; memcpy(&actual, (const void *)(anchors[i].address + slide), sizeof(actual));
-        if (actual != anchors[i].word) return NO;
-    }
-    atomic_store(&imageSlide, slide); return YES;
+    intptr_t slide = _dyld_get_image_vmaddr_slide(0);
+    if (!RUINVerifyHostImage(host, header) ||
+        !RUINVerifyInstructions(header, slide, selectedUnsendMapping->parserAnchors,
+            selectedUnsendMapping->parserAnchorCount) ||
+        !selectedUnsendMapping->orderedLookupReturnAddresses ||
+        !selectedUnsendMapping->orderedLookupReturnAddressCount) return NO;
+    atomic_store(&imageSlide, (uintptr_t)slide);
+    activeUnsendMapping = selectedUnsendMapping;
+    return YES;
 #endif
 }
 static BOOL OrderedScope(const uintptr_t *pcs, size_t count) {
+    if (!activeUnsendMapping) return NO;
     size_t matched = 0;
-    for (size_t i = 0; i < count && matched < sizeof(scopePCs) / sizeof(scopePCs[0]); i++)
-        if (pcs[i] == scopePCs[matched]) matched++;
-    return matched == sizeof(scopePCs) / sizeof(scopePCs[0]);
+    for (size_t i = 0; i < count && matched < activeUnsendMapping->orderedLookupReturnAddressCount; i++)
+        if (pcs[i] == activeUnsendMapping->orderedLookupReturnAddresses[matched]) matched++;
+    return matched == activeUnsendMapping->orderedLookupReturnAddressCount;
 }
 static BOOL InUnsendLookup(void) {
 #if defined(RUIN_UNSEND_OPERATION_HOST_CHECK) && RUIN_UNSEND_OPERATION_HOST_CHECK
@@ -140,7 +117,7 @@ static NSString *MessageID(id value) {
 #else
     uintptr_t caller = (uintptr_t)__builtin_return_address(0) - atomic_load(&imageSlide);
 #endif
-    if (caller != 0x10461ef10) return actual;
+    if (!activeUnsendMapping || caller != activeUnsendMapping->parserParam1ReturnAddress) return actual;
     // This is the first field read by the verified parser, after decoding.
     // Replace, then consume this thread-local tuple at its first scoped fetch;
     // never maintain a global/time-window allowlist of message IDs.
@@ -301,7 +278,7 @@ static void InstallOperationHook(Class cls, const char *name, const char *encodi
 void RUINInstallUnsendOperation(void) {
     os_unfair_lock_lock(&installLock);
     @try {
-        BOOL valid = TargetMatches() && VerifyCode();
+        BOOL valid = VerifyCode();
         atomic_store(&codeVerified, valid);
         if (!valid) {
             if (atomic_load(&fetchStatus) != OperationHookInstalled) atomic_store(&fetchStatus, OperationHookGated);
@@ -373,6 +350,8 @@ BOOL RUINUnsendOperationHasRetainedMarker(NSDictionary *messageKey) {
 }
 NSDictionary *RUINUnsendOperationDiagnostics(void) {
     long long count = 0;
+    const RUINMessagingMapping *mapping = RUINMessagingMappingForInfo(NSBundle.mainBundle.infoDictionary);
+    const RUINUnsendOperationMapping *operationMapping = mapping ? &mapping->unsendOperation : NULL;
     os_unfair_lock_lock(&markerLock);
     @try {
         sqlite3_stmt *statement = NULL;
@@ -382,7 +361,9 @@ NSDictionary *RUINUnsendOperationDiagnostics(void) {
     } @finally { os_unfair_lock_unlock(&markerLock); }
     NSArray *statuses = @[@"pending", @"gated", @"missing_or_encoding_mismatch", @"installed"];
     return @{@"enabled":@(Enabled()), @"targetSupported":@(TargetMatches()), @"nativeCodeVerified":@(atomic_load(&codeVerified)),
-        @"codeAnchorCount":@(sizeof(anchors) / sizeof(anchors[0])),
+        @"retentionMappingSupported":@(operationMapping && operationMapping->orderedLookupReturnAddressCount != 0),
+        @"lookupScopeVerified":@(activeUnsendMapping != NULL),
+        @"codeAnchorCount":@(operationMapping ? operationMapping->parserAnchorCount : 0),
         @"fetchHook":statuses[atomic_load(&fetchStatus)], @"fetchEncoding":@"@32@0:8@16^@24",
         @"displayHook":statuses[atomic_load(&displayStatus)], @"displayEncoding":@"@16@0:8",
         @"operationParam1Hook":statuses[atomic_load(&param1Status)], @"operationParam1Encoding":@"@16@0:8",

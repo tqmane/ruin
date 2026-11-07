@@ -1,5 +1,6 @@
 %config(generator=internal);
 
+#import "TargetMetadata.h"
 #import "MessagingPrivateAPI.h"
 #import "MessageHistory.h"
 #import "Features.h"
@@ -904,9 +905,7 @@ void RUINHistoryHostCheckFlush(void) {
 #endif
 void RUINInstallMessageHistory(void) {
     NSDictionary *info = NSBundle.mainBundle.infoDictionary;
-    BOOL supported = ([NSBundle.mainBundle.bundleIdentifier isEqual:RUINTargetBundleIdentifier] ||
-        [info[@"RUINOriginalBundleIdentifier"] isEqual:RUINTargetBundleIdentifier]) &&
-        [info[@"CFBundleShortVersionString"] isEqual:RUINTargetVersion] && [info[@"CFBundleVersion"] isEqual:RUINTargetBuild];
+    BOOL supported = RUINTargetMetadataMatchesInfo(info);
     atomic_store(&retainEnabled, supported && [NSUserDefaults.standardUserDefaults boolForKey:RUINKeepUnsentMessagesKey]);
     atomic_store(&readersEnabled, supported && [NSUserDefaults.standardUserDefaults boolForKey:RUINTrackReadUsersKey]);
     if (!supported) return;

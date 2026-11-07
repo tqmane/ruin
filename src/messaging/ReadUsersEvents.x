@@ -1,5 +1,6 @@
 %config(generator=internal);
 
+#import "TargetMetadata.h"
 #import "MessagingPrivateAPI.h"
 #import "ReadUsersEvents.h"
 #import "MessageHistory.h"
@@ -31,12 +32,7 @@ static atomic_uint_fast64_t rejectedEvents, recordedEvents, bridgeFailures;
 static atomic_uint_fast64_t knownEventTimes, observationOnlyTimes;
 
 static BOOL TargetMatches(void) {
-    NSBundle *bundle = NSBundle.mainBundle;
-    NSDictionary *info = bundle.infoDictionary;
-    return ([bundle.bundleIdentifier isEqual:RUINTargetBundleIdentifier] ||
-        [info[@"RUINOriginalBundleIdentifier"] isEqual:RUINTargetBundleIdentifier]) &&
-        [info[@"CFBundleShortVersionString"] isEqual:RUINTargetVersion] &&
-        [info[@"CFBundleVersion"] isEqual:RUINTargetBuild];
+    return RUINTargetMetadataMatchesInfo(NSBundle.mainBundle.infoDictionary);
 }
 static BOOL Enabled(void) {
     return TargetMatches() && [NSUserDefaults.standardUserDefaults boolForKey:RUINTrackReadUsersKey];
@@ -354,7 +350,9 @@ int main(int argc, const char *argv[]) {
                 Check(Recorded() == before && atomic_load(&testGetterCalls) == getters, @"wrong original bundle passed gate");
                 testInfo = @{@"RUINOriginalBundleIdentifier":@"jp.naver.line", @"CFBundleShortVersionString":@"26.15.0", @"CFBundleVersion":@"2026.1006.1718"};
                 ReadOnQueue(queue, operation, payload);
-                Check(Recorded() == before && atomic_load(&testGetterCalls) == getters, @"wrong version passed gate");
+                Check(Recorded() == before + 1 && atomic_load(&testGetterCalls) > getters,
+                    @"verified structural event bridge was blocked solely by version");
+                before = Recorded();
                 testInfo = @{@"RUINOriginalBundleIdentifier":@"jp.naver.line", @"CFBundleShortVersionString":@"26.16.0", @"CFBundleVersion":@"2026.1006.1718"};
                 dispatch_queue_t concurrent = dispatch_queue_create("ruin.check-read-users-concurrent", DISPATCH_QUEUE_CONCURRENT);
                 dispatch_queue_set_specific(concurrent, &testQueueKey, &testQueueKey, NULL);

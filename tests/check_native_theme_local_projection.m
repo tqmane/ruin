@@ -1,17 +1,35 @@
 #import <Foundation/Foundation.h>
 #import <CoreData/CoreData.h>
 #import "NativeThemeLocalPolicy.h"
+#import "ThemeMappings.h"
 #include <assert.h>
+static BOOL Matches(const RUINThemeLocalPolicyMapping *mapping, const uintptr_t *PCs, size_t count) {
+ assert(mapping);
+ return RUINThemeLocalPolicyCallersMatch(mapping,PCs,count);
+}
 int main(void) { @autoreleasepool {
+ const RUINThemeMappings *mapping16=RUINThemeMappingsForHost(RUINKnownHostForVersion(@"26.16.0",@"2026.1006.1718"));
+ const RUINThemeMappings *mapping17=RUINThemeMappingsForHost(RUINKnownHostForVersion(@"26.17.0",@"2026.1103.1841"));
+ assert(mapping16&&mapping17&&mapping16->localPolicy.verified&&mapping17->localPolicy.verified);
  NSString *pid=@"9ddd1e78-ff28-4a4e-a5ce-f021b9ca9002";
  NSSet *ids=[NSSet setWithObject:pid];
  NSDictionary *local=@{@"productID":pid,@"owned":@NO,@"name":@"local",@"grantedByDefault":@YES,@"defaultOrder":@(-1)};
  NSPredicate *p=[NSPredicate predicateWithFormat:@"owned == YES AND name == %@",@"local"];
  const uintptr_t syncA[]={0x1057f9058,0x1057fdda0},syncB[]={0x1057f9058,0x1057fd5d4};
  const uintptr_t list[]={0x1057feef0,0x1057ff0c0},other[]={0x1057f9058,0x1057fe000};
- assert(RUINNativeThemeRevocationFetchPCsMatch(syncA,2)&&RUINNativeThemeRevocationFetchPCsMatch(syncB,2));
- assert(!RUINNativeThemeRevocationFetchPCsMatch(list,2)&&!RUINNativeThemeRevocationFetchPCsMatch(other,2));
- assert(!RUINNativeThemeRevocationFetchPCsMatch(syncA,1));
+ assert(Matches(&mapping16->localPolicy,syncA,2)&&Matches(&mapping16->localPolicy,syncB,2));
+ assert(!RUINNativeThemeRevocationFetchPCsMatch(syncA,2)); // Host executable is not a verified LINE image.
+ const uintptr_t sync17A[]={mapping17->localPolicy.repositoryReturnPC,mapping17->localPolicy.serverSyncReturnPCs[0]};
+ const uintptr_t sync17B[]={mapping17->localPolicy.repositoryReturnPC,mapping17->localPolicy.serverSyncReturnPCs[1]};
+ const uintptr_t readOnly17[]={mapping17->localPolicy.repositoryReturnPC,mapping17->localPolicy.readOnlyExcludedReturnPC};
+ const uintptr_t wrong17[]={mapping17->localPolicy.repositoryReturnPC,mapping17->localPolicy.serverSyncReturnPCs[0]+4};
+ const uintptr_t wrongOrder17[]={mapping17->localPolicy.serverSyncReturnPCs[0],mapping17->localPolicy.repositoryReturnPC};
+ assert(Matches(&mapping17->localPolicy,sync17A,2)&&Matches(&mapping17->localPolicy,sync17B,2));
+ assert(!RUINNativeThemeRevocationFetchPCsMatch(sync17A,2)); // Host executable is not a verified LINE image.
+ assert(!Matches(&mapping17->localPolicy,readOnly17,2));
+ assert(!Matches(&mapping17->localPolicy,wrong17,2)&&!Matches(&mapping17->localPolicy,wrongOrder17,2));
+ assert(!Matches(&mapping16->localPolicy,list,2)&&!Matches(&mapping16->localPolicy,other,2));
+ assert(!Matches(&mapping16->localPolicy,syncA,1));
  assert(![RUINNativeThemeRevocationPredicate(p,ids) evaluateWithObject:local]);
  assert(([RUINNativeThemeRevocationPredicate(p,ids) evaluateWithObject:
      @{@"productID":pid,@"owned":@YES,@"name":@"local",@"defaultOrder":@3}]));

@@ -1,5 +1,6 @@
 %config(generator=internal)
 
+#import "TargetMetadata.h"
 #import "ThemePrivateAPI.h"
 #import "NativeThemeNavigation.h"
 
@@ -60,12 +61,7 @@ static NSError *RUINNativeThemeNavigationError(RUINNativeThemeNavigationErrorCod
 
 static BOOL RUINNativeThemeNavigationTargetMatches(void)
 {
-    NSDictionary *info = NSBundle.mainBundle.infoDictionary ?: @{};
-    BOOL bundleMatches = [NSBundle.mainBundle.bundleIdentifier isEqual:@"jp.naver.line"] ||
-        [info[@"RUINOriginalBundleIdentifier"] isEqual:@"jp.naver.line"] ||
-        [info[@"CFBundleIdentifier"] isEqual:@"jp.naver.line"];
-    return bundleMatches && [info[@"CFBundleShortVersionString"] isEqual:@"26.16.0"] &&
-        [info[@"CFBundleVersion"] isEqual:@"2026.1006.1718"];
+    return RUINTargetMetadataMatchesInfo(NSBundle.mainBundle.infoDictionary);
 }
 
 static Class RUINNativeClass(NSString *name)

@@ -4,11 +4,11 @@
 #import "ReadBoundary.h"
 #import "Features.h"
 #import "../core/TargetMetadata.h"
+#import "../known/MessagingMappings.h"
 #import <CoreData/CoreData.h>
 #import <objc/runtime.h>
 #import <stdatomic.h>
 #import <mach-o/dyld.h>
-#import <mach-o/loader.h>
 
 static NSMutableDictionary *installedBoundaries;
 static NSMutableDictionary *installedImplementations;
@@ -23,31 +23,26 @@ static BOOL testNativeCaller = YES;
 void RUINBoundaryTestNativeCaller(BOOL value) { testNativeCaller = value; }
 #endif
 
-static void VerifyNativeReadSite(void) {
+static BOOL VerifyNativeReadSite(const RUINHostIdentity *host, const RUINReadBoundaryMapping *mapping) {
+    if (!host || !mapping || !mapping->anchors || !mapping->anchorCount || !mapping->callerReturnAddress) return NO;
 #if defined(RUIN_BOUNDARY_HOST_CHECK)
     nativeReadCaller = 1;
+    return YES;
 #else
-    // The only getter result we replace is the saved comparison in mark_chat.
-    // Other readers (including sync acknowledgements) see actual stored state.
     const struct mach_header_64 *header = (const void *)_dyld_get_image_header(0);
-    if (!header || header->magic != MH_MAGIC_64 || header->cputype != CPU_TYPE_ARM64 || header->sizeofcmds > 1024 * 1024) return;
-    uintptr_t slide = (uintptr_t)_dyld_get_image_vmaddr_slide(0);
-    const uint8_t *p = (const void *)(header + 1), *end = p + header->sizeofcmds;
-    for (uint32_t i = 0; i < header->ncmds && p + sizeof(struct load_command) <= end; i++) {
-        const struct load_command *command = (const void *)p;
-        if (command->cmdsize < sizeof(*command) || command->cmdsize > (size_t)(end - p)) return;
-        if (command->cmd == LC_SEGMENT_64 && command->cmdsize >= sizeof(struct segment_command_64)) {
-            const struct segment_command_64 *segment = (const void *)p;
-            if (!strcmp(segment->segname, "__TEXT") && segment->vmaddr <= 0x103e15638 &&
-                segment->vmaddr + segment->vmsize >= 0x103e15644) {
-                uint32_t words[3]; memcpy(words, (const void *)(slide + 0x103e15638), sizeof(words));
-                if (words[0] == 0xaa1603e0 && words[1] == 0x95593b59 && words[2] == 0xaa0003f5)
-                    nativeReadCaller = slide + 0x103e15640;
-                return;
-            }
-        }
-        p += command->cmdsize;
+    intptr_t slide = _dyld_get_image_vmaddr_slide(0);
+    if (!RUINVerifyHostImage(host, header) ||
+        !RUINVerifyInstructions(header, slide, mapping->anchors, mapping->anchorCount)) return NO;
+    uintptr_t address = mapping->callerReturnAddress;
+    if (slide >= 0) {
+        if (address > UINTPTR_MAX - (uintptr_t)slide) return NO;
+        nativeReadCaller = address + (uintptr_t)slide;
+    } else {
+        uintptr_t magnitude = (uintptr_t)(-(slide + 1)) + 1;
+        if (address < magnitude) return NO;
+        nativeReadCaller = address - magnitude;
     }
+    return nativeReadCaller != 0;
 #endif
 }
 
@@ -82,7 +77,7 @@ static BOOL ShouldHold(NSManagedObject *chat) {
     return YES;
 }
 
-// LINE26.16's pending-receipt producer uses this exact field comparison in
+// LINE26's pending-receipt producer uses this exact field comparison in
 // its fetch predicate. Match the AST, never user text or a broad chat query.
 static BOOL PendingComparison(NSComparisonPredicate *predicate, BOOL negate) {
     if (predicate.comparisonPredicateModifier != NSDirectPredicateModifier ||
@@ -279,11 +274,14 @@ static void InstallBoundaryAccessor(Class cls) {
 
 void RUINInstallReadBoundary(void) {
     NSDictionary *info = NSBundle.mainBundle.infoDictionary;
+    nativeReadCaller = 0;
     if (!RUINTargetMetadataMatchesInfo(info)) return;
+    const RUINHostIdentity *host = RUINKnownHostForInfo(info);
+    const RUINMessagingMapping *mapping = RUINMessagingMappingForHost(host);
+    if (!mapping || !VerifyNativeReadSite(host, &mapping->readBoundary)) return;
     @synchronized (NSManagedObjectContext.class) {
         if (!installedBoundaries) installedBoundaries = [NSMutableDictionary dictionary];
         if (!installedImplementations) installedImplementations = [NSMutableDictionary dictionary];
-        if (!nativeReadCaller) VerifyNativeReadSite();
         if (!fetchFilterInstalled) {
             Method fetch = class_getInstanceMethod(NSManagedObjectContext.class, @selector(executeFetchRequest:error:));
             NSMethodSignature *signature = fetch ? [NSMethodSignature signatureWithObjCTypes:method_getTypeEncoding(fetch)] : nil;

@@ -1,5 +1,6 @@
 %config(generator=internal)
 
+#import "TargetMetadata.h"
 #import "ThemeStoreWeb.h"
 #import "NativeThemeWorkflow.h"
 #import "../core/Localization.h"
@@ -138,14 +139,7 @@ static BOOL RUINThemeStoreWebAllowedHost(NSString *host)
 
 static BOOL RUINThemeStoreWebTargetMatches(void)
 {
-    NSBundle *bundle = NSBundle.mainBundle;
-    NSDictionary *info = bundle.infoDictionary ?: @{};
-    BOOL bundleMatches = [bundle.bundleIdentifier isEqualToString:@"jp.naver.line"] ||
-        [info[@"RUINOriginalBundleIdentifier"] isEqual:@"jp.naver.line"];
-    id version = info[@"CFBundleShortVersionString"];
-    id build = info[@"CFBundleVersion"];
-    return bundleMatches && [version isKindOfClass:NSString.class] && [version isEqual:@"26.16.0"] &&
-        [build isKindOfClass:NSString.class] && [build isEqual:@"2026.1006.1718"];
+    return RUINTargetMetadataMatchesInfo(NSBundle.mainBundle.infoDictionary);
 }
 
 static BOOL RUINThemeStoreWebAllowedURL(NSURL *URL)
