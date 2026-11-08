@@ -1,6 +1,5 @@
 #import "VersionMapping.h"
 #import "BinaryVerifier.h"
-#import <mach-o/dyld.h>
 #import <mach-o/loader.h>
 
 #define RUIN_VERSION_MAPPING_REGISTRY(X) \
@@ -62,8 +61,9 @@ const RUINVersionMapping *RUINCurrentMapping(void)
 {
     // Do not cache a miss: BundleIdentity can call during early initialization.
     NSDictionary *info = NSBundle.mainBundle.infoDictionary;
-    const struct mach_header_64 *header = (const void *)_dyld_get_image_header(0);
-    return RUINResolveMapping(info, header, YES, kVersions, sizeof(kVersions) / sizeof(*kVersions));
+    RUINMainExecutableImage image;
+    if (!RUINResolveMainExecutableImage(&image)) return NULL;
+    return RUINResolveMapping(info, image.header, YES, kVersions, sizeof(kVersions) / sizeof(*kVersions));
 }
 
 void RUINEnumerateVersionMappings(RUINVersionMappingEnumerator callback, void *context)

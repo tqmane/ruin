@@ -58,6 +58,7 @@ HOST_FIXTURES := \
 	build/check_chat_picker \
 	build/check_bundle_identity \
 	build/check_known_mappings \
+	build/check_main_image_resolver \
 	build/check_keychain \
 	build/check_sideload \
 	build/check_app_group_storage \
@@ -111,6 +112,7 @@ check-host: check-portable check-mapping-manifest $(HOST_FIXTURES)
 	./build/check_native_tab_availability
 	./build/check_bundle_identity
 	./build/check_known_mappings
+	./build/check_main_image_resolver
 	./build/check_keychain
 	./build/check_sideload
 	./build/check_app_group_storage
@@ -187,6 +189,11 @@ build/check_known_mappings: tests/check_known_mappings.m
 	mkdir -p build
 	$(HOST_CC) -fobjc-arc -fblocks $(HOST_WARNINGS) $(CPPFLAGS) \
 		tests/check_known_mappings.m -framework Foundation -o $@
+
+build/check_main_image_resolver: tests/check_main_image_resolver.m
+	mkdir -p build
+	$(HOST_CC) -fobjc-arc -fblocks $(HOST_WARNINGS) $(CPPFLAGS) \
+		tests/check_main_image_resolver.m -framework Foundation -o $@
 
 build/check_sideload: $(call source,src/platform/Sideload.m)
 	mkdir -p build
@@ -494,7 +501,7 @@ build/check_read_range_codec: $(call source,src/messaging/ReadRangeCodec.m) src/
 		tests/check_read_range_codec.m -framework Foundation -o $@
 
 build/check_native_tab_availability: $(call source,src/interface/NativeTabAvailability.m) \
-	src/interface/NativeTabAvailability.h
+	src/interface/NativeTabAvailability.h src/core/NativeFunctionPointer.h
 	mkdir -p build
 	$(HOST_CC) -DRUIN_NATIVE_TAB_AVAILABILITY_HOST_CHECK -fobjc-arc -fblocks $(HOST_WARNINGS) $(CPPFLAGS) \
 		$(call source,src/interface/NativeTabAvailability.m) -framework Foundation -o $@

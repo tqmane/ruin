@@ -3,6 +3,7 @@
 #import "TargetMetadata.h"
 #import "NativeThemeRegistration.h"
 #import "NativeThemeLocalPolicy.h"
+#import "BinaryVerifier.h"
 #import "ThemeAccountNamespace.h"
 #if !defined(RUIN_NATIVE_THEME_REGISTRATION_HOST_CHECK)
 #import "RuntimeInspector.h"
@@ -298,10 +299,12 @@ static BOOL RUINNativeServerRevocationFetch(void)
 #if defined(RUIN_NATIVE_THEME_REGISTRATION_HOST_CHECK)
     return NO;
 #else
+    RUINMainExecutableImage image;
+    if (!RUINResolveMainExecutableImage(&image)) return NO;
     void *frames[24];
     int count = backtrace(frames, 24);
-    uintptr_t base = (uintptr_t)_dyld_get_image_header(0);
-    intptr_t slide = _dyld_get_image_vmaddr_slide(0);
+    uintptr_t base = (uintptr_t)image.header;
+    intptr_t slide = image.slide;
     uintptr_t PCs[2]; NSUInteger found = 0;
     for (int i = 0; i < count && found < 2; i++) {
         uintptr_t pc = (uintptr_t)frames[i];

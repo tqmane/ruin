@@ -3,6 +3,7 @@
 #import <UIKit/UIKit.h>
 #import "Features.h"
 #import "TargetMetadata.h"
+#import "BinaryVerifier.h"
 #import "BundleIdentity.h"
 #import "Keychain.h"
 #import "Sideload.h"
@@ -119,9 +120,14 @@ NSDictionary *RUINRuntimeDiagnostics(void) {
     NSDictionary *info = RUINMainBundleInfo();
     NSDictionary *featureDiagnostics = RUINFeatureDiagnostics() ?: @{};
     NSDictionary *compatibilityDiagnostics = RUINCompatibilityDiagnostics() ?: @{};
-    const struct mach_header *mainImage = _dyld_get_image_header(0);
-    const char *imageName = _dyld_get_image_name(0);
+    RUINMainExecutableImage executable;
+    BOOL resolved = RUINResolveMainExecutableImage(&executable);
+    const struct mach_header *mainImage = resolved ? (const void *)executable.header : NULL;
+    const char *imageName = resolved ? _dyld_get_image_name(executable.imageIndex) : NULL;
     NSString *imageBasename = imageName ? [NSString stringWithUTF8String:imageName].lastPathComponent : nil;
+    const struct mach_header *imageZero = _dyld_get_image_header(0);
+    const char *imageZeroName = _dyld_get_image_name(0);
+    NSString *imageZeroBasename = imageZeroName ? [NSString stringWithUTF8String:imageZeroName].lastPathComponent : nil;
 #if defined(__arm64e__)
     NSString *loadedArchitecture = @"arm64e";
 #elif defined(__arm64__)
@@ -138,12 +144,19 @@ NSDictionary *RUINRuntimeDiagnostics(void) {
             @"signedBundleIdentifier": info[@"RUINSignedBundleIdentifier"] ?: NSNull.null,
             @"version": info[@"CFBundleShortVersionString"] ?: @"unknown",
             @"build": info[@"CFBundleVersion"] ?: @"unknown",
+            @"mainExecutableResolved": @(resolved),
+            @"machOImageIndex": resolved ? @(executable.imageIndex) : NSNull.null,
             @"machOCPUType": mainImage ? @(mainImage->cputype) : NSNull.null,
             @"machOCPUSubtype": mainImage ? @(mainImage->cpusubtype) : NSNull.null,
             @"machOFileType": mainImage ? @(mainImage->filetype) : NSNull.null,
             @"machOImageName": imageBasename ?: NSNull.null,
             @"machOUUID": RUINRuntimeImageUUID(mainImage) ?: NSNull.null,
             @"compatible": @(RUINIsCompatible())
+        },
+        @"dyldImageZero": @{
+            @"name":imageZeroBasename ?: NSNull.null,
+            @"fileType":imageZero ? @(imageZero->filetype) : NSNull.null,
+            @"uuid":RUINRuntimeImageUUID(imageZero) ?: NSNull.null
         },
         @"compatibility": compatibilityDiagnostics,
         @"bundleIdentity": RUINBundleIdentityDiagnostics(),

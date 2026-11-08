@@ -2,6 +2,7 @@
 
 #import "TargetMetadata.h"
 #import "InterfaceFeatures.h"
+#import "BinaryVerifier.h"
 
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
@@ -1330,12 +1331,14 @@ static NSMutableArray *gTabSetterTrace;
 static void RUINTraceTabSetter(UITabBarController *controller, NSArray *requested) {
     if (![NSProcessInfo.processInfo.environment[@"RUIN_ENABLE_RUNTIME_INSPECTOR"] isEqual:@"1"] ||
         gTabSetterTrace.count >= 24) return;
+    RUINMainExecutableImage image;
+    if (!RUINResolveMainExecutableImage(&image)) return;
     NSMutableArray *PCs = [NSMutableArray array];
     for (NSNumber *frame in NSThread.callStackReturnAddresses) {
         Dl_info info;
         if (dladdr((void *)frame.unsignedLongLongValue, &info) &&
-            info.dli_fbase == _dyld_get_image_header(0))
-            [PCs addObject:[NSString stringWithFormat:@"0x%llx", frame.unsignedLongLongValue - _dyld_get_image_vmaddr_slide(0)]];
+            info.dli_fbase == (const void *)image.header)
+            [PCs addObject:[NSString stringWithFormat:@"0x%llx", frame.unsignedLongLongValue - image.slide]];
     }
     if (!gTabSetterTrace) gTabSetterTrace = [NSMutableArray array];
     [gTabSetterTrace addObject:@{@"controllerClass":NSStringFromClass(controller.class),

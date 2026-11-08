@@ -4,8 +4,10 @@
 #import "InterfaceFeatures.h"
 #import "Features.h"
 #import "../core/TargetMetadata.h"
+#import "../core/NativeFunctionPointer.h"
 #include <stdatomic.h>
 #include <stdint.h>
+#include <string.h>
 
 #if !defined(RUIN_NATIVE_TAB_AVAILABILITY_HOST_CHECK)
 #import <mach/mach.h>
@@ -20,7 +22,7 @@
 // runtime data pointers; it never rewrites the IPA or executable instructions.
 typedef uint8_t (*NativeGetter)(const void *, const void *,
     void * __attribute__((swift_context))) __attribute__((swiftcall));
-static NativeGetter originals[23];
+static uintptr_t originals[23];
 static atomic_uint_fast64_t calls, filtered;
 static atomic_uint_fast64_t requiredServiceKept;
 static atomic_uint lastTimelineEvaluated = 255;
@@ -30,6 +32,7 @@ static atomic_uint observedChoices;
 static atomic_uint nativeTimeline = 255, nativeMoreKind = 255;
 static atomic_bool nativeMoreAvailable, nativeFallbackMoreAvailable;
 static atomic_int status;
+enum { UnsupportedNativePointerABI = 6 };
 #if !defined(RUIN_NATIVE_TAB_AVAILABILITY_HOST_CHECK)
 static uintptr_t menuStartVA, menuEndVA;
 #endif
@@ -79,7 +82,8 @@ static uint8_t Result(unsigned slot, uint8_t original, uint8_t result) {
     return result;
 }
 static uint8_t Original(unsigned slot, const void *metadata, const void *witness, void *context) {
-    NativeGetter getter = slot / 8 < 23 ? originals[slot / 8] : NULL;
+    uintptr_t raw = slot / 8 < 23 ? originals[slot / 8] : 0;
+    NativeGetter getter = (NativeGetter)RUINNativeFunctionPointerForCall(raw);
     uint8_t value = getter ? getter(metadata, witness, context) : 0;
     if (getter) {
         if (slot == 0x28) {
@@ -188,7 +192,6 @@ GATE(GateRefreshTWShopping,0x40)
 GATE(GateRefreshShopping,0x48)
 #undef GATE
 
-#if !defined(RUIN_NATIVE_TAB_AVAILABILITY_HOST_CHECK)
 static NativeGetter RefreshGate(unsigned slot) {
     switch (slot) {
         case 0x30: return GateRefreshVOOM;
@@ -199,7 +202,58 @@ static NativeGetter RefreshGate(unsigned slot) {
         default: return NULL;
     }
 }
-#endif
+
+static BOOL NativeWitnessPointerABISupported(const struct mach_header_64 *header,
+    const RUINNativeTabMapping *mapping) {
+    static const uint32_t plainBridge[] = {0xaa1603e0,0xaa1503e1,0xd61f0100};
+    if (!header || header->magic != MH_MAGIC_64 || header->filetype != MH_EXECUTE ||
+        header->cputype != CPU_TYPE_ARM64 || header->cpusubtype != CPU_SUBTYPE_ARM64_ALL ||
+        !mapping || mapping->status != RUINMappingStatusVerified ||
+        memcmp(mapping->bridgeWords,plainBridge,sizeof(plainBridge))) return NO;
+    for (size_t i=0;i<5;i++) {
+        if (mapping->slots[i] % 8 || mapping->slots[i]/8 >= 23) return NO;
+        const RUINNativeTabRefreshRead *read = &mapping->refreshReads[i];
+        if (!RefreshGate(read->slot) || read->slot % 8 || read->slot/8 >= 23) return NO;
+        if (read->slot == 0x50) {
+            if ((read->callWords[4] & 0xfc000000) != 0x94000000) return NO;
+        } else if (read->callWords[4] != 0xd63f0100) return NO;
+    }
+    return YES;
+}
+
+static BOOL NativeWitnessSnapshotMatches(const RUINNativeTabMapping *mapping, intptr_t slide,
+    const uintptr_t *snapshot) {
+    if (!mapping || !snapshot || snapshot[0] != (uintptr_t)(slide + mapping->firstWitnessVA) ||
+        snapshot[0xb0/8] != (uintptr_t)(slide + mapping->lastWitnessVA)) return NO;
+    for (size_t i=0;i<5;i++) {
+        if (mapping->slots[i] % 8 || mapping->slots[i]/8 >= 23 ||
+            snapshot[mapping->slots[i]/8] != (uintptr_t)(slide + mapping->getters[i])) return NO;
+        const RUINNativeTabRefreshRead *read = &mapping->refreshReads[i];
+        if (read->slot % 8 || read->slot/8 >= 23 ||
+            snapshot[read->slot/8] != (uintptr_t)(slide + read->getterVA)) return NO;
+    }
+    return YES;
+}
+
+static BOOL StoreNativeWitnessReplacements(const struct mach_header_64 *header,
+    intptr_t slide, const RUINNativeTabMapping *mapping, uintptr_t *table) {
+    if (!table || !NativeWitnessPointerABISupported(header,mapping) ||
+        !NativeWitnessSnapshotMatches(mapping,slide,table)) return NO;
+    const NativeGetter replacements[] = {GateTimeline,GateCustomizable,GateNewsRow,GateMore,GateFallbackMore};
+    for (size_t i=0;i<5;i++)
+        __atomic_store_n(&table[mapping->slots[i]/8],
+            RUINNativeFunctionPointerRaw((const void *)replacements[i]),__ATOMIC_RELEASE);
+    for (size_t i=0;i<5;i++)
+        __atomic_store_n(&table[mapping->refreshReads[i].slot/8],
+            RUINNativeFunctionPointerRaw((const void *)RefreshGate(mapping->refreshReads[i].slot)),__ATOMIC_RELEASE);
+    return YES;
+}
+
+static void RestoreNativeWitnessSlots(const RUINNativeTabMapping *mapping, uintptr_t *table) {
+    for (size_t i=0;i<5;i++) __atomic_store_n(&table[mapping->slots[i]/8],originals[mapping->slots[i]/8],__ATOMIC_RELEASE);
+    for (size_t i=0;i<5;i++) __atomic_store_n(&table[mapping->refreshReads[i].slot/8],
+        originals[mapping->refreshReads[i].slot/8],__ATOMIC_RELEASE);
+}
 
 NSArray<NSString *> *RUINObservedNativeTabChoices(void) {
     unsigned choices = atomic_load(&observedChoices);
@@ -215,6 +269,8 @@ NSArray<NSString *> *RUINObservedNativeTabChoices(void) {
 
 NSDictionary *RUINNativeTabAvailabilityDiagnostics(void) {
     return @{@"status":@(atomic_load(&status)), @"calls":@(atomic_load(&calls)),
+        @"functionPointerABI":atomic_load(&status) == UnsupportedNativePointerABI ? @"Unsupported" :
+            (atomic_load(&status) == 5 ? @"VerifiedPlainARM64" : @"Unverified"),
         @"filtered":@(atomic_load(&filtered)), @"nativeChoices":RUINObservedNativeTabChoices(),
         @"requiredServiceKept":@(atomic_load(&requiredServiceKept)),
         @"nativeTimeline":@(atomic_load(&nativeTimeline)), @"nativeMoreKind":@(atomic_load(&nativeMoreKind)),
@@ -233,30 +289,34 @@ void RUINInstallNativeTabAvailability(void) {
     dispatch_once(&once, ^{
         const RUINNativeTabMapping *mapping = &versionMapping->nativeTabs;
         if (mapping->status != RUINMappingStatusVerified) { atomic_store(&status,1); return; }
-        intptr_t slide = _dyld_get_image_vmaddr_slide(0);
-        const struct mach_header_64 *header = (const void *)_dyld_get_image_header(0);
+        RUINMainExecutableImage image;
+        if (!RUINResolveMainExecutableImage(&image)) { atomic_store(&status,1); return; }
+        intptr_t slide = image.slide;
+        const struct mach_header_64 *header = image.header;
+        if (!NativeWitnessPointerABISupported(header,mapping)) {
+            atomic_store(&status,UnsupportedNativePointerABI); return;
+        }
+        if (!RUINVerifyHostImage(&versionMapping->host,header)) { atomic_store(&status,2); return; }
         RUINInstructionAnchor bridge = {mapping->bridgeVA,3,{0}};
         memcpy(bridge.words,mapping->bridgeWords,sizeof(mapping->bridgeWords));
         int32_t cases[5];
-        NativeGetter snapshot[23];
+        uintptr_t snapshot[23];
         if (!RUINVerifyInstructions(header,slide,&bridge,1) ||
             !RUINVerifyInstructions(header,slide,&mapping->menuGenerator,1) ||
             mapping->menuGeneratorEndVA <= mapping->menuGenerator.address ||
             !RUINReadImageBytes(header,slide,mapping->caseTableVA,cases,sizeof(cases),"__TEXT") ||
             memcmp(cases,mapping->caseWords,sizeof(cases)) ||
-            !RUINReadImageBytes(header,slide,mapping->witnessTableVA,snapshot,sizeof(snapshot),"__DATA_CONST") ||
-            (uintptr_t)snapshot[0] != (uintptr_t)(slide + mapping->firstWitnessVA) ||
-            (uintptr_t)snapshot[0xb0/8] != (uintptr_t)(slide + mapping->lastWitnessVA)) { atomic_store(&status,2); return; }
-        NativeGetter replacements[] = {GateTimeline,GateCustomizable,GateNewsRow,GateMore,GateFallbackMore};
-        for (unsigned i=0;i<5;i++)
-            if (mapping->slots[i]/8 >= 23 ||
-                (uintptr_t)snapshot[mapping->slots[i]/8] != (uintptr_t)(slide + mapping->getters[i])) { atomic_store(&status,2); return; }
+            !RUINReadImageBytes(header,slide,mapping->witnessTableVA,snapshot,sizeof(snapshot),"__DATA_CONST")) {
+            atomic_store(&status,2); return;
+        }
+        if (!NativeWitnessSnapshotMatches(mapping,slide,snapshot)) {
+            atomic_store(&status,UnsupportedNativePointerABI); return;
+        }
         const size_t refreshCount = sizeof(mapping->refreshReads)/sizeof(mapping->refreshReads[0]);
         for (size_t i=0;i<refreshCount;i++) {
             const RUINNativeTabRefreshRead *read = &mapping->refreshReads[i];
             uint32_t actual[5];
             if (!RefreshGate(read->slot) || read->slot/8 >= 23 || read->returnVA < sizeof(actual) ||
-                (uintptr_t)snapshot[read->slot/8] != (uintptr_t)(slide + read->getterVA) ||
                 !RUINReadImageBytes(header,slide,read->returnVA-sizeof(actual),actual,sizeof(actual),"__TEXT") ||
                 memcmp(actual,read->callWords,sizeof(actual))) { atomic_store(&status,2); return; }
             if (read->slot == 0x50) {
@@ -272,7 +332,7 @@ void RUINInstallNativeTabAvailability(void) {
             }
         }
         memcpy(originals,snapshot,sizeof(originals));
-        NativeGetter *table = (void *)(slide + mapping->witnessTableVA);
+        uintptr_t *table = (void *)(slide + mapping->witnessTableVA);
         vm_address_t page = (vm_address_t)table & ~((vm_address_t)vm_page_size-1);
         if ((uintptr_t)table - page > vm_page_size - sizeof(originals)) { atomic_store(&status,3); return; }
         vm_address_t region = page; vm_size_t size = 0;
@@ -286,13 +346,12 @@ void RUINInstallNativeTabAvailability(void) {
             vm_protect(mach_task_self(),page,vm_page_size,FALSE,VM_PROT_READ|VM_PROT_WRITE|VM_PROT_COPY) != KERN_SUCCESS) {
             atomic_store(&status,3); return;
         }
-        for (unsigned i=0;i<5;i++) __atomic_store_n(&table[mapping->slots[i]/8],replacements[i],__ATOMIC_RELEASE);
-        for (size_t i=0;i<refreshCount;i++) __atomic_store_n(&table[mapping->refreshReads[i].slot/8],
-            RefreshGate(mapping->refreshReads[i].slot),__ATOMIC_RELEASE);
+        if (!StoreNativeWitnessReplacements(header,slide,mapping,table)) {
+            vm_protect(mach_task_self(),page,vm_page_size,FALSE,regionInfo.protection);
+            atomic_store(&status,UnsupportedNativePointerABI); return;
+        }
         if (vm_protect(mach_task_self(),page,vm_page_size,FALSE,regionInfo.protection) != KERN_SUCCESS) {
-            for (unsigned i=0;i<5;i++) __atomic_store_n(&table[mapping->slots[i]/8],originals[mapping->slots[i]/8],__ATOMIC_RELEASE);
-            for (size_t i=0;i<refreshCount;i++) __atomic_store_n(&table[mapping->refreshReads[i].slot/8],
-                originals[mapping->refreshReads[i].slot/8],__ATOMIC_RELEASE);
+            RestoreNativeWitnessSlots(mapping,table);
             vm_protect(mach_task_self(),page,vm_page_size,FALSE,regionInfo.protection);
             atomic_store(&status,4); return;
         }
@@ -326,10 +385,76 @@ static uint8_t __attribute__((swiftcall)) TestMore(const void *m,const void *w,
     void *c __attribute__((swift_context))) { (void)m;(void)w;(void)c;return 0; }
 static uint8_t __attribute__((swiftcall)) TestAvailable(const void *m,const void *w,
     void *c __attribute__((swift_context))) { (void)m;(void)w;(void)c;return 1; }
+
+static void CheckNativeWitnessPACBoundary(void) {
+    assert(RUINNativeFunctionPointerForCall(0) == NULL);
+    assert(RUINNativeFunctionPointerRaw(NULL) == 0);
+    uintptr_t rawGetter = RUINNativeFunctionPointerRaw((const void *)TestGetter);
+    NativeGetter callable = (NativeGetter)RUINNativeFunctionPointerForCall(rawGetter);
+    uint8_t yes = 1;
+    assert(callable((void *)1,(void *)2,&yes) == 1);
+    assert(RUINNativeFunctionPointerRaw((const void *)callable) == rawGetter);
+
+    struct mach_header_64 header = {.magic=MH_MAGIC_64,.filetype=MH_EXECUTE,
+        .cputype=CPU_TYPE_ARM64,.cpusubtype=CPU_SUBTYPE_ARM64_ALL};
+    RUINNativeTabMapping mapping = {.status=RUINMappingStatusVerified,
+        .bridgeWords={0xaa1603e0,0xaa1503e1,0xd61f0100},
+        .slots={0x28,0x50,0x70,0x80,0x98},
+        .refreshReads={
+            {.slot=0x30,.callWords={0,0,0,0,0xd63f0100}},
+            {.slot=0x40,.callWords={0,0,0,0,0xd63f0100}},
+            {.slot=0x48,.callWords={0,0,0,0,0xd63f0100}},
+            {.slot=0x70,.callWords={0,0,0,0,0xd63f0100}},
+            {.slot=0x50,.callWords={0,0,0,0,0x94000000}}}};
+    uintptr_t table[23], snapshot[23];
+    for (size_t i=0;i<23;i++) table[i]=rawGetter;
+    table[0]=UINT64_C(0xf123456789abcdef); // Non-callable metadata bits must survive unchanged.
+    memcpy(snapshot,table,sizeof(snapshot));
+    memcpy(originals,snapshot,sizeof(originals));
+    mapping.firstWitnessVA=snapshot[0]; mapping.lastWitnessVA=snapshot[22];
+    for (size_t i=0;i<5;i++) {
+        mapping.getters[i]=rawGetter;
+        mapping.refreshReads[i].getterVA=rawGetter;
+    }
+    assert(NativeWitnessPointerABISupported(&header,&mapping));
+    assert(NativeWitnessSnapshotMatches(&mapping,0,snapshot));
+    assert(StoreNativeWitnessReplacements(&header,0,&mapping,table));
+    assert(table[0] == snapshot[0] && !memcmp(originals,snapshot,sizeof(snapshot)));
+    assert(table[0x28/8] == RUINNativeFunctionPointerRaw((const void *)GateTimeline));
+    assert(table[0x30/8] == RUINNativeFunctionPointerRaw((const void *)GateRefreshVOOM));
+    callable=(NativeGetter)RUINNativeFunctionPointerForCall(table[0x28/8]);
+    recoveryMode=YES;
+    assert(callable((void *)1,(void *)2,&yes) == 1);
+    recoveryMode=NO;
+    RestoreNativeWitnessSlots(&mapping,table);
+    assert(!memcmp(table,snapshot,sizeof(table)));
+
+    header.cpusubtype=CPU_SUBTYPE_ARM64E;
+    assert(!StoreNativeWitnessReplacements(&header,0,&mapping,table));
+    header.cpusubtype=123;
+    assert(!StoreNativeWitnessReplacements(&header,0,&mapping,table));
+    header.cpusubtype=CPU_SUBTYPE_ARM64_ALL;
+    header.filetype=MH_DYLIB;
+    assert(!StoreNativeWitnessReplacements(&header,0,&mapping,table));
+    header.filetype=MH_EXECUTE;
+    mapping.refreshReads[0].callWords[4]=0xd63f091f; // BLRAAZ is not a plain ARM64 reader.
+    assert(!StoreNativeWitnessReplacements(&header,0,&mapping,table));
+    mapping.refreshReads[0].callWords[4]=0xd63f0100;
+    mapping.bridgeWords[2]=0xd61f091f;
+    assert(!StoreNativeWitnessReplacements(&header,0,&mapping,table));
+    assert(!memcmp(table,snapshot,sizeof(table)) && !memcmp(originals,snapshot,sizeof(snapshot)));
+    mapping.bridgeWords[2]=0xd61f0100;
+    table[0x28/8] ^= UINT64_C(1) << 56;
+    uintptr_t encodedTable[23]; memcpy(encodedTable,table,sizeof(table));
+    assert(!StoreNativeWitnessReplacements(&header,0,&mapping,table));
+    assert(!memcmp(table,encodedTable,sizeof(table)) && !memcmp(originals,snapshot,sizeof(snapshot)));
+}
+
 int main(void) { @autoreleasepool {
-    for (unsigned i=0;i<23;i++) originals[i]=TestGetter;
-    originals[0x78/8]=TestMore;
-    originals[0x80/8]=TestAvailable; originals[0x98/8]=TestAvailable; originals[0xa0/8]=TestAvailable;
+    CheckNativeWitnessPACBoundary();
+    for (unsigned i=0;i<23;i++) originals[i]=RUINNativeFunctionPointerRaw((const void *)TestGetter);
+    originals[0x78/8]=RUINNativeFunctionPointerRaw((const void *)TestMore);
+    originals[0x80/8]=originals[0x98/8]=originals[0xa0/8]=RUINNativeFunctionPointerRaw((const void *)TestAvailable);
     uint8_t yes=1,square=TimelineSquare,shopping=TimelineShopping,
         twShopping=TimelineTWShopping,none=TimelineNone;
     menuScopeVerified = YES;
@@ -337,7 +462,7 @@ int main(void) { @autoreleasepool {
         RUINHideShoppingTabDefaultsKey:@YES, RUINHideAppsTabDefaultsKey:@YES, RUINHideVOOMTabDefaultsKey:@YES,
         RUINHideNewsCallTabsDefaultsKey:@YES, RUINHideSettingsTabDefaultsKey:@YES} forName:NSArgumentDomain];
     // Factories retain actual services while the menu hides both optional slots.
-    originals[0x78/8]=TestAvailable;
+    originals[0x78/8]=RUINNativeFunctionPointerRaw((const void *)TestAvailable);
     testMenuCaller = NO;
     assert(GateTimeline((void *)1,(void *)2,&shopping)==TimelineShopping);
     assert(GateMore((void *)1,(void *)2,&yes)==1);
@@ -372,6 +497,6 @@ int main(void) { @autoreleasepool {
     recoveryMode = NO;
     assert([RUINObservedNativeTabChoices() containsObject:@"shopping"]);
     assert([RUINObservedNativeTabChoices() containsObject:@"apps"]);
-    puts("PASS native scalar tab gates preserve original availability and Swift self forwarding");
+    puts("PASS native scalar tab gates, raw witness rollback, unsupported ABI rejection and Swift self forwarding");
 } return 0; }
 #endif

@@ -1,6 +1,7 @@
 %config(generator=internal);
 
 #import "RuntimeInspector.h"
+#import "BinaryVerifier.h"
 
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
@@ -194,9 +195,11 @@ static NSArray *RUINThemeControllerMetadata(UIViewController *controller) {
 }
 
 static NSArray *RUINNativeReturnPCs(void) {
+    RUINMainExecutableImage image;
+    if (!RUINResolveMainExecutableImage(&image)) return @[];
     void *frames[32]; int count = backtrace(frames, 32);
-    uintptr_t base = (uintptr_t)_dyld_get_image_header(0);
-    intptr_t slide = _dyld_get_image_vmaddr_slide(0);
+    uintptr_t base = (uintptr_t)image.header;
+    intptr_t slide = image.slide;
     NSMutableArray *PCs = [NSMutableArray array];
     for (int i = 0; i < count; i++) {
         uintptr_t pc = (uintptr_t)frames[i];

@@ -26,7 +26,7 @@ def main():
                '-Wall', '-Wextra', '-Werror', '-DRUIN_HOST_CHECK=1', '-I' + str(OUT), '-Itests']
     command.extend('-I' + str(path) for path in sorted({header.parent.relative_to(ROOT)
                    for header in (ROOT / 'src').glob('*/*.h')}))
-    command.extend(['tests/check_secondary_login.m', '-framework', 'Foundation',
+    command.extend(['tests/check_secondary_login.m', 'src/known/BinaryVerifier.m', '-framework', 'Foundation',
                     '-framework', 'CoreGraphics', '-o', str(executable)])
     (OUT / 'compile-command.json').write_text(json.dumps(command, indent=2) + '\n')
     subprocess.run(command, cwd=ROOT, check=True)

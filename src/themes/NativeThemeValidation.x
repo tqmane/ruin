@@ -19,6 +19,7 @@
 static BOOL gInstalled;
 static atomic_uint_fast64_t gCalls, gOverrides;
 static const RUINThemeMappings *gThemeMappings;
+static intptr_t gThemeImageSlide;
 
 static BOOL Result(BOOL original, uintptr_t returnPC, BOOL registered,
     const RUINThemeValidationMapping *mapping)
@@ -46,7 +47,7 @@ static uintptr_t RUINThemeValidationCanonicalIMP(IMP implementation)
 #if __has_feature(ptrauth_calls)
     pc = (uintptr_t)ptrauth_strip((void *)pc, ptrauth_key_return_address);
 #endif
-    pc -= _dyld_get_image_vmaddr_slide(0);
+    pc -= gThemeImageSlide;
     if (original || !gThemeMappings || pc != gThemeMappings->validation.resultReturnPC) return original;
     NSString *productID = [NSUserDefaults.standardUserDefaults stringForKey:@"app.ruin.theme.appliedProductID"];
     BOOL value = Result(original, pc, RUINIsRegisteredNativeThemeID(productID),
@@ -70,8 +71,10 @@ void RUINInstallNativeThemeValidation(void)
 #endif
     const RUINThemeMappings *mapping = versionMapping ? &versionMapping->themes : NULL;
     if (!mapping || mapping->validation.status != RUINMappingStatusVerified) return;
-    const struct mach_header_64 *header = (const void *)_dyld_get_image_header(0);
-    intptr_t slide = _dyld_get_image_vmaddr_slide(0);
+    RUINMainExecutableImage image;
+    if (!RUINResolveMainExecutableImage(&image)) return;
+    const struct mach_header_64 *header = image.header;
+    intptr_t slide = image.slide;
     char logString[sizeof("validateTheme result:")];
     if (!RUINVerifyInstructions(header, slide, mapping->validation.anchors,
             mapping->validation.anchorCount) ||
@@ -84,6 +87,7 @@ void RUINInstallNativeThemeValidation(void)
         RUINThemeValidationCanonicalIMP(method_getImplementation(method)) !=
             mapping->validation.resultMethodIMP + slide) return;
     gThemeMappings = mapping;
+    gThemeImageSlide = slide;
     %init(RUINNativeThemeValidation, LineShopProductValidationResult=cls);
     gInstalled = YES;
 }
