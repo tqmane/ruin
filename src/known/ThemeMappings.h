@@ -10,13 +10,22 @@ typedef struct {
     size_t anchorCount;
 } RUINThemeShopNavigationMapping;
 
+typedef struct RUINThemeShopReturnChain {
+    const uintptr_t *returnPCs;
+    size_t returnPCCount;
+} RUINThemeShopReturnChain;
+
 typedef struct {
-    RUINMappingStatus status;
+    RUINMappingStatus status; // complete eligibility feature support for existing consumers
+    RUINMappingStatus nativeReadAdapterStatus;
+    RUINMappingStatus shopSchemeScopeStatus;
     uintptr_t modeReturnPC;
     uintptr_t accountReturnPC;
     uintptr_t modeCopyReturnPC;
     uintptr_t preflightAccountReturnPC;
     uintptr_t accountChain[3];
+    const RUINThemeShopReturnChain *accountChainAlternatives;
+    size_t accountChainAlternativeCount;
     uintptr_t stylesheetEligibilityReturnPC;
     uintptr_t stylesheetSaveReturnPC;
     uintptr_t capabilityReturnPC;

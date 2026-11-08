@@ -38,6 +38,8 @@ int main(void) { @autoreleasepool {
         current->host.supportStatus == RUINMappingStatusUnverified);
     assert(old->themes.shopEligibility.status == RUINMappingStatusVerified &&
         current->themes.shopEligibility.status == RUINMappingStatusUnsupported);
+    assert(current->themes.shopEligibility.nativeReadAdapterStatus == RUINMappingStatusVerified &&
+        current->themes.shopEligibility.shopSchemeScopeStatus == RUINMappingStatusUnverified);
     assert(current->messaging.unsendOperation.parserStatus == RUINMappingStatusVerified &&
         current->messaging.unsendOperation.lookupStatus == RUINMappingStatusVerified &&
         current->messaging.unsendOperation.orderedLookupReturnAddressCount == 6);

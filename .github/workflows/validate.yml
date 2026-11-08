@@ -21,17 +21,20 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - name: Build arm64 iOS dylib
+      - name: Build arm64+arm64e iOS dylib
         run: make -j4 all
       - name: Run macOS host fixtures
         run: make -j4 check-host
-      - name: Verify real injection and signing on a synthetic executable
-        run: make check-packaging
-      - name: Check dylib architecture and dependencies
+      - name: Verify real arm64+arm64e dylib
         run: |
-          lipo build/RUIN.dylib -verify_arch arm64
+          arches="$(lipo build/RUIN.dylib -archs)"
+          python3 -c 'import sys; a=sys.argv[1].split(); e={"arm64", "arm64e"}; assert len(a)==2 and set(a)==e, a' "$arches"
+          lipo build/RUIN.dylib -verify_arch arm64 arm64e
+          codesign --verify --strict build/RUIN.dylib
           otool -L build/RUIN.dylib
           if otool -L build/RUIN.dylib | grep -Ei 'substrate|libhooker'; then
             echo 'RUIN must not require an external hook runtime.'
             exit 1
           fi
+      - name: Verify packaging tools with real build and synthetic fat fixture
+        run: make check-packaging

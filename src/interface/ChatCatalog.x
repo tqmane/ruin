@@ -35,6 +35,8 @@ typedef NS_ENUM(NSInteger, RUINChatCatalogInstallStatus) {
 @interface RUINChatCatalogContextSnapshot : NSObject
 @property(nonatomic, strong) NSManagedObjectContext *context;
 @property(nonatomic) RUINChatCatalogSchema schema;
+@property(nonatomic, copy) NSString *accountNamespace;
+@property(nonatomic, copy) NSURL *storeURL;
 @property(nonatomic, copy) NSArray<NSDictionary *> *chats;
 @property(nonatomic, copy) NSArray<NSDictionary *> *squares;
 @property(nonatomic, copy) NSArray<NSDictionary *> *users;
@@ -52,17 +54,22 @@ static atomic_uint_fast64_t gChatCatalogFetches = ATOMIC_VAR_INIT(0);
 static atomic_uint_fast64_t gChatCatalogLoads = ATOMIC_VAR_INIT(0);
 static atomic_uint_fast64_t gChatCatalogItems = ATOMIC_VAR_INIT(0);
 
-static NSString *RUINCurrentChatCatalogAccount(void)
+static BOOL RUINChatCatalogAccountIsValid(id value)
 {
-    id value = [[[NSUserDefaults alloc] initWithSuiteName:RUINChatCatalogSuite] objectForKey:@"mid"];
     if (![value isKindOfClass:NSString.class] || [(NSString *)value length] != 33 ||
-        ![(NSString *)value hasPrefix:@"u"]) return nil;
+        ![(NSString *)value hasPrefix:@"u"]) return NO;
     NSString *mid = value;
     for (NSUInteger index = 1; index < mid.length; index++) {
         unichar character = [mid characterAtIndex:index];
-        if (!((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f'))) return nil;
+        if (!((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f'))) return NO;
     }
-    return [mid copy];
+    return YES;
+}
+
+static NSString *RUINCurrentChatCatalogAccount(void)
+{
+    id value = [[[NSUserDefaults alloc] initWithSuiteName:RUINChatCatalogSuite] objectForKey:@"mid"];
+    return RUINChatCatalogAccountIsValid(value) ? [value copy] : nil;
 }
 
 NSString *RUINChatCatalogAccount(void)
@@ -70,18 +77,25 @@ NSString *RUINChatCatalogAccount(void)
     return RUINCurrentChatCatalogAccount() ?: @"";
 }
 
-static BOOL RUINStoreURLMatchesAccount(NSURL *url, NSString *account)
+static NSString *RUINStoreURLAccountNamespace(NSURL *url, NSString *account)
 {
-    if (!url.isFileURL || account.length != 33) return NO;
+    if (!url.isFileURL || !RUINChatCatalogAccountIsValid(account)) return nil;
     NSArray<NSString *> *parts = url.URLByStandardizingPath.path.pathComponents;
-    NSString *expected = [@"S_" stringByAppendingString:account];
-    NSUInteger found = NSNotFound;
+    NSString *primary = [@"P_" stringByAppendingString:account];
+    NSString *secondary = [@"S_" stringByAppendingString:account];
+    NSString *found = nil;
     for (NSUInteger index = 0; index + 2 < parts.count; index++) {
         if (![parts[index] isEqualToString:@"PrivateStore"]) continue;
-        if (found != NSNotFound || ![parts[index + 1] isEqualToString:expected]) return NO;
-        found = index;
+        NSString *component = parts[index + 1];
+        if (found || (![component isEqualToString:primary] && ![component isEqualToString:secondary])) return nil;
+        found = component;
     }
-    return found != NSNotFound;
+    return found;
+}
+
+static BOOL RUINStoreURLMatchesAccount(NSURL *url, NSString *account)
+{
+    return RUINStoreURLAccountNamespace(url, account) != nil;
 }
 
 static BOOL RUINContextMatchesAccount(NSManagedObjectContext *context, NSString *account)
@@ -90,9 +104,21 @@ static BOOL RUINContextMatchesAccount(NSManagedObjectContext *context, NSString 
                      context.concurrencyType != NSMainQueueConcurrencyType)) return NO;
     NSPersistentStoreCoordinator *coordinator = context.persistentStoreCoordinator;
     NSArray<NSPersistentStore *> *stores = coordinator.persistentStores;
-    if (stores.count == 0) return NO;
-    for (NSPersistentStore *store in stores)
-        if (!RUINStoreURLMatchesAccount(store.URL, account)) return NO;
+    return stores.count == 1 && RUINStoreURLMatchesAccount(stores.firstObject.URL, account);
+}
+
+static BOOL RUINCatalogSnapshotsAreUnambiguous(NSArray<RUINChatCatalogContextSnapshot *> *snapshots)
+{
+    NSString *accountNamespace = nil;
+    NSMutableDictionary<NSNumber *, NSURL *> *storesBySchema = [NSMutableDictionary dictionary];
+    for (RUINChatCatalogContextSnapshot *snapshot in snapshots) {
+        if (!snapshot.accountNamespace.length || !snapshot.storeURL.isFileURL ||
+            (accountNamespace && ![accountNamespace isEqualToString:snapshot.accountNamespace])) return NO;
+        accountNamespace = snapshot.accountNamespace;
+        NSURL *previous = storesBySchema[@(snapshot.schema)];
+        if (previous && ![previous isEqual:snapshot.storeURL]) return NO;
+        storesBySchema[@(snapshot.schema)] = snapshot.storeURL;
+    }
     return YES;
 }
 
@@ -487,9 +513,13 @@ void RUINLoadChatCatalog(void (^completion)(NSArray<NSDictionary *> *items, NSSt
             [context performBlock:^{
                 RUINChatCatalogSchema schema = RUINChatCatalogSchemaUnknown;
                 NSArray *chats = @[], *squares = @[];
+                NSString *accountNamespace = nil;
+                NSURL *storeURL = nil;
                 @try {
                     if ([RUINCurrentChatCatalogAccount() isEqualToString:account] &&
                         RUINContextMatchesAccount(context, account)) {
+                        storeURL = context.persistentStoreCoordinator.persistentStores.firstObject.URL.URLByStandardizingPath;
+                        accountNamespace = RUINStoreURLAccountNamespace(storeURL, account);
                         schema = RUINSchemaForModel(context.persistentStoreCoordinator.managedObjectModel);
                         if (schema == RUINChatCatalogSchemaTalk) chats = RUINReadTalkChats(context, account);
                         else if (schema == RUINChatCatalogSchemaSquare) squares = RUINReadSquareChats(context, account);
@@ -499,11 +529,15 @@ void RUINLoadChatCatalog(void (^completion)(NSArray<NSDictionary *> *items, NSSt
                     chats = @[]; squares = @[];
                 }
                 NSArray *copiedChats = [chats copy], *copiedSquares = [squares copy];
+                NSString *copiedNamespace = [accountNamespace copy];
+                NSURL *copiedStoreURL = [storeURL copy];
                 dispatch_async(queue, ^{
                     if (schema != RUINChatCatalogSchemaUnknown) {
                         RUINChatCatalogContextSnapshot *snapshot = [RUINChatCatalogContextSnapshot new];
                         snapshot.context = context;
                         snapshot.schema = schema;
+                        snapshot.accountNamespace = copiedNamespace;
+                        snapshot.storeURL = copiedStoreURL;
                         snapshot.chats = copiedChats;
                         snapshot.squares = copiedSquares;
                         snapshot.users = @[];
@@ -520,6 +554,10 @@ void RUINLoadChatCatalog(void (^completion)(NSArray<NSDictionary *> *items, NSSt
                 RUINCompleteChatCatalog(completion, @[], RUINCurrentChatCatalogAccount() ?: @"");
                 return;
             }
+            if (!RUINCatalogSnapshotsAreUnambiguous(snapshots)) {
+                RUINCompleteChatCatalog(completion, @[], account);
+                return;
+            }
             NSArray<NSString *> *userIDs = RUINSortedIdentifiers(snapshots, YES);
             NSArray<NSString *> *groupIDs = RUINSortedIdentifiers(snapshots, NO);
             dispatch_group_t secondPass = dispatch_group_create();
@@ -533,7 +571,9 @@ void RUINLoadChatCatalog(void (^completion)(NSArray<NSDictionary *> *items, NSSt
                     NSArray *users = @[], *groups = @[];
                     @try {
                         if ([RUINCurrentChatCatalogAccount() isEqualToString:account] &&
-                            RUINContextMatchesAccount(snapshot.context, account)) {
+                            RUINContextMatchesAccount(snapshot.context, account) &&
+                            [snapshot.context.persistentStoreCoordinator.persistentStores.firstObject.URL.URLByStandardizingPath
+                                isEqual:snapshot.storeURL]) {
                             NSManagedObjectModel *model = snapshot.context.persistentStoreCoordinator.managedObjectModel;
                             if (readUsers && RUINSchemaForModel(model) == snapshot.schema) {
                                 users = RUINReadUsers(snapshot.context, account, userIDs,
@@ -683,15 +723,55 @@ static NSEntityDescription *RUINFixtureEntity(NSString *name, NSString *classNam
     return entity;
 }
 
+static NSManagedObjectContext *RUINFixtureContext(NSManagedObjectModel *model, NSArray<NSURL *> *urls)
+{
+    NSPersistentStoreCoordinator *coordinator = [[NSPersistentStoreCoordinator alloc] initWithManagedObjectModel:model];
+    for (NSURL *url in urls) {
+        NSError *error = nil;
+        NSPersistentStore *store = [coordinator addPersistentStoreWithType:NSInMemoryStoreType
+            configuration:nil URL:url options:nil error:&error];
+        assert(store && !error && [store.URL isEqual:url]);
+    }
+    NSManagedObjectContext *context = [[NSManagedObjectContext alloc] initWithConcurrencyType:NSPrivateQueueConcurrencyType];
+    context.persistentStoreCoordinator = coordinator;
+    return context;
+}
+
+static BOOL RUINFixtureContextMatches(NSManagedObjectContext *context, NSString *account)
+{
+    __block BOOL matches = NO;
+    [context performBlockAndWait:^{ matches = RUINContextMatchesAccount(context, account); }];
+    return matches;
+}
+
+static RUINChatCatalogContextSnapshot *RUINFixtureSnapshot(NSManagedObjectContext *context,
+    NSString *account, RUINChatCatalogSchema schema)
+{
+    RUINChatCatalogContextSnapshot *snapshot = [RUINChatCatalogContextSnapshot new];
+    [context performBlockAndWait:^{
+        assert(RUINContextMatchesAccount(context, account));
+        snapshot.context = context;
+        snapshot.schema = schema;
+        snapshot.storeURL = context.persistentStoreCoordinator.persistentStores.firstObject.URL.URLByStandardizingPath;
+        snapshot.accountNamespace = RUINStoreURLAccountNamespace(snapshot.storeURL, account);
+    }];
+    return snapshot;
+}
+
 int main(void)
 {
     @autoreleasepool {
         NSString *mid = @"u0123456789abcdef0123456789abcdef";
-        NSURL *native = [NSURL fileURLWithPath:[NSString stringWithFormat:@"/container/PrivateStore/S_%@/Line.sqlite", mid]];
-        NSURL *other = [NSURL fileURLWithPath:@"/container/PrivateStore/S_u11111111111111111111111111111111/Line.sqlite"];
-        assert(RUINStoreURLMatchesAccount(native, mid));
-        assert(!RUINStoreURLMatchesAccount(other, mid));
+        NSString *otherMID = @"u11111111111111111111111111111111";
+        assert(RUINChatCatalogAccountIsValid(mid));
+        assert(!RUINChatCatalogAccountIsValid(nil) && !RUINChatCatalogAccountIsValid(NSNull.null));
+        assert(!RUINChatCatalogAccountIsValid(@33) && !RUINChatCatalogAccountIsValid([@"P_" stringByAppendingString:mid]));
+        assert(!RUINChatCatalogAccountIsValid(mid.uppercaseString));
+        assert(!RUINChatCatalogAccountIsValid([mid stringByReplacingCharactersInRange:NSMakeRange(32, 1) withString:@"g"]));
         assert(!RUINStoreURLMatchesAccount([NSURL fileURLWithPath:@"/container/PrivateStore/Line.sqlite"], mid));
+        assert(!RUINStoreURLMatchesAccount([NSURL URLWithString:@"https://example.invalid/PrivateStore/Line.sqlite"], mid));
+        NSMutableArray<RUINChatCatalogContextSnapshot *> *talkSnapshots = [NSMutableArray array];
+        NSMutableArray<RUINChatCatalogContextSnapshot *> *userSnapshots = [NSMutableArray array];
 
         NSEntityDescription *user = RUINFixtureEntity(@"User", @"ManagedUser", RUINTalkUserTypes());
         NSEntityDescription *chat = RUINFixtureEntity(@"Chat", @"ManagedChat", @{
@@ -706,6 +786,44 @@ int main(void)
         talkModel.entities = @[chat, user];
         assert(RUINSchemaForModel(talkModel) == RUINChatCatalogSchemaTalk);
 
+        for (NSString *role in @[@"P_", @"S_"]) {
+            NSString *account = [role stringByAppendingString:mid];
+            NSURL *native = [NSURL fileURLWithPath:[NSString stringWithFormat:@"/container/PrivateStore/%@/Messages/Line.sqlite", account]];
+            NSURL *other = [NSURL fileURLWithPath:[NSString stringWithFormat:@"/container/PrivateStore/%@%@/Messages/Line.sqlite", role, otherMID]];
+            assert(RUINStoreURLMatchesAccount(native, mid));
+            assert([RUINStoreURLAccountNamespace(native, mid) isEqual:account]);
+            assert(!RUINStoreURLMatchesAccount(native, otherMID));
+            assert(!RUINStoreURLMatchesAccount(other, mid));
+            assert(!RUINStoreURLMatchesAccount(native, @"u0123456789abcdef0123456789abcdeg"));
+            for (NSString *path in @[
+                [NSString stringWithFormat:@"/container/PrivateStoreCopy/%@/Line.sqlite", account],
+                [NSString stringWithFormat:@"/container/PrivateStore/X%@/Line.sqlite", account],
+                [NSString stringWithFormat:@"/container/PrivateStore/%@suffix/Line.sqlite", account],
+                [NSString stringWithFormat:@"/container/PrivateStore/%@/%@/PrivateStore/%@/Line.sqlite", account, role, account]])
+                assert(!RUINStoreURLMatchesAccount([NSURL fileURLWithPath:path], mid));
+
+            NSManagedObjectContext *context = RUINFixtureContext(talkModel, @[native]);
+            assert(RUINFixtureContextMatches(context, mid));
+            assert(!RUINFixtureContextMatches(context, otherMID));
+            assert(!RUINFixtureContextMatches(RUINFixtureContext(talkModel, @[]), mid));
+            assert(!RUINFixtureContextMatches(RUINFixtureContext(talkModel, @[native, other]), mid));
+            NSURL *alternate = [native.URLByDeletingLastPathComponent URLByAppendingPathComponent:@"Other.sqlite"];
+            assert(!RUINFixtureContextMatches(RUINFixtureContext(talkModel, @[native, alternate]), mid));
+
+            RUINChatCatalogContextSnapshot *talk = RUINFixtureSnapshot(context, mid, RUINChatCatalogSchemaTalk);
+            RUINChatCatalogContextSnapshot *same = RUINFixtureSnapshot(RUINFixtureContext(talkModel, @[native]), mid, RUINChatCatalogSchemaTalk);
+            RUINChatCatalogContextSnapshot *ambiguous = RUINFixtureSnapshot(RUINFixtureContext(talkModel, @[alternate]), mid, RUINChatCatalogSchemaTalk);
+            NSURL *userURL = [native.URLByDeletingLastPathComponent.URLByDeletingLastPathComponent URLByAppendingPathComponent:@"User/User.sqlite"];
+            RUINChatCatalogContextSnapshot *userSnapshot = RUINFixtureSnapshot(RUINFixtureContext(talkModel, @[userURL]), mid, RUINChatCatalogSchemaStandaloneUser);
+            assert(RUINCatalogSnapshotsAreUnambiguous(@[talk, same, userSnapshot]));
+            assert(!RUINCatalogSnapshotsAreUnambiguous(@[talk, ambiguous]));
+            [talkSnapshots addObject:talk]; [userSnapshots addObject:userSnapshot];
+        }
+        assert(!RUINFixtureContextMatches(RUINFixtureContext(talkModel,
+            @[talkSnapshots[0].storeURL, talkSnapshots[1].storeURL]), mid));
+        assert(!RUINCatalogSnapshotsAreUnambiguous(talkSnapshots));
+        assert(!RUINCatalogSnapshotsAreUnambiguous(@[talkSnapshots[0], userSnapshots[1]]));
+
         NSArray *joined = RUINJoinCatalogRows(@[
             @{@"mid":mid, @"oneOnOne":@YES, @"updated":[NSDate dateWithTimeIntervalSince1970:20]},
             @{@"mid":@"group-id", @"oneOnOne":@NO, @"updated":[NSDate dateWithTimeIntervalSince1970:10]}], @[], @[
@@ -717,6 +835,9 @@ int main(void)
         assert([joined[0][@"name"] isEqual:@"Native user"]);
         assert([joined[1][@"aliasKey"] isEqual:@"group:group-id"]);
         assert([joined[1][@"kind"] isEqual:@"group"]);
+        assert(RUINJoinCatalogRows(@[@{@"mid":mid, @"oneOnOne":@NO,
+            @"updated":NSDate.date}], @[], @[@{@"identifier":mid, @"name":@"Wrong kind"}], @[]).count == 0);
+        puts("PASS P_/S_ exact current-MID stores, strict MID shape, foreign/lookalike rejection, unique store/context role isolation, and chat/user/group identity joins");
     }
     return 0;
 }

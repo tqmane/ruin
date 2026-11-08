@@ -62,6 +62,39 @@ static NSArray *RUINThemeStoredFields(id object) {
     return [fields subarrayWithRange:NSMakeRange(0, MIN(fields.count, 48))];
 }
 
+// Read stored metadata only. In particular, never initialize a lazy property
+// or invoke a discovered factory while collecting this opt-in snapshot.
+static NSArray *RUINFactoryFieldMetadata(id owner, NSArray<NSString *> *paths) {
+    NSMutableArray *rows = [NSMutableArray array];
+    for (NSString *path in paths) {
+        NSString *type = path.length ? RUINCopySwiftFieldTypeName(owner, path.UTF8String) : nil;
+        BOOL present = path.length ? type != nil : owner != nil;
+        NSMutableDictionary *row = [@{@"path":path.length ? path : @"self",
+            @"present":@(present)} mutableCopy];
+        if (!path.length) row[@"class"] = RUINClassName(owner);
+        if (type) row[@"type"] = type;
+        // Keep the original owner/path: boxing a Swift struct as __SwiftValue
+        // loses its stored-field metadata and can bridge entire collections.
+        if (present) {
+            NSArray *fields = RUINCopySwiftFieldInfo(owner, path.length ? path.UTF8String : NULL) ?: @[];
+            row[@"fields"] = [fields subarrayWithRange:NSMakeRange(0, MIN(fields.count, 48))];
+        }
+        [rows addObject:row];
+    }
+    return rows;
+}
+
+static NSArray *RUINSettingsFactoryMetadata(UIViewController *controller) {
+    NSString *name = RUINClassName(controller);
+    if (![name hasPrefix:@"LINE."] && ![name hasPrefix:@"Line"] && ![name hasPrefix:@"NL"]) return @[];
+    if ([name rangeOfString:@"settings" options:NSCaseInsensitiveSearch].location == NSNotFound &&
+        [name rangeOfString:@"theme" options:NSCaseInsensitiveSearch].location == NSNotFound) return @[];
+    return RUINFactoryFieldMetadata(controller, @[@"", @"viewModel", @"dependency", @"dependencies",
+        @"viewModel.viewControllerFactory", @"viewModel.sections", @"viewModel.cellConfigurators",
+        @"viewModel.cellConfiguratorsMap", @"createThemeEditPage", @"openThemeShopPage",
+        @"openThemeDetail", @"changeCycleSettingModelComposer"]);
+}
+
 static NSDictionary *RUINThemePackageMetadata(id package) {
     if (![RUINClassName(package) isEqual:@"LineShopThemeInterface.ThemePackage"]) return @{};
     NSMutableDictionary *result = [@{@"class":RUINClassName(package), @"fields":RUINThemeStoredFields(package)} mutableCopy];
@@ -347,6 +380,7 @@ static void RUINAppendController(UIViewController *controller, NSUInteger depth,
         @"viewInteractionEnabled":@(controller.viewIfLoaded.userInteractionEnabled),
         @"readControllerMetadata":RUINReadControllerMetadata(controller),
         @"localFeatureMetadata":RUINLocalFeatureControllerMetadata(controller),
+        @"settingsFactoryMetadata":RUINSettingsFactoryMetadata(controller),
         @"themeControllerMetadata":RUINThemeControllerMetadata(controller)}];
 
     if (controller.presentedViewController)
@@ -637,6 +671,42 @@ static void RUINAppendView(UIView *view, NSUInteger depth, NSMutableArray *views
     }
 }
 
+static void RUINAppendBannerGeometry(UIView *view, NSUInteger depth, NSUInteger *visited,
+                                    NSMutableArray *rows) {
+    if (!view || depth > kMaxViewDepth || (*visited)++ >= kMaxViews || rows.count >= 64) return;
+    NSString *name = RUINClassName(view);
+    BOOL banner = [name hasPrefix:@"LineSmartCh."] || [name containsString:@"TopBannerBoxView"];
+    if (view.hidden && !banner) return;
+    if (banner) {
+        NSMutableArray *ancestors = [NSMutableArray array], *heights = [NSMutableArray array];
+        for (UIView *parent = view.superview; parent && ancestors.count < 8; parent = parent.superview) {
+            NSMutableDictionary *entry = [@{@"class":RUINClassName(parent),
+                @"frame":NSStringFromCGRect(parent.frame), @"hidden":@(parent.hidden)} mutableCopy];
+            if ([parent isKindOfClass:UITableView.class]) {
+                UITableView *table = (UITableView *)parent;
+                UIView *header = table.tableHeaderView;
+                entry[@"tableHeaderClass"] = RUINClassName(header);
+                entry[@"tableHeaderFrame"] = NSStringFromCGRect(header ? header.frame : CGRectZero);
+            }
+            if ([parent isKindOfClass:UICollectionView.class])
+                entry[@"collectionLayoutClass"] = RUINClassName(((UICollectionView *)parent).collectionViewLayout);
+            [ancestors addObject:entry];
+        }
+        for (NSLayoutConstraint *constraint in view.constraints) {
+            if (heights.count >= 16) break;
+            if (constraint.firstItem == view && constraint.firstAttribute == NSLayoutAttributeHeight &&
+                !constraint.secondItem)
+                [heights addObject:@{@"constant":@(constraint.constant), @"active":@(constraint.active),
+                    @"priority":@(constraint.priority)}];
+        }
+        [rows addObject:@{@"class":name, @"frame":NSStringFromCGRect(view.frame),
+            @"bounds":NSStringFromCGRect(view.bounds), @"hidden":@(view.hidden),
+            @"ancestors":ancestors, @"heightConstraints":heights,
+            @"storedMetadata":RUINFactoryFieldMetadata(view, @[@"", @"viewModel", @"banner", @"currentBanner"])}];
+    }
+    for (UIView *child in view.subviews) RUINAppendBannerGeometry(child, depth + 1, visited, rows);
+}
+
 static UIWindow *RUINForegroundKeyWindow(void) {
     for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
         if (scene.activationState != UISceneActivationStateForegroundActive ||
@@ -694,6 +764,9 @@ static void RUINWriteSnapshot(void) {
         RUINAppendController(window.rootViewController, 0, visited, controllers, &fieldBudget, &truncated);
     }
     if (window) RUINAppendView(window, 0, views, controls, &actionBudget, &truncated);
+    NSMutableArray *bannerGeometry = [NSMutableArray array];
+    NSUInteger bannerVisits = 0;
+    if (window) RUINAppendBannerGeometry(window, 0, &bannerVisits, bannerGeometry);
     atomic_store(&gControllerCount, controllers.count);
     atomic_store(&gFieldNameCount, 2048 - fieldBudget);
     atomic_store(&gViewCount, views.count);
@@ -706,6 +779,9 @@ static void RUINWriteSnapshot(void) {
     NSDictionary *snapshot = @{@"status": window ? @"captured" : @"no_foreground_key_window",
         @"controllers": controllers, @"views": views, @"controls": controls,
         @"appTabMetadata": RUINAppTabMetadata(),
+        @"shopFactoryMetadata":RUINFactoryFieldMetadata(UIApplication.sharedApplication.delegate,
+            @[@"", @"$__lazy_storage_$_presenterGroup", @"$__lazy_storage_$_useCaseGroup"]),
+        @"bannerGeometry":bannerGeometry,
         @"nativePresentations":gNativePresentations ?: @[],
         @"counts": @{@"controllers": @(controllers.count), @"swiftFieldNames": @(2048 - fieldBudget),
             @"views": @(views.count), @"controls": @(controls.count),

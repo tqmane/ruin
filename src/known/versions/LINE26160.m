@@ -67,6 +67,8 @@ const RUINVersionMapping RUINLINE26160 = {
             kShopNavigation, sizeof(kShopNavigation) / sizeof(*kShopNavigation)},
         .shopEligibility = {
             .status = RUINMappingStatusVerified,
+            .nativeReadAdapterStatus = RUINMappingStatusVerified,
+            .shopSchemeScopeStatus = RUINMappingStatusVerified,
             .modeReturnPC = 0x10694677c,
             .accountReturnPC = 0x10692e7dc,
             .modeCopyReturnPC = 0x10692e638,

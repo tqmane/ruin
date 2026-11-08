@@ -18,8 +18,40 @@ static const void *lineImage, *ruinImage;
 static atomic_bool identityReady;
 static atomic_uint_fast64_t identifierReads, valueReads, dictionaryReads, cfReads, lineReads;
 static NSString *identityStatus = @"not_requested";
+static NSString *cfBindingStatus = @"NotAttempted";
 static BOOL cfBindingInstalled;
 static BOOL verifiedBinary;
+
+typedef NS_ENUM(NSInteger, RUINCFBindingPlan) {
+    RUINCFBindingPlanNativePassthrough = 0,
+    RUINCFBindingPlanRebind,
+    RUINCFBindingPlanUnsupportedAuthenticatedImports
+};
+
+#if !defined(RUIN_BUNDLE_IDENTITY_HOST_CHECK)
+static BOOL RUINUsesAuthenticatedImports(void) {
+#if defined(__arm64e__)
+    return YES;
+#else
+    return NO;
+#endif
+}
+#endif
+
+static RUINCFBindingPlan RUINCFBindingPlanFor(BOOL needsProjection, BOOL authenticatedImports) {
+    if (!needsProjection) return RUINCFBindingPlanNativePassthrough;
+    return authenticatedImports ? RUINCFBindingPlanUnsupportedAuthenticatedImports
+                                : RUINCFBindingPlanRebind;
+}
+
+static NSString *RUINCFBindingStatusForPlan(RUINCFBindingPlan plan) {
+    switch (plan) {
+        case RUINCFBindingPlanNativePassthrough: return @"NativePassthrough";
+        case RUINCFBindingPlanUnsupportedAuthenticatedImports: return @"UnsupportedAuthenticatedImports";
+        case RUINCFBindingPlanRebind: return @"Rebind";
+    }
+    return @"Unavailable";
+}
 
 static BOOL IdentityBinaryMatches(const struct mach_header_64 *header, NSDictionary *info) {
 #if defined(RUIN_BUNDLE_IDENTITY_HOST_CHECK)
@@ -67,7 +99,7 @@ NSDictionary *RUINBundleIdentityDiagnostics(void) {
         @"infoDictionaryReads":@(atomic_load(&dictionaryReads)),
         @"cfInfoDictionaryReads":@(atomic_load(&cfReads)),
         @"lineCallerReads":@(atomic_load(&lineReads)),
-        @"cfMainImageBinding":@(cfBindingInstalled),
+        @"cfMainImageBinding":@(cfBindingInstalled), @"cfBindingStatus":cfBindingStatus,
         @"signingMetadataChanged":@NO, @"scope":@"main bundle; verified LINE and RUIN callers only"};
 }
 
@@ -135,6 +167,7 @@ void RUINInstallBundleIdentity(void) {
     }
     BOOL alreadyOriginal = [info[identifierKey] isEqual:originalIdentifier];
     BOOL metadataValid = RUINTargetMetadataMatchesInfo(info);
+    RUINCFBindingPlan cfPlan = RUINCFBindingPlanFor(!alreadyOriginal, RUINUsesAuthenticatedImports());
     const struct mach_header_64 *header = (const void *)_dyld_get_image_header(0);
     BOOL imageMatches = IdentityBinaryMatches(header, info);
     if (!alreadyOriginal && !imageMatches) {
@@ -148,7 +181,11 @@ void RUINInstallBundleIdentity(void) {
         verifiedBinary = imageMatches;
         // No projection is needed for the original identity. Keep public API
         // compatibility available on new builds; private code maps stay gated.
-        if (alreadyOriginal && metadataValid) { identityStatus = @"already_original"; return; }
+        if (alreadyOriginal && metadataValid) {
+            cfBindingStatus = RUINCFBindingStatusForPlan(cfPlan);
+            identityStatus = @"already_original";
+            return;
+        }
         if (!verifiedBinary) { identityStatus = @"unsupported_binary"; return; }
         Class cls = object_getClass(identityMainBundle);
         const SEL selectors[] = {@selector(bundleIdentifier), @selector(objectForInfoDictionaryKey:), @selector(infoDictionary)};
@@ -164,9 +201,17 @@ void RUINInstallBundleIdentity(void) {
         lineImage = header;
         ruinImage = own.dli_fbase;
         %init(RUINBundleIdentity, RUINIdentityBundle=cls);
+        if (cfPlan == RUINCFBindingPlanUnsupportedAuthenticatedImports) {
+            // Keep the Objective-C identity hooks; only the C import projection is unavailable.
+            cfBindingStatus = RUINCFBindingStatusForPlan(cfPlan);
+            atomic_store(&identityReady, YES);
+            identityStatus = @"installed";
+            return;
+        }
         struct rebinding binding = {"CFBundleGetInfoDictionary", (void *)IdentityCFInfo, (void **)&originalCFInfo};
         int result = rebind_symbols_image((void *)header, _dyld_get_image_vmaddr_slide(0), &binding, 1);
         cfBindingInstalled = result == 0 && originalCFInfo;
+        cfBindingStatus = cfBindingInstalled ? @"Installed" : @"Unavailable";
         if (!cfBindingInstalled) { identityStatus = @"cf_binding_unavailable"; return; }
         atomic_store(&identityReady, YES);
         identityStatus = @"installed";
@@ -177,6 +222,15 @@ void RUINInstallBundleIdentity(void) {
 void RUINInstallBundleIdentity(void) {}
 int main(void) {
     @autoreleasepool {
+        RUINCFBindingPlan nativeArm64ePlan = RUINCFBindingPlanFor(NO, YES);
+        RUINCFBindingPlan renamedArm64ePlan = RUINCFBindingPlanFor(YES, YES);
+        RUINCFBindingPlan renamedArm64Plan = RUINCFBindingPlanFor(YES, NO);
+        assert(nativeArm64ePlan == RUINCFBindingPlanNativePassthrough);
+        assert([RUINCFBindingStatusForPlan(nativeArm64ePlan) isEqual:@"NativePassthrough"]);
+        assert(renamedArm64ePlan == RUINCFBindingPlanUnsupportedAuthenticatedImports);
+        assert([RUINCFBindingStatusForPlan(renamedArm64ePlan) isEqual:@"UnsupportedAuthenticatedImports"]);
+        assert(renamedArm64Plan == RUINCFBindingPlanRebind);
+
         actualMainInfo = @{identifierKey:@"example.signed.line", @"RUINOriginalBundleIdentifier":originalIdentifier,
             @"CFBundleVersion":@"2026.1006.1718",
             @"CFBundleShortVersionString":@"26.16.0", @"unchanged":@"value"};
@@ -187,6 +241,13 @@ int main(void) {
         const uint8_t uuid[] = {0x29,0x28,0x83,0xe8,0xe0,0x11,0x35,0x83,0xad,0xf5,0xf0,0x22,0x41,0xe3,0x27,0x7b};
         memcpy(image.uuid.uuid, uuid, sizeof(uuid));
         assert(IdentityBinaryMatches(&image.header, actualMainInfo));
+        NSMutableDictionary *nativeInfo = [actualMainInfo mutableCopy];
+        nativeInfo[identifierKey] = originalIdentifier;
+        assert(IdentityBinaryMatches(&image.header, nativeInfo));
+        assert(RUINTargetMetadataMatchesInfo(nativeInfo)); // Native CF plan returns before ObjC installation.
+        nativeInfo[@"CFBundleVersion"] = @"unknown";
+        assert(!RUINTargetMetadataMatchesInfo(nativeInfo));
+        assert(!IdentityBinaryMatches(&image.header, nativeInfo));
         image.uuid.uuid[0] ^= 1;
         assert(!IdentityBinaryMatches(&image.header, actualMainInfo));
         image.uuid.uuid[0] ^= 1;

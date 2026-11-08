@@ -148,6 +148,14 @@
       ],
       "value": "No version-specific localization entries found",
       "reason": "No localization update is needed."
+    },
+    {
+      "paths": [
+        "src/themes/ThemeAccountNamespace.h",
+        "src/themes/NativeThemeRegistration.x"
+      ],
+      "value": "Distinct root resolution validating Application Support owned SQLite DB and App Group theme package directories separately across Primary and Secondary namespaces.",
+      "reason": "Prevents assuming shared directory roots between database metadata and package payload assets, enforcing strict canonical path validation."
     }
   ],
   "test_oracles": {
@@ -182,8 +190,20 @@
     "26.17.0_replyReadGate": "Prior KVO gate distinguishes success, failure, and stale boundary; normal-talk flow F unread, successful reply G marks F read, following H remains unread.",
     "26.17.0_manualReadTaskClass": "The task class uses a SwiftObject root; the native-root host fixture does not assume NSObject inheritance.",
     "26.17.0_readerSheet": "Device checks on PrimaryP_ show multiple other-sender names and dates, and re-fetch does not overwrite recorded event times; namespace handling for both PrimaryP_ and SecondaryS_ is covered by host fixtures, while Secondary on latest iPad remains unverified.",
-    "localFonts": "TTF import and nativeBody application device-verified; OTF has extension-acceptance host validation only.",
-    "themeSupport": "Full 26.17.0 theme support remains incomplete; host warning remains."
+    "localFonts": "TTF and OTF sample import, font registration, nativeBody chat rendering, and standard-font restoration device-verified.",
+    "themeSupport": "Native download, preview, apply, and re-download recovery verified on iPhone LINE 26.17.0 path; operation 「基本」を選び「適用する」 succeeded for standard-theme restoration. Tested iPad native ThemeShop/MyThemes paths unreachable with unsupported/URL errors, shop eligibility incomplete, and full 26.17.0 theme support remains incomplete with host warning.",
+    "nativeThemeRegistrationRoots": "NativeThemeRegistration.x strictly validates distinct roots: the app Application Support owned-theme SQLite database and explicitly mapped App Group package tree. ThemeAccountNamespace.h is the shared P_/S_ namespace-component validator, not the component that validates storage roots.",
+    "26.17.0_nativeThemeWorkflow": "iPhone LINE 26.17.0 device verification confirmed native shop preview, download, My Themes preview, and activation via didApply=true in root home and chat UI.",
+    "26.17.0_nativeThemeRecovery": "Verified on iPhone LINE 26.17.0 path: recovery removed and set aside both package assets and saved ZIP; native My Themes download arrow led to fresh package generation and re-apply. Original archive, standard-theme restoration via 「基本」を選び「適用する」, and standard font were restored, and temporary files cleaned.",
+    "nativeThemeResetSemantics": "didTapResetButton edits and resets the currently selected theme rather than applying default theme; standalone RUINResetTheme has no source callers and its standalone behavior remains unestablished. Standard-theme restoration was verified by operation 「基本」を選び「適用する」 succeeding.",
+    "iPadRootlessUI": "Rootless iPad verification is specifically RUIN 0.5.2 installation, strict signature verification, installed dylib SHA match, RUIN entry, settings UI display, and return to normal startup after restart; tested iPad native ThemeShop and My Themes paths were unreachable with native unsupported/URL errors. Page Sheet presentation remains untested and secondary theme support is incomplete.",
+    "walletTab": "Wallet-tab-only hiding verified to survive returning from native settings on device; does not generalize across all tab combinations.",
+    "notifications": "Background notification receipt recovery was not achieved on standalone iPhone; APNs support remains unconfirmed.",
+    "themeShopNumericScope": "For 26.16, shopEligibility, nativeReadAdapterStatus, and shopSchemeScopeStatus are Verified. For 26.17, nativeReadAdapterStatus is Verified with 21 anchors scoped only to stylesheet, while shopSchemeScopeStatus is Unverified and genericScheme disabled due to unproven ownership (aggregate shopEligibility remains Unsupported). RUINThemeShopReturnChain with accountChainAlternatives/accountChainAlternativeCount provides typed alternative return chains consumed by common logic.",
+    "fatDylibPackaging": "Separate object directories build arm64 and arm64e with Swift compile and link targets set to iOS 18.0 for both slices; lipo produces a single fat dylib with ad-hoc signing verified via strict codesign. All three DEBs bundle the identical fat payload. Verification requires exactly these two slices with validated per-slice dependencies, passing distribution unit tests, synthetic and actual packaging checks.",
+    "nativeArchitectureQA": "Bundling arm64 and arm64e slices does not establish runtime feature behavior in an arm64e LINE main process; known pristine and phone-QA LINE main executable files are arm64, while runtime CPU subtype evidence is uncollected and arm64e main-process feature QA remains unverified. Injection and filter scope remains strictly LINE-only with system processes excluded, and rootless resources resolve adjacent to the dylib via dladdr.",
+    "authenticatedImportCompatibility": "Proven PAC guard stops authenticated C import rebinding on arm64e; Keychain applies NativePassthrough (ready) across all architectures only when group mapping is empty and actual permission probes for both old app and shared groups return Allowed, whereas nonempty arm64e mapping halts before writing imports as UnsupportedAuthenticatedImports (not ready) with arm64 C compatibility retained; BundleIdentity independently uses NativePassthrough for original CF jp.naver.line bundles and preserves Objective-C identity projection on renamed arm64e bundles with only CF C rebinding marked UnsupportedAuthenticatedImports; device authentication tests have not been performed and no new runtime device proof is claimed.",
+    "26.17.0_secondaryLoginLongPress": "UIControl hierarchy search and SwiftUI accessibility element with exact AX identifier login; host test suites passed for normal login, secondary login, and ABI mismatch detection, while real on-device authentication, actual login execution, and device mode switching remain unverified."
   },
   "documentation": {
     "paths": [

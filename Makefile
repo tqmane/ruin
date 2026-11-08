@@ -20,16 +20,15 @@ LOGOS_DEPS := $(wildcard \
 	vendor/logos/bin/lib/Logos/Patch/Source/*.pm)
 # Host fixtures compile the same generated hooks as the iOS dylib.
 source = $(if $(filter $(1:.m=.x),$(LOGOS_SOURCES)),build/logos/$(1),$(1))
-CFLAGS = -arch arm64 -isysroot $(SDK) -miphoneos-version-min=18.0 -fobjc-arc -fblocks -Wall -Wextra -O2 \
+CFLAGS = -isysroot $(SDK) -miphoneos-version-min=18.0 -fobjc-arc -fblocks -Wall -Wextra -O2 \
 	-DRUIN_BUILD_VERSION='@"$(RUIN_BUILD_VERSION)"'
 SOURCES := $(sort $(wildcard src/*/*.m) $(VERSION_MAPPING_SOURCES))
-OBJECTS := $(SOURCES:%.m=build/%.o) $(LOGOS_SOURCES:%.x=build/%.o) build/fishhook.o build/SwiftFields.o
+RUIN_ARCHS := arm64 arm64e
+arch_objects = $(patsubst %.m,build/$(1)/%.o,$(SOURCES)) $(patsubst %.x,build/$(1)/%.o,$(LOGOS_SOURCES)) build/$(1)/fishhook.o build/$(1)/SwiftFields.o
 
 .PHONY: all check check-host check-portable check-packaging check-fixtures check-mapping-manifest logos clean dist version FORCE
 all: build/RUIN.dylib build/insert_dylib
 FORCE:
-# ponytail: rebuild the single version owner; use a generated header if this becomes expensive.
-build/src/core/Tweak.o: FORCE
 version:
 	@printf '%s\n' "$(RUIN_BUILD_VERSION)"
 dist: build/RUIN.dylib
@@ -161,6 +160,7 @@ check-host: check-portable check-mapping-manifest $(HOST_FIXTURES)
 	./build/check_local_appearance
 	./build/check_localization "$(CURDIR)/resources/RUINResources.bundle"
 	./build/check_legacy_messaging_configuration
+	python3 tests/check_secondary_login.py
 	python3 tests/check_theme_archive.py
 
 build/check_chat_catalog: $(call source,src/interface/ChatCatalog.m) src/interface/ChatCatalog.h
@@ -341,24 +341,34 @@ build/logos/%.m: %.x $(LOGOS_DEPS)
 	$(PERL) $(LOGOS) -c generator=internal -c warnings=error $< > $@.tmp
 	mv $@.tmp $@
 
-build/%.o: build/logos/%.m $(wildcard src/*/*.h) vendor/fishhook/fishhook.h VERSION
-	mkdir -p $(@D)
-	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
+define RUIN_ARCH_RULES
+# Rebuild the version owner for command-line version overrides, for each slice.
+build/$(1)/src/core/Tweak.o: FORCE
 
-build/%.o: %.m $(wildcard src/*/*.h) vendor/fishhook/fishhook.h VERSION
-	mkdir -p $(@D)
-	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
+build/$(1)/%.o: build/logos/%.m $(wildcard src/*/*.h) vendor/fishhook/fishhook.h VERSION
+	mkdir -p $$(@D)
+	$$(CC) -arch $(1) $$(CFLAGS) $$(CPPFLAGS) -c $$< -o $$@
 
-build/fishhook.o: vendor/fishhook/fishhook.c vendor/fishhook/fishhook.h
-	mkdir -p build
-	$(CC) -arch arm64 -isysroot $(SDK) -miphoneos-version-min=18.0 -O2 -c $< -o $@
+build/$(1)/%.o: %.m $(wildcard src/*/*.h) vendor/fishhook/fishhook.h VERSION
+	mkdir -p $$(@D)
+	$$(CC) -arch $(1) $$(CFLAGS) $$(CPPFLAGS) -c $$< -o $$@
 
-build/SwiftFields.o: src/core/SwiftFields.swift src/core/SwiftFields.h
-	mkdir -p build
-	xcrun --sdk iphoneos swiftc -sdk $(SDK) -target arm64-apple-ios18.0 -parse-as-library -O -module-name RUINRuntime -emit-object $< -o $@
+build/$(1)/fishhook.o: vendor/fishhook/fishhook.c vendor/fishhook/fishhook.h
+	mkdir -p $$(@D)
+	$$(CC) -arch $(1) -isysroot $$(SDK) -miphoneos-version-min=18.0 -O2 -c $$< -o $$@
 
-build/RUIN.dylib: $(OBJECTS)
-	xcrun --sdk iphoneos swiftc -sdk $(SDK) -target arm64-apple-ios18.0 -emit-library $(OBJECTS) -framework Foundation -framework UIKit -framework CoreText -framework WebKit -framework CoreGraphics -framework Security -framework CoreData -framework ImageIO -framework UniformTypeIdentifiers -framework UserNotifications -lsqlite3 -lz -Xlinker -install_name -Xlinker @rpath/RUIN.dylib -o $@
+build/$(1)/SwiftFields.o: src/core/SwiftFields.swift src/core/SwiftFields.h
+	mkdir -p $$(@D)
+	xcrun --sdk iphoneos swiftc -sdk $$(SDK) -target $(1)-apple-ios18.0 -parse-as-library -O -module-name RUINRuntime -emit-object $$< -o $$@
+
+build/$(1)/RUIN.dylib: $(call arch_objects,$(1))
+	xcrun --sdk iphoneos swiftc -sdk $$(SDK) -target $(1)-apple-ios18.0 -emit-library $$^ -framework Foundation -framework UIKit -framework CoreText -framework WebKit -framework CoreGraphics -framework Security -framework CoreData -framework ImageIO -framework UniformTypeIdentifiers -framework UserNotifications -lsqlite3 -lz -Xlinker -install_name -Xlinker @rpath/RUIN.dylib -o $$@
+endef
+
+$(foreach arch,$(RUIN_ARCHS),$(eval $(call RUIN_ARCH_RULES,$(arch))))
+
+build/RUIN.dylib: $(addprefix build/,$(addsuffix /RUIN.dylib,$(RUIN_ARCHS)))
+	xcrun lipo -create $^ -output $@
 	codesign --force --sign - --timestamp=none $@
 
 # Upstream: https://github.com/Tyilo/insert_dylib, pinned for reproducible builds.
