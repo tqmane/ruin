@@ -3,6 +3,13 @@
 #include <stdint.h>
 
 typedef struct {
+    unsigned slot;
+    uintptr_t getterVA;
+    uintptr_t returnVA;
+    uint32_t callWords[5];
+} RUINNativeTabRefreshRead;
+
+typedef struct {
     const char *version;
     const char *build;
     uintptr_t bridgeVA;
@@ -16,6 +23,7 @@ typedef struct {
     RUINInstructionAnchor menuGenerator;
     uintptr_t menuGeneratorEndVA;
     uintptr_t getters[5];
+    RUINNativeTabRefreshRead refreshReads[5];
 } RUINNativeTabMapping;
 
 FOUNDATION_EXPORT const RUINNativeTabMapping *RUINNativeTabMappingForHost(const RUINHostIdentity *host);
