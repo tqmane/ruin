@@ -10,8 +10,7 @@ typedef struct {
 } RUINNativeTabRefreshRead;
 
 typedef struct {
-    const char *version;
-    const char *build;
+    RUINMappingStatus status;
     uintptr_t bridgeVA;
     uintptr_t witnessTableVA;
     uintptr_t caseTableVA;
@@ -25,5 +24,3 @@ typedef struct {
     uintptr_t getters[5];
     RUINNativeTabRefreshRead refreshReads[5];
 } RUINNativeTabMapping;
-
-FOUNDATION_EXPORT const RUINNativeTabMapping *RUINNativeTabMappingForHost(const RUINHostIdentity *host);

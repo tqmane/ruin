@@ -2,20 +2,24 @@
 """Read-only checks that packaging changes only LINE's loading/signing metadata."""
 import argparse
 import hashlib
+import json
 from pathlib import Path
 import plistlib
-import re
 import struct
 import uuid
 import zipfile
 
 def known_hosts():
-    """Share the runtime identity table without importing build dependencies."""
-    source = (Path(__file__).resolve().parents[1] / 'src/known/KnownHosts.def').read_text()
-    records = re.findall(r'RUIN_(?:KNOWN|LATEST)_HOST\("([^"]+)",\s*"([^"]+)",\s*"([^"]+)",\s*"([^"]+)",\s*(?:YES|NO)\)', source)
+    path = Path(__file__).resolve().parents[1] / 'tests/fixtures/version-mappings.json'
+    mappings = json.loads(path.read_text())['mappings']
+    records = [
+        {"version": row["host"]["version"], "build": row["host"]["build"],
+         "uuid": row["host"]["uuid"], "sha256": row["host"]["sourceSHA256"]}
+        for row in mappings
+    ]
     if not records:
-        raise ValueError('Known host identity table is empty.')
-    return [dict(zip(('version', 'build', 'uuid', 'sha256'), record)) for record in records]
+        raise ValueError('Compiled version mapping manifest is empty.')
+    return records
 
 
 RUIN_LOAD_PATH = '@executable_path/Frameworks/RUIN.dylib'

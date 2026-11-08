@@ -23,7 +23,7 @@
 RUIN/
 ├── src/
 │   ├── core/         # Tweak.x (起動・Logos入口)、基盤ロジック、SwiftFields、バイナリ完全性・型ゲート検証
-│   ├── known/        # KnownHosts.def (既知ID/UUID一元管理)、KnownMappings、BinaryVerifier、領域別型付き定義
+│   ├── known/        # KnownMappings.{h,m} (共有API・中央レジストリ)、VersionMapping.h、BinaryVerifier.{h,m}、versions/LINE*.m (バージョン別定義)
 │   ├── interface/    # UIフック、RUINSettings.m (設定画面・標準Page Sheet/Push遷移)、長押しシート、ローカルフォント等
 │   ├── messaging/    # メッセージ送受信制御、既読管理、送信取消保持、ミュート送信・送信取消制御
 │   ├── platform/     # AppGroupStorage.{h,m} (保存先ポリシー)、Sideload.x + Keychain.m (署名・保存互換)、fishhook等
@@ -39,16 +39,23 @@ RUIN/
 ## 3. バージョン追従とフック実装方針
 
 ### 対象バージョン・環境要件
-- **LINE**: 26.16.0 (Build: `2026.1006.1718`、UUID: `292883E8-E011-3583-ADF5-F02241E3277B`) および 26.17.0 (Build: `2026.1103.1841`、UUID: `614CED59-07E5-372D-94B2-D4901870C7A0`) を `KnownHosts.def` で一元管理。26.17.0は起動・ログイン維持・Keychain・タブ非表示をiPhoneで実機確認済みですが、一部フック（送信取消保持のlookupchain、サブ端末テーマgate等）が未対応のため部分対応警告を表示し、全面検証済みとしては扱いません。
+- **LINE**: `KnownHosts.def` および配列インデックス（`RUINKnownHosts`）による管理は廃止され、不変の `const RUINVersionMapping` 構造体が単一の (バージョン、ビルド番号、Mach-O UUID) の同一性を保持します。異なるビルド/UUIDバリアントは独立したレコードとして扱われ、同一バージョン文字列のバリアントも同一の `src/known/versions/LINE*.m` 内で個別のレジストリエントリとして共存可能です。バイナリマッピング値は `src/known/versions/LINE*.m` が所有し、`KnownMappings.h/m` が共有APIおよび中央レジストリを提供します。
+  - 対象バージョン: LINE 26.16.0 (Build: `2026.1006.1718`、UUID: `292883E8-E011-3583-ADF5-F02241E3277B`) および 26.17.0 (Build: `2026.1103.1841`、UUID: `614CED59-07E5-372D-94B2-D4901870C7A0`)。
+  - 26.17.0対応状況: 起動・ログイン維持・Keychain・タブ非表示をiPhoneで実機確認済みですが、着せかえショップ適用（shop eligibility）および送信取消のlookupchain（unsend lookupStatus）は `Unsupported` であり、パース処理（parser status）は `Verified` です。バージョン固有マッピング機能のステータスは `RUINMappingStatus`（`Unsupported` / `Unverified` / `Verified`）で管理され、部分対応警告を表示し、全面検証済みとしては扱いません。
 - **アーキテクチャ**: `arm64`
 - **下限OS**: iOS 18.0 以降 (※ビルド下限値であり、全機種・全環境での動作を保証するものではありません)
-- **ビルド依存**: macOSホスト、フルXcode (iOS SDK含む)、`make`、`perl` (Logos internal用)、`python3`、`node` (ホスト検査・JS構文検査用)。
+- **ビルド依存**: macOSホスト、フルXcode (iOS SDK含む)、`make`、`perl` (Logos internal用)、`python3`、`node` (ホスト検査・JS構文検査用)。`Makefile` の `SOURCES` および `HOST_COMMON` に `src/known/versions/*.m` が含まれます。
 - **ランタイム依存**: Apple系のシステムライブラリ・フレームワーク、同梱リソースのみ。脱獄版DEBにおける注入ローダー（mobilesubstrate仮想パッケージ）への依存は許容しますが、バイナリ自体が外部の Cydia Substrate、libhooker、pip パッケージ等へ動的リンクすることは禁止。
 
 ### フック実装規約
 - **Logos構文とジェネレータ**: Objective-Cフックは Logos (`.x`, `%hook`, `%orig`, `%new(typeencoding)`, `%group`, `%init`) を使用し、リポジトリ同梱の internal generator を通じて生成します。
 - **外部依存の排除 (MSHookIvar禁止)**: 外部のSubstrateやlibhooker依存を追加しないでください。特に `MSHookIvar` を安易に追加して外部依存を増やすことは禁止します。Substrate非依存環境での手動ivarアクセス代替は最小限にとどめます。
-- **C/Swift連携**: C関数のimport rebindにはfishhookを使用し、Swift witness tableやdata-pointerアダプターは型安全性を検証した上で保持します。
+- **C/Swift連携とSwiftFieldsガード**: C関数のimport rebindにはfishhookを使用し、Swift witness tableやdata-pointerアダプターは型安全性を検証した上で保持します。オフセット56のSwiftFieldsランタイムABIガードは、クラスの完全一致、Mirror Bool、インスタンスサイズ、ivarが取得可能な場合はその実オフセットとの一致を要求し、格納バイトの一致および境界検証（stored-byte agreement and bounds checks）によって安全性を担保します。
+- **バージョンマッピングと共通API**:
+  - テーマ、メッセージング、ネイティブタブの各マッピング値はバージョン別定義ファイル（`src/known/versions/LINE*.m`）内に保持されます。
+  - `RUINMappingForInfo(info)` はLINEのバンドル識別子およびバージョン/ビルド番号のみから選択を行い、メタデータに曖昧さがある場合は `NULL` を返し、実行バイナリの真正性認証は行いません（明示的なフィクスチャやテストで使用）。
+  - ランタイムの数値呼び出し元は共通API `RUINCurrentMapping()` を使用します。これは現在のメタデータと実際のメインMach-O UUIDを照合し、同一バージョン/ビルドの候補からUUIDによって一意に解決します。不一致または未知のバイナリでは `NULL` を返し、フォールバックは一切行わず、ミス（不一致）のキャッシュも行いません。
+- **コンパイル済みマニフェスト検証**: `tools/export_version_mappings.m` はコンパイル済みレジストリ値から `tests/fixtures/version-mappings.json` を出力し、`make check-mapping-manifest` によってマニフェストの整合性を検証します。Python/Linuxツール群はこのマニフェストを消費する一方、Mach-Oのバイト列、制御フロー、UUID、SHAによる独立した検証・証明も維持されます。
 - **段階的フェイルセーフと独立機能の保護**:
   - 一般的なObjective-Cフックは、LINEプロセスの識別およびクラス・セレクタ・型・スキーマの実検証を経て安全に有効化し、未知のバージョン番号のみを理由にアプリ全体のフックを一律停止しないこと。未検証ビルド起動時はユーザーへ1度だけ警告を表示し、確認できた機能のみを有効化する。
   - ビルド固有のSwift呼び出し位置、命令列、データ表へのフックは、該当ビルド・UUID・アドレス範囲・fingerprint検証が完全に一致する定義が存在する場合にのみ適用する。

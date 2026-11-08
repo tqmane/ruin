@@ -3,7 +3,7 @@
 #import "BinaryVerifier.h"
 
 typedef struct {
-    BOOL verified;
+    RUINMappingStatus status;
     uintptr_t methodIMP;
     uintptr_t themeURLString;
     const RUINInstructionAnchor *anchors;
@@ -11,7 +11,7 @@ typedef struct {
 } RUINThemeShopNavigationMapping;
 
 typedef struct {
-    BOOL verified;
+    RUINMappingStatus status;
     uintptr_t modeReturnPC;
     uintptr_t accountReturnPC;
     uintptr_t modeCopyReturnPC;
@@ -29,7 +29,7 @@ typedef struct {
 } RUINThemeShopEligibilityMapping;
 
 typedef struct {
-    BOOL verified;
+    RUINMappingStatus status;
     uintptr_t resultReturnPC;
     uintptr_t resultMethodIMP;
     uintptr_t resultLogString;
@@ -38,7 +38,7 @@ typedef struct {
 } RUINThemeValidationMapping;
 
 typedef struct {
-    BOOL verified;
+    RUINMappingStatus status;
     uintptr_t repositoryReturnPC;
     uintptr_t serverSyncReturnPCs[2];
     uintptr_t readOnlyExcludedReturnPC;
@@ -47,13 +47,21 @@ typedef struct {
 } RUINThemeLocalPolicyMapping;
 
 typedef struct {
-    const RUINHostIdentity *host;
+    RUINMappingStatus status;
+    uintptr_t priceTierReplacementVA;
+    uintptr_t applyObserverMethodVA;
+    uintptr_t defaultsFreezeReplacementVA;
+    uintptr_t manualDownloadSourceReplacementVA;
+    uintptr_t resetMethodVA;
+} RUINThemeFeatureAddressesMapping;
+
+typedef struct {
     RUINThemeShopNavigationMapping shopNavigation;
     RUINThemeShopEligibilityMapping shopEligibility;
     RUINThemeValidationMapping validation;
     RUINThemeLocalPolicyMapping localPolicy;
+    RUINThemeFeatureAddressesMapping featureAddresses;
 } RUINThemeMappings;
 
-FOUNDATION_EXPORT const RUINThemeMappings *RUINThemeMappingsForHost(const RUINHostIdentity *host);
 FOUNDATION_EXPORT BOOL RUINThemeLocalPolicyCallersMatch(const RUINThemeLocalPolicyMapping *mapping,
     const uintptr_t *PCs, size_t count);

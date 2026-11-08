@@ -1,7 +1,6 @@
 #import "BinaryVerifier.h"
 #include <string.h>
 #include <limits.h>
-#import <mach-o/dyld.h>
 
 static BOOL ValidHeader(const struct mach_header_64 *header) {
     return header && header->magic == MH_MAGIC_64 && header->cputype == CPU_TYPE_ARM64 &&
@@ -34,18 +33,6 @@ BOOL RUINVerifyHostImage(const RUINHostIdentity *host, const struct mach_header_
         cursor += command->cmdsize;
     }
     return found && cursor == end;
-}
-
-BOOL RUINCurrentHostImageMatches(const RUINHostIdentity *host) {
-    if (!host) return NO;
-    static const RUINHostIdentity *verified;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        const struct mach_header_64 *header = (const void *)_dyld_get_image_header(0);
-        for (size_t i = 0; i < RUINKnownHostCount; i++)
-            if (RUINVerifyHostImage(&RUINKnownHosts[i], header)) { verified = &RUINKnownHosts[i]; break; }
-    });
-    return verified == host;
 }
 
 BOOL RUINReadImageBytes(const struct mach_header_64 *header, intptr_t slide,

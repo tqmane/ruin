@@ -5,6 +5,7 @@
 #import "NativeThemeRegistration.h"
 #import "ThemeShop.h"
 #import "../known/ThemeMappings.h"
+#import "../known/VersionMapping.h"
 #import <objc/runtime.h>
 #import <mach-o/dyld.h>
 #import <stdatomic.h>
@@ -22,7 +23,8 @@ static const RUINThemeMappings *gThemeMappings;
 static BOOL Result(BOOL original, uintptr_t returnPC, BOOL registered,
     const RUINThemeValidationMapping *mapping)
 {
-    return original || (mapping && mapping->verified && returnPC == mapping->resultReturnPC && registered);
+    return original || (mapping && mapping->status == RUINMappingStatusVerified &&
+        returnPC == mapping->resultReturnPC && registered);
 }
 
 static uintptr_t RUINThemeValidationCanonicalIMP(IMP implementation)
@@ -61,15 +63,17 @@ void RUINInstallNativeThemeValidation(void)
     RUINInstallThemePersistenceAdapter();
 #endif
     if (gInstalled) return;
-    NSDictionary *info = NSBundle.mainBundle.infoDictionary;
-    const RUINHostIdentity *host = RUINKnownHostForInfo(info);
-    const RUINThemeMappings *mapping = RUINThemeMappingsForHost(host);
-    if (!mapping || !mapping->validation.verified) return;
+#if defined(RUIN_NATIVE_THEME_VALIDATION_HOST_CHECK)
+    const RUINVersionMapping *versionMapping = RUINMappingForInfo(NSBundle.mainBundle.infoDictionary);
+#else
+    const RUINVersionMapping *versionMapping = RUINCurrentMapping();
+#endif
+    const RUINThemeMappings *mapping = versionMapping ? &versionMapping->themes : NULL;
+    if (!mapping || mapping->validation.status != RUINMappingStatusVerified) return;
     const struct mach_header_64 *header = (const void *)_dyld_get_image_header(0);
     intptr_t slide = _dyld_get_image_vmaddr_slide(0);
     char logString[sizeof("validateTheme result:")];
-    if (!RUINVerifyHostImage(host, header) ||
-        !RUINVerifyInstructions(header, slide, mapping->validation.anchors,
+    if (!RUINVerifyInstructions(header, slide, mapping->validation.anchors,
             mapping->validation.anchorCount) ||
         !RUINReadImageBytes(header, slide, mapping->validation.resultLogString,
             logString, sizeof(logString), "__TEXT") ||
@@ -86,16 +90,17 @@ void RUINInstallNativeThemeValidation(void)
 
 NSDictionary *RUINNativeThemeValidationDiagnostics(void)
 {
-    const RUINThemeMappings *mapping = RUINThemeMappingsForHost(
-        RUINKnownHostForInfo(NSBundle.mainBundle.infoDictionary));
 #if defined(RUIN_NATIVE_THEME_VALIDATION_HOST_CHECK)
+    const RUINVersionMapping *versionMapping = RUINMappingForInfo(NSBundle.mainBundle.infoDictionary);
     NSDictionary *persistence = @{@"installed": @NO};
 #else
+    const RUINVersionMapping *versionMapping = RUINCurrentMapping();
     NSDictionary *persistence = RUINThemePersistenceDiagnostics();
 #endif
+    const RUINThemeMappings *mapping = versionMapping ? &versionMapping->themes : NULL;
     return @{@"installed":@(gInstalled), @"calls":@(atomic_load(&gCalls)),
         @"localResultsAccepted":@(atomic_load(&gOverrides)),
-        @"mappingAvailable":@(mapping && mapping->validation.verified),
+        @"mappingAvailable":@(mapping && mapping->validation.status == RUINMappingStatusVerified),
         @"secondaryStylesheetPersistence":persistence[@"installed"],
         @"secondaryStylesheetPersistenceAdapter":persistence,
         @"scope":@"native validateTheme result; applied registered local theme only"};
@@ -105,17 +110,20 @@ NSDictionary *RUINNativeThemeValidationDiagnostics(void)
 #include <assert.h>
 BOOL RUINIsRegisteredNativeThemeID(NSString *productID) { (void)productID; return NO; }
 int main(void) { @autoreleasepool {
-    const RUINThemeMappings *mapping = RUINThemeMappingsForHost(
-        RUINKnownHostForVersion(@"26.16.0", @"2026.1006.1718"));
-    assert(mapping && mapping->validation.verified);
+    const RUINVersionMapping *version16 = RUINMappingForInfo(@{@"CFBundleIdentifier":@"jp.naver.line",
+        @"CFBundleShortVersionString":@"26.16.0", @"CFBundleVersion":@"2026.1006.1718"});
+    const RUINThemeMappings *mapping = version16 ? &version16->themes : NULL;
+    assert(mapping && mapping->validation.status == RUINMappingStatusVerified);
     assert(Result(NO, mapping->validation.resultReturnPC, YES, &mapping->validation));
     assert(!Result(NO, mapping->validation.resultReturnPC, NO, &mapping->validation));
     assert(!Result(NO, mapping->validation.resultReturnPC + 4, YES, &mapping->validation));
     assert(Result(YES, mapping->validation.resultReturnPC + 4, NO, &mapping->validation));
-    const RUINThemeMappings *newMapping = RUINThemeMappingsForHost(
-        RUINKnownHostForVersion(@"26.17.0", @"2026.1103.1841"));
-    assert(newMapping && newMapping->validation.verified &&
-        !newMapping->shopEligibility.verified && newMapping->localPolicy.verified);
+    const RUINVersionMapping *version17 = RUINMappingForInfo(@{@"CFBundleIdentifier":@"jp.naver.line",
+        @"CFBundleShortVersionString":@"26.17.0", @"CFBundleVersion":@"2026.1103.1841"});
+    const RUINThemeMappings *newMapping = version17 ? &version17->themes : NULL;
+    assert(newMapping && newMapping->validation.status == RUINMappingStatusVerified &&
+        newMapping->shopEligibility.status == RUINMappingStatusUnsupported &&
+        newMapping->localPolicy.status == RUINMappingStatusVerified);
     assert(Result(NO, newMapping->validation.resultReturnPC, YES, &newMapping->validation));
     assert(!Result(NO, newMapping->validation.resultReturnPC + 4, YES, &newMapping->validation));
     puts("PASS theme validation caller and registered-package isolation");

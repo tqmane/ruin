@@ -22,8 +22,15 @@ static BOOL cfBindingInstalled;
 static BOOL verifiedBinary;
 
 static BOOL IdentityBinaryMatches(const struct mach_header_64 *header, NSDictionary *info) {
-    const RUINHostIdentity *host = RUINKnownHostForVersion(info[@"CFBundleShortVersionString"], info[@"CFBundleVersion"]);
-    return RUINVerifyHostImage(host, header);
+#if defined(RUIN_BUNDLE_IDENTITY_HOST_CHECK)
+    const RUINVersionMapping *mapping = RUINMappingForInfo(info);
+#else
+    const RUINVersionMapping *mapping = RUINCurrentMapping();
+#endif
+    id version = info[@"CFBundleShortVersionString"], build = info[@"CFBundleVersion"];
+    return mapping && [version isKindOfClass:NSString.class] && [build isKindOfClass:NSString.class] &&
+        [version isEqualToString:@(mapping->host.version)] &&
+        [build isEqualToString:@(mapping->host.build)] && RUINVerifyHostImage(&mapping->host, header);
 }
 
 static BOOL IdentityScope(NSBundle *bundle, const void *image) {
@@ -120,17 +127,28 @@ static CFDictionaryRef IdentityCFInfo(CFBundleRef bundle) {
 }
 
 void RUINInstallBundleIdentity(void) {
+    NSBundle *bundle = NSBundle.mainBundle;
+    NSDictionary *info = [bundle.infoDictionary copy] ?: @{};
+    if (![info[identifierKey] isKindOfClass:NSString.class]) {
+        identityStatus = @"missing_identity";
+        return;
+    }
+    BOOL alreadyOriginal = [info[identifierKey] isEqual:originalIdentifier];
+    BOOL metadataValid = RUINTargetMetadataMatchesInfo(info);
+    const struct mach_header_64 *header = (const void *)_dyld_get_image_header(0);
+    BOOL imageMatches = IdentityBinaryMatches(header, info);
+    if (!alreadyOriginal && !imageMatches) {
+        identityStatus = header ? @"unsupported_binary" : @"mapping_unavailable";
+        return;
+    }
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        identityMainBundle = NSBundle.mainBundle;
-        actualMainInfo = [identityMainBundle.infoDictionary copy] ?: @{};
-        const struct mach_header_64 *header = (const void *)_dyld_get_image_header(0);
-        verifiedBinary = IdentityBinaryMatches(header, actualMainInfo);
-        if (![actualMainInfo[identifierKey] isKindOfClass:NSString.class]) { identityStatus = @"missing_identity"; return; }
+        identityMainBundle = bundle;
+        actualMainInfo = info;
+        verifiedBinary = imageMatches;
         // No projection is needed for the original identity. Keep public API
         // compatibility available on new builds; private code maps stay gated.
-        if ([actualMainInfo[identifierKey] isEqual:originalIdentifier] &&
-            RUINTargetMetadataMatchesInfo(actualMainInfo)) { identityStatus = @"already_original"; return; }
+        if (alreadyOriginal && metadataValid) { identityStatus = @"already_original"; return; }
         if (!verifiedBinary) { identityStatus = @"unsupported_binary"; return; }
         Class cls = object_getClass(identityMainBundle);
         const SEL selectors[] = {@selector(bundleIdentifier), @selector(objectForInfoDictionaryKey:), @selector(infoDictionary)};
@@ -159,7 +177,8 @@ void RUINInstallBundleIdentity(void) {
 void RUINInstallBundleIdentity(void) {}
 int main(void) {
     @autoreleasepool {
-        actualMainInfo = @{identifierKey:@"example.signed.line", @"CFBundleVersion":@"2026.1006.1718",
+        actualMainInfo = @{identifierKey:@"example.signed.line", @"RUINOriginalBundleIdentifier":originalIdentifier,
+            @"CFBundleVersion":@"2026.1006.1718",
             @"CFBundleShortVersionString":@"26.16.0", @"unchanged":@"value"};
         struct { struct mach_header_64 header; struct uuid_command uuid; } image = {0};
         image.header = (struct mach_header_64){.magic=MH_MAGIC_64, .cputype=CPU_TYPE_ARM64,

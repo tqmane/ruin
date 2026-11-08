@@ -5,6 +5,7 @@
 #import "../known/ThemeMappings.h"
 #import "../core/Localization.h"
 #import "../core/TargetMetadata.h"
+#import "../known/VersionMapping.h"
 
 #import <objc/runtime.h>
 #import <stdatomic.h>
@@ -61,7 +62,7 @@ static RUINThemeShopScope RUINThemeShopClassifyFrames(const RUINThemeShopEligibi
     const RUINThemeShopFrame *frames, size_t count, BOOL mode)
 {
     RUINThemeShopScope none = {0};
-    if (!mapping || !mapping->verified || !frames || count < (mode ? 7u : 6u) ||
+    if (!mapping || mapping->status != RUINMappingStatusVerified || !frames || count < (mode ? 7u : 6u) ||
         frames[0].returnPC != (mode ? mapping->modeReturnPC : mapping->accountReturnPC)) return none;
     size_t i = 1;
     uintptr_t valueFrame = frames[0].callerFrame;
@@ -105,7 +106,7 @@ static RUINThemeShopScope RUINThemeShopCaptureScope(void *frame, BOOL mode)
 }
 static BOOL RUINThemeShopFrameUsesPlainMode(uintptr_t frame)
 {
-    return frame && gThemeShopMappings && gThemeShopMappings->shopEligibility.verified &&
+    return frame && gThemeShopMappings && gThemeShopMappings->shopEligibility.status == RUINMappingStatusVerified &&
         gThemeShopTestReadMode == 0;
 }
 #else
@@ -140,7 +141,7 @@ static BOOL RUINThemeShopFrameUsesPlainMode(uintptr_t frame)
 {
     uintptr_t top = (uintptr_t)pthread_get_stackaddr_np(pthread_self());
     size_t size = pthread_get_stacksize_np(pthread_self());
-    if (!gThemeShopMappings || !gThemeShopMappings->shopEligibility.verified || !top || size > top ||
+    if (!gThemeShopMappings || gThemeShopMappings->shopEligibility.status != RUINMappingStatusVerified || !top || size > top ||
         frame < top - size + gThemeShopMappings->shopEligibility.plainModeStackOffset || frame > top) return NO;
     uint32_t mode;
     memcpy(&mode, (const void *)(frame - gThemeShopMappings->shopEligibility.plainModeStackOffset), sizeof(mode));
@@ -215,15 +216,15 @@ __attribute__((noinline, disable_tail_calls))
 
 static const RUINThemeMappings *RUINThemeShopMappingForInfo(NSDictionary *info)
 {
-    const RUINHostIdentity *host = RUINKnownHostForInfo(info);
-    const RUINThemeMappings *mapping = RUINThemeMappingsForHost(host);
-    if (!mapping || !mapping->shopNavigation.verified) return NULL;
+    const RUINVersionMapping *versionMapping = RUINMappingForInfo(info);
+    const RUINThemeMappings *mapping = versionMapping ? &versionMapping->themes : NULL;
+    if (!mapping || mapping->shopNavigation.status != RUINMappingStatusVerified) return NULL;
 #if !defined(RUIN_THEMESHOP_HOST_CHECK)
+    if (RUINCurrentMapping() != versionMapping) return NULL;
     const struct mach_header_64 *header = (const void *)_dyld_get_image_header(0);
     intptr_t slide = _dyld_get_image_vmaddr_slide(0);
     char actualURL[sizeof("line://shop/theme")];
-    if (!RUINVerifyHostImage(host, header) ||
-        !RUINVerifyInstructions(header, slide, mapping->shopNavigation.anchors,
+    if (!RUINVerifyInstructions(header, slide, mapping->shopNavigation.anchors,
             mapping->shopNavigation.anchorCount) ||
         !RUINReadImageBytes(header, slide, mapping->shopNavigation.themeURLString,
             actualURL, sizeof(actualURL), "__TEXT") ||
@@ -236,12 +237,12 @@ static const RUINThemeMappings *RUINThemeShopMappingForInfo(NSDictionary *info)
 #if !defined(RUIN_THEMESHOP_HOST_CHECK)
 static BOOL RUINThemeShopVerifyEligibility(const RUINThemeMappings *mapping)
 {
-    if (!mapping || !mapping->shopEligibility.verified) return NO;
-    const RUINHostIdentity *host = mapping->host;
+    if (!mapping || mapping->shopEligibility.status != RUINMappingStatusVerified) return NO;
+    const RUINVersionMapping *versionMapping = RUINCurrentMapping();
+    if (!versionMapping || &versionMapping->themes != mapping) return NO;
     const struct mach_header_64 *header = (const void *)_dyld_get_image_header(0);
     intptr_t slide = _dyld_get_image_vmaddr_slide(0);
-    return RUINVerifyHostImage(host, header) &&
-        RUINVerifyInstructions(header, slide, mapping->shopEligibility.anchors,
+    return RUINVerifyInstructions(header, slide, mapping->shopEligibility.anchors,
             mapping->shopEligibility.anchorCount);
 }
 #endif
@@ -251,7 +252,7 @@ static void RUINThemeShopInstallGate(void)
 {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        if (!gThemeShopMappings || !gThemeShopMappings->shopEligibility.verified) {
+        if (!gThemeShopMappings || gThemeShopMappings->shopEligibility.status != RUINMappingStatusVerified) {
             atomic_store(&gThemeShopGateStatus, 5); return;
         }
         if (!RUINThemeShopVerifyEligibility(gThemeShopMappings)) {
@@ -331,7 +332,7 @@ static BOOL RUINThemeShopRouterAvailable(id delegate, const RUINThemeMappings *m
     if (!types || strcmp(types, "B24@0:8@16") || !implementation) return NO;
 #if !defined(RUIN_THEMESHOP_HOST_CHECK)
     // Missing numeric mappings still allow the guarded Objective-C route.
-    if (mapping && mapping->shopNavigation.verified)
+    if (mapping && mapping->shopNavigation.status == RUINMappingStatusVerified)
         return RUINThemeShopCanonicalIMP(implementation) == mapping->shopNavigation.methodIMP + gThemeShopSlide;
 #endif
     return YES;
@@ -402,12 +403,13 @@ static RUINThemeShopStatus RUINThemeShopDispatch(id delegate, NSDictionary *info
 NSDictionary<NSString *, id> *RUINThemeShopDiagnostics(void)
 {
     NSDictionary *info = NSBundle.mainBundle.infoDictionary;
-    const RUINThemeMappings *mapping = RUINThemeShopMappingForInfo(info);
+    const RUINVersionMapping *versionMapping = RUINMappingForInfo(info);
+    const RUINThemeMappings *mapping = versionMapping ? &versionMapping->themes : NULL;
     NSMutableDictionary *result = [@{
         @"targetMatches": @(RUINThemeShopTargetMatches(info)),
-        @"expectedVersion": mapping ? [NSString stringWithUTF8String:mapping->host->version]
+        @"expectedVersion": versionMapping ? [NSString stringWithUTF8String:versionMapping->host.version]
             : info[@"CFBundleShortVersionString"] ?: (id)NSNull.null,
-        @"expectedBuild": mapping ? [NSString stringWithUTF8String:mapping->host->build]
+        @"expectedBuild": versionMapping ? [NSString stringWithUTF8String:versionMapping->host.build]
             : info[@"CFBundleVersion"] ?: (id)NSNull.null,
         @"fixedURL": RUINThemeShopURLString,
         @"stickerURL": RUINStickerShopURLString,
@@ -424,12 +426,12 @@ NSDictionary<NSString *, id> *RUINThemeShopDiagnostics(void)
         @"externalURLFallback": @NO,
         @"gateOverrideInstalled": @(atomic_load(&gThemeShopGateReady)),
         @"gateOverrideStatus": RUINThemeShopGateStatusName(),
-        @"gateScope": mapping && mapping->shopEligibility.verified
+        @"gateScope": mapping && mapping->shopEligibility.status == RUINMappingStatusVerified
             ? @"verified theme capability, ShopScheme router and StylesheetManager settings-save caller chains"
             : mapping ? @"Shop navigation binary verified; numeric eligibility scope unported for this host"
             : @"Shop navigation uses structural Objective-C ABI guard; numeric eligibility scope unavailable",
-        @"shopNavigationMappingVerified": @(mapping && mapping->shopNavigation.verified),
-        @"shopEligibilityMappingVerified": @(mapping && mapping->shopEligibility.verified),
+        @"shopNavigationMappingVerified": @(mapping && mapping->shopNavigation.status == RUINMappingStatusVerified),
+        @"shopEligibilityMappingVerified": @(mapping && mapping->shopEligibility.status == RUINMappingStatusVerified),
         @"gateModeProjections": @(atomic_load(&gThemeShopModeProjections)),
         @"gateRoleReadProjections": @(atomic_load(&gThemeShopRoleProjections)),
         @"gateScopeMisses": @(atomic_load(&gThemeShopScopeMisses)),
@@ -554,16 +556,22 @@ static NSNumber *RUINThemeShopTestNativeRead(RUINThemeShopGateScope kind)
 }
 static void RUINThemeShopCheckGate(void)
 {
-    const RUINHostIdentity *host16 = RUINKnownHostForVersion(@"26.16.0", @"2026.1006.1718");
-    const RUINHostIdentity *host17 = RUINKnownHostForVersion(@"26.17.0", @"2026.1103.1841");
-    const RUINThemeMappings *mapping16 = RUINThemeMappingsForHost(host16);
-    const RUINThemeMappings *mapping17 = RUINThemeMappingsForHost(host17);
-    assert(mapping16 && mapping16->shopNavigation.verified && mapping16->shopEligibility.verified &&
-        mapping16->validation.verified && mapping16->localPolicy.verified);
-    assert(mapping17 && mapping17->shopNavigation.verified && !mapping17->shopEligibility.verified &&
-        mapping17->validation.verified && mapping17->localPolicy.verified);
-    assert(!RUINThemeMappingsForHost(NULL) &&
-        !RUINThemeMappingsForHost(RUINKnownHostForVersion(@"26.18.0", @"unsupported")));
+    const RUINVersionMapping *version16 = RUINMappingForInfo(@{@"CFBundleIdentifier":@"jp.naver.line",
+        @"CFBundleShortVersionString":@"26.16.0", @"CFBundleVersion":@"2026.1006.1718"});
+    const RUINVersionMapping *version17 = RUINMappingForInfo(@{@"CFBundleIdentifier":@"jp.naver.line",
+        @"CFBundleShortVersionString":@"26.17.0", @"CFBundleVersion":@"2026.1103.1841"});
+    const RUINThemeMappings *mapping16 = version16 ? &version16->themes : NULL;
+    const RUINThemeMappings *mapping17 = version17 ? &version17->themes : NULL;
+    assert(mapping16 && mapping16->shopNavigation.status == RUINMappingStatusVerified &&
+        mapping16->shopEligibility.status == RUINMappingStatusVerified &&
+        mapping16->validation.status == RUINMappingStatusVerified &&
+        mapping16->localPolicy.status == RUINMappingStatusVerified);
+    assert(mapping17 && mapping17->shopNavigation.status == RUINMappingStatusVerified &&
+        mapping17->shopEligibility.status == RUINMappingStatusUnsupported &&
+        mapping17->validation.status == RUINMappingStatusVerified &&
+        mapping17->localPolicy.status == RUINMappingStatusVerified);
+    assert(!RUINMappingForInfo(@{@"CFBundleIdentifier":@"jp.naver.line",
+        @"CFBundleShortVersionString":@"26.18.0", @"CFBundleVersion":@"unsupported"}));
     gThemeShopMappings = mapping16;
     Method integer = class_getInstanceMethod(NSUserDefaults.class, @selector(integerForKey:));
     Method object = class_getInstanceMethod(NSUserDefaults.class, @selector(objectForKey:));

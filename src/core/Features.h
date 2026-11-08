@@ -3,8 +3,6 @@
 NS_ASSUME_NONNULL_BEGIN
 
 FOUNDATION_EXPORT NSString * const RUINTargetBundleIdentifier;
-FOUNDATION_EXPORT NSString * const RUINTargetVersion;
-FOUNDATION_EXPORT NSString * const RUINTargetBuild;
 FOUNDATION_EXPORT NSString * const RUINReadControlEnabledDefaultsKey;
 FOUNDATION_EXPORT NSString * const RUINLocalNamesDefaultsKey;
 FOUNDATION_EXPORT NSString * const RUINLocalNamesByIdentityDefaultsKey;

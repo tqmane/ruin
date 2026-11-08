@@ -1,6 +1,7 @@
 SDK = $(shell xcrun --sdk iphoneos --show-sdk-path)
 CC := xcrun --sdk iphoneos clang
-HOST_COMMON := $(wildcard src/known/*.m)
+VERSION_MAPPING_SOURCES := $(wildcard src/known/versions/*.m)
+HOST_COMMON := $(wildcard src/known/*.m) $(VERSION_MAPPING_SOURCES)
 HOST_CC = xcrun --sdk macosx clang -DRUIN_HOST_CHECK=1 $(HOST_COMMON)
 HOST_WARNINGS := -Wall -Wextra -Werror
 RUIN_BUILD_VERSION ?= $(shell cat VERSION)
@@ -21,10 +22,10 @@ LOGOS_DEPS := $(wildcard \
 source = $(if $(filter $(1:.m=.x),$(LOGOS_SOURCES)),build/logos/$(1),$(1))
 CFLAGS = -arch arm64 -isysroot $(SDK) -miphoneos-version-min=18.0 -fobjc-arc -fblocks -Wall -Wextra -O2 \
 	-DRUIN_BUILD_VERSION='@"$(RUIN_BUILD_VERSION)"'
-SOURCES := $(sort $(wildcard src/*/*.m))
+SOURCES := $(sort $(wildcard src/*/*.m) $(VERSION_MAPPING_SOURCES))
 OBJECTS := $(SOURCES:%.m=build/%.o) $(LOGOS_SOURCES:%.x=build/%.o) build/fishhook.o build/SwiftFields.o
 
-.PHONY: all check check-host check-portable check-packaging check-fixtures logos clean dist version FORCE
+.PHONY: all check check-host check-portable check-packaging check-fixtures check-mapping-manifest logos clean dist version FORCE
 all: build/RUIN.dylib build/insert_dylib
 FORCE:
 # ponytail: rebuild the single version owner; use a generated header if this becomes expensive.
@@ -96,9 +97,16 @@ HOST_FIXTURES := \
 	build/check_native_theme_validation \
 	build/check_native_read_positions \
 	build/check_local_notifications
-$(HOST_FIXTURES): $(wildcard src/*/*.h) $(wildcard src/known/*.def) $(HOST_COMMON)
+$(HOST_FIXTURES): $(wildcard src/*/*.h) $(HOST_COMMON)
 
-check-host: check-portable $(HOST_FIXTURES)
+build/export_version_mappings: tools/export_version_mappings.m $(HOST_COMMON) $(wildcard src/*/*.h)
+	mkdir -p build
+	$(HOST_CC) -fobjc-arc -fblocks $(HOST_WARNINGS) $(CPPFLAGS) $< -framework Foundation -o $@
+
+check-mapping-manifest: build/export_version_mappings tests/fixtures/version-mappings.json
+	./build/export_version_mappings --check tests/fixtures/version-mappings.json
+
+check-host: check-portable check-mapping-manifest $(HOST_FIXTURES)
 	@set -e; for fixture in $(filter build/%,$^); do codesign --force --sign - "$$fixture"; done
 	./build/check_native_tab_availability
 	./build/check_bundle_identity
@@ -320,11 +328,11 @@ build/logos/%.m: %.x $(LOGOS_DEPS)
 	$(PERL) $(LOGOS) -c generator=internal -c warnings=error $< > $@.tmp
 	mv $@.tmp $@
 
-build/%.o: build/logos/%.m $(wildcard src/*/*.h) $(wildcard src/known/*.def) vendor/fishhook/fishhook.h VERSION
+build/%.o: build/logos/%.m $(wildcard src/*/*.h) vendor/fishhook/fishhook.h VERSION
 	mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 
-build/%.o: %.m $(wildcard src/*/*.h) $(wildcard src/known/*.def) vendor/fishhook/fishhook.h VERSION
+build/%.o: %.m $(wildcard src/*/*.h) vendor/fishhook/fishhook.h VERSION
 	mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 

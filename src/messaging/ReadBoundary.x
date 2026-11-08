@@ -23,16 +23,18 @@ static BOOL testNativeCaller = YES;
 void RUINBoundaryTestNativeCaller(BOOL value) { testNativeCaller = value; }
 #endif
 
-static BOOL VerifyNativeReadSite(const RUINHostIdentity *host, const RUINReadBoundaryMapping *mapping) {
-    if (!host || !mapping || !mapping->anchors || !mapping->anchorCount || !mapping->callerReturnAddress) return NO;
+static BOOL VerifyNativeReadSite(const RUINVersionMapping *versionMapping,
+    const RUINReadBoundaryMapping *mapping) {
+    if (!versionMapping || !mapping || mapping->status != RUINMappingStatusVerified ||
+        !mapping->anchors || !mapping->anchorCount || !mapping->callerReturnAddress) return NO;
 #if defined(RUIN_BOUNDARY_HOST_CHECK)
     nativeReadCaller = 1;
     return YES;
 #else
+    if (RUINCurrentMapping() != versionMapping) return NO;
     const struct mach_header_64 *header = (const void *)_dyld_get_image_header(0);
     intptr_t slide = _dyld_get_image_vmaddr_slide(0);
-    if (!RUINVerifyHostImage(host, header) ||
-        !RUINVerifyInstructions(header, slide, mapping->anchors, mapping->anchorCount)) return NO;
+    if (!RUINVerifyInstructions(header, slide, mapping->anchors, mapping->anchorCount)) return NO;
     uintptr_t address = mapping->callerReturnAddress;
     if (slide >= 0) {
         if (address > UINTPTR_MAX - (uintptr_t)slide) return NO;
@@ -276,9 +278,13 @@ void RUINInstallReadBoundary(void) {
     NSDictionary *info = NSBundle.mainBundle.infoDictionary;
     nativeReadCaller = 0;
     if (!RUINTargetMetadataMatchesInfo(info)) return;
-    const RUINHostIdentity *host = RUINKnownHostForInfo(info);
-    const RUINMessagingMapping *mapping = RUINMessagingMappingForHost(host);
-    if (!mapping || !VerifyNativeReadSite(host, &mapping->readBoundary)) return;
+#if defined(RUIN_BOUNDARY_HOST_CHECK)
+    const RUINVersionMapping *versionMapping = RUINMappingForInfo(info);
+#else
+    const RUINVersionMapping *versionMapping = RUINCurrentMapping();
+#endif
+    const RUINMessagingMapping *mapping = versionMapping ? &versionMapping->messaging : NULL;
+    if (!mapping || !VerifyNativeReadSite(versionMapping, &mapping->readBoundary)) return;
     @synchronized (NSManagedObjectContext.class) {
         if (!installedBoundaries) installedBoundaries = [NSMutableDictionary dictionary];
         if (!installedImplementations) installedImplementations = [NSMutableDictionary dictionary];

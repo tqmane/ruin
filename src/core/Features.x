@@ -13,14 +13,6 @@
 #import <string.h>
 
 NSString * const RUINTargetBundleIdentifier = @"jp.naver.line";
-// Legacy public constants describe the newest build, not the compatibility gate.
-#define RUIN_KNOWN_HOST(version, build, uuid, hash, complete)
-#define RUIN_LATEST_HOST(version, build, uuid, hash, complete) \
-    NSString * const RUINTargetVersion = @version; \
-    NSString * const RUINTargetBuild = @build;
-#include "../known/KnownHosts.def"
-#undef RUIN_LATEST_HOST
-#undef RUIN_KNOWN_HOST
 NSString * const RUINReadControlEnabledDefaultsKey = @"RUINReadControlEnabled";
 NSString * const RUINLocalNamesDefaultsKey = @"RUINLocalNames";
 NSString * const RUINLocalNamesByIdentityDefaultsKey = @"RUINLocalNamesByIdentity";
@@ -111,16 +103,32 @@ static BOOL RUINInfoStringEquals(NSDictionary *info, NSString *key, NSString *ex
     return [value isKindOfClass:[NSString class]] && [value isEqualToString:expected];
 }
 
+typedef struct {
+    NSString *version;
+    BOOL matched;
+} RUINKnownVersionMatch;
+
+static void RUINMatchKnownVersion(const RUINVersionMapping *mapping, void *context)
+{
+    RUINKnownVersionMatch *match = context;
+    match->matched |= [match->version isKindOfClass:NSString.class] &&
+        [match->version isEqualToString:@(mapping->host.version)];
+}
+
 static BOOL RUINTargetMatches(BOOL *bundleMatches, BOOL *versionMatches, BOOL *buildMatches)
 {
     NSBundle *bundle = [NSBundle mainBundle];
     NSDictionary *info = bundle.infoDictionary ?: @{};
     BOOL matchesBundle = [bundle.bundleIdentifier isEqualToString:RUINTargetBundleIdentifier] ||
         RUINInfoStringEquals(info, @"RUINOriginalBundleIdentifier", RUINTargetBundleIdentifier);
-    BOOL matchesVersion = NO;
-    for (size_t i = 0; i < RUINKnownHostCount; i++)
-        matchesVersion |= RUINInfoStringEquals(info, @"CFBundleShortVersionString", @(RUINKnownHosts[i].version));
-    BOOL matchesBuild = RUINKnownHostForVersion(info[@"CFBundleShortVersionString"], info[@"CFBundleVersion"]) != NULL;
+    RUINKnownVersionMatch versionMatch = {info[@"CFBundleShortVersionString"], NO};
+    RUINEnumerateVersionMappings(RUINMatchKnownVersion, &versionMatch);
+    BOOL matchesVersion = versionMatch.matched;
+    BOOL matchesBuild = RUINMappingForInfo(@{
+        @"CFBundleIdentifier": RUINTargetBundleIdentifier,
+        @"CFBundleShortVersionString": info[@"CFBundleShortVersionString"] ?: @"",
+        @"CFBundleVersion": info[@"CFBundleVersion"] ?: @""
+    }) != NULL;
     if (bundleMatches) *bundleMatches = matchesBundle;
     if (versionMatches) *versionMatches = matchesVersion;
     if (buildMatches) *buildMatches = matchesBuild;

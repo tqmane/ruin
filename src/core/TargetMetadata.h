@@ -1,5 +1,6 @@
 #pragma once
 #import "../known/BinaryVerifier.h"
+#import "../known/VersionMapping.h"
 
 static inline BOOL RUINVersionMetadataIsValid(id value) {
     if (![value isKindOfClass:NSString.class]) return NO;
@@ -26,16 +27,27 @@ static inline BOOL RUINTargetMetadataMatchesInfo(NSDictionary *info)
     return RUINVersionMetadataIsValid(version) && RUINVersionMetadataIsValid(build);
 }
 
-static inline BOOL RUINVerifiedTargetMatchesInfo(NSDictionary *info) {
-    const RUINHostIdentity *host = RUINKnownHostForInfo(info);
+static inline BOOL RUINMappingIdentityMatchesInfo(const RUINVersionMapping *mapping, NSDictionary *info) {
+    id version = info[@"CFBundleShortVersionString"], build = info[@"CFBundleVersion"];
+    return mapping && [version isKindOfClass:NSString.class] && [build isKindOfClass:NSString.class] &&
+        [version isEqualToString:@(mapping->host.version)] && [build isEqualToString:@(mapping->host.build)];
+}
+
+static inline const RUINVersionMapping *RUINVerifiedMappingForInfo(NSDictionary *info) {
+    if (!RUINTargetMetadataMatchesInfo(info)) return NULL;
 #if defined(RUIN_HOST_CHECK)
-    return host != NULL;
+    return RUINMappingForInfo(info);
 #else
-    return RUINCurrentHostImageMatches(host);
+    const RUINVersionMapping *mapping = RUINCurrentMapping();
+    return RUINMappingIdentityMatchesInfo(mapping, info) ? mapping : NULL;
 #endif
 }
 
+static inline BOOL RUINVerifiedTargetMatchesInfo(NSDictionary *info) {
+    return RUINVerifiedMappingForInfo(info) != NULL;
+}
+
 static inline BOOL RUINFullySupportedTargetMatchesInfo(NSDictionary *info) {
-    const RUINHostIdentity *host = RUINKnownHostForInfo(info);
-    return host && host->fullySupported && RUINVerifiedTargetMatchesInfo(info);
+    const RUINVersionMapping *mapping = RUINVerifiedMappingForInfo(info);
+    return mapping && mapping->host.supportStatus == RUINMappingStatusVerified;
 }

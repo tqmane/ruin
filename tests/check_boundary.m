@@ -4,6 +4,7 @@
 #import "Features.h"
 #import "ReadBoundary.h"
 #import "MessagingMappings.h"
+#import "VersionMapping.h"
 extern void RUINBoundaryTestNativeCaller(BOOL value);
 
 @interface ManagedChat : NSManagedObject
@@ -75,14 +76,16 @@ static void CheckVersionMappings(void) {
     NSDictionary *info16 = @{@"RUINOriginalBundleIdentifier":@"jp.naver.line", @"CFBundleShortVersionString":@"26.16.0", @"CFBundleVersion":@"2026.1006.1718"};
     NSDictionary *info17 = @{@"RUINOriginalBundleIdentifier":@"jp.naver.line", @"CFBundleShortVersionString":@"26.17.0", @"CFBundleVersion":@"2026.1103.1841"};
     NSDictionary *unknown = @{@"RUINOriginalBundleIdentifier":@"jp.naver.line", @"CFBundleShortVersionString":@"26.99.0", @"CFBundleVersion":@"unknown"};
-    const RUINMessagingMapping *map16 = RUINMessagingMappingForInfo(info16);
-    const RUINMessagingMapping *map17 = RUINMessagingMappingForInfo(info17);
+    const RUINVersionMapping *version16 = RUINMappingForInfo(info16);
+    const RUINVersionMapping *version17 = RUINMappingForInfo(info17);
+    const RUINMessagingMapping *map16 = version16 ? &version16->messaging : NULL;
+    const RUINMessagingMapping *map17 = version17 ? &version17->messaging : NULL;
     Require(map16 && map16->readBoundary.anchorCount == 1 && map16->readBoundary.callerReturnAddress,
         @"26.16 read boundary mapping was not preserved");
     Require(map17 && map17->readBoundary.anchorCount == 1 && map17->readBoundary.callerReturnAddress &&
         map17->readBoundary.callerReturnAddress != map16->readBoundary.callerReturnAddress,
         @"26.17 read boundary mapping was not resolved independently");
-    Require(!RUINMessagingMappingForInfo(unknown), @"unknown host acquired a numeric read mapping");
+    Require(!RUINMappingForInfo(unknown), @"unknown host acquired a numeric read mapping");
 }
 static NSEntityDescription *ChatEntity(NSString *name, NSString *className) {
     NSEntityDescription *entity = [NSEntityDescription new];

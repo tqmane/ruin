@@ -60,14 +60,16 @@ static void CheckVersionMappings(void) {
     NSDictionary *info16 = @{@"RUINOriginalBundleIdentifier":@"jp.naver.line", @"CFBundleShortVersionString":@"26.16.0", @"CFBundleVersion":@"2026.1006.1718"};
     NSDictionary *info17 = @{@"RUINOriginalBundleIdentifier":@"jp.naver.line", @"CFBundleShortVersionString":@"26.17.0", @"CFBundleVersion":@"2026.1103.1841"};
     NSDictionary *unknown = @{@"RUINOriginalBundleIdentifier":@"jp.naver.line", @"CFBundleShortVersionString":@"26.99.0", @"CFBundleVersion":@"unknown"};
-    const RUINMessagingMapping *map16 = RUINMessagingMappingForInfo(info16);
-    const RUINMessagingMapping *map17 = RUINMessagingMappingForInfo(info17);
+    const RUINVersionMapping *version16 = RUINMappingForInfo(info16);
+    const RUINVersionMapping *version17 = RUINMappingForInfo(info17);
+    const RUINMessagingMapping *map16 = version16 ? &version16->messaging : NULL;
+    const RUINMessagingMapping *map17 = version17 ? &version17->messaging : NULL;
     Check(map16 && map16->unsendOperation.parserParam1ReturnAddress &&
         map16->unsendOperation.orderedLookupReturnAddressCount == 5, @"26.16 unsend mapping was not preserved");
     Check(map17 && map17->readBoundary.callerReturnAddress && map17->readBoundary.anchorCount == 1 &&
         map17->unsendOperation.parserParam1ReturnAddress && map17->unsendOperation.parserAnchorCount &&
         map17->unsendOperation.orderedLookupReturnAddressCount == 0, @"26.17 mapping enabled an unproven unsend lookup");
-    Check(!RUINMessagingMappingForInfo(unknown), @"unknown host acquired a numeric messaging mapping");
+    Check(!RUINMappingForInfo(unknown), @"unknown host acquired a numeric messaging mapping");
 }
 static NSAttributeDescription *Attribute(NSString *name, NSAttributeType type) {
     NSAttributeDescription *a = [NSAttributeDescription new]; a.name = name; a.attributeType = type; a.optional = YES; return a;

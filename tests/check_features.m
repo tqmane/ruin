@@ -166,7 +166,7 @@ static NSDictionary *RUINFakeInfoForBuild(NSString *build)
         @"CFBundleIdentifier": @"host.ruin.check",
         @"RUINOriginalBundleIdentifier": RUINTargetBundleIdentifier,
         @"RUINSignedBundleIdentifier": @"host.ruin.check",
-        @"CFBundleShortVersionString": RUINTargetVersion,
+        @"CFBundleShortVersionString": @"26.17.0",
         @"CFBundleVersion": build
     };
 }
@@ -230,8 +230,9 @@ static int RUINRunChecks(void)
     int result = 0;
 
     @try {
-        CHECK([RUINTargetVersion isEqualToString:@"26.17.0"] &&
-              [RUINTargetBuild isEqualToString:@"2026.1103.1841"], @"target constants differ from researched build");
+        CHECK(RUINMappingForInfo(@{@"CFBundleIdentifier":@"jp.naver.line",
+              @"CFBundleShortVersionString":@"26.17.0", @"CFBundleVersion":@"2026.1103.1841"}) != NULL,
+              @"latest known identity was not discoverable through the mapping selector");
         NSDictionary *stockTarget = @{
             @"CFBundleIdentifier": @"jp.naver.line",
             @"CFBundleShortVersionString": @"26.16.0",
@@ -297,7 +298,7 @@ static int RUINRunChecks(void)
         CHECK([[ManagedChat new] canMarkChatAsReadToServer], @"unsupported build changed ManagedChat behavior");
         CHECK([[ManagedUser new].displayUserName isEqualToString:@"A"], @"unsupported build applied a local alias");
 
-        gFakeInfoDictionary = RUINFakeInfoForBuild(RUINTargetBuild);
+        gFakeInfoDictionary = RUINFakeInfoForBuild(@"2026.1103.1841");
         [defaults removeObjectForKey:RUINReadControlEnabledDefaultsKey];
         RUINInstallFeatures();
         diagnostics = RUINFeatureDiagnostics();

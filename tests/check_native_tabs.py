@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import hashlib
+import json
 import struct
 import subprocess
 import sys
@@ -7,6 +8,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+MAPPING_MANIFEST = ROOT / "tests/fixtures/version-mappings.json"
 TIMELINE_CASES = ["squareTab", "voom", "shopping", "twShopping"]
 
 MAPPINGS = [
@@ -73,6 +75,38 @@ REFRESH_WORDS = {
 EXPECTED_CASE_TABLE = [0x24, 0x10, 0x20, 0x18, 0x40]
 EXPECTED_BRIDGE = [0xAA1603E0, 0xAA1503E1, 0xD61F0100]
 EXPECTED_GENERATOR_PROLOGUE = [0xD10183FF, 0xA90167FA, 0xA9025FF8, 0xA90357F6]
+
+
+def verify_compiled_mapping(mapping):
+    manifest = json.loads(MAPPING_MANIFEST.read_text())
+    matches = [row for row in manifest["mappings"] if
+               row["host"]["version"] == mapping["version"] and
+               row["host"]["build"] == mapping["build"] and
+               row["host"]["uuid"] == mapping["uuid"] and
+               row["host"]["sourceSHA256"] == mapping["sha256"]]
+    assert len(matches) == 1, (mapping["version"], len(matches))
+    native = matches[0]["nativeTabs"]
+    assert native["status"] == "verified"
+    for field, expected in (("bridgeVA", mapping["bridge"]),
+                            ("witnessTableVA", mapping["table"]),
+                            ("caseTableVA", mapping["case_table"]),
+                            ("firstWitnessVA", mapping["first_witness"]),
+                            ("lastWitnessVA", mapping["last_witness"]),
+                            ("menuGeneratorEndVA", mapping["case_table"])):
+        assert int(native[field], 16) == expected, (mapping["version"], field)
+    assert [int(value, 16) for value in native["getters"]] == mapping["getters"]
+    assert int(native["menuGenerator"]["address"], 16) == mapping["generation_function"]
+    assert [int(value, 16) for value in native["menuGenerator"]["words"]] == EXPECTED_GENERATOR_PROLOGUE
+    assert [int(value, 16) for value in native["bridgeWords"]] == EXPECTED_BRIDGE
+    assert native["caseWords"] == EXPECTED_CASE_TABLE
+    assert native["slots"] == SLOTS
+    refresh = native["refreshReads"]
+    assert len(refresh) == len(mapping["refresh"])
+    for actual, (slot, getter, return_pc) in zip(refresh, mapping["refresh"]):
+        assert (int(actual["slot"], 16), int(actual["getterVA"], 16),
+                int(actual["returnVA"], 16)) == (slot, getter, return_pc)
+        words = mapping["customizable_refresh_words"] if slot == 0x50 else REFRESH_WORDS[slot]
+        assert [int(value, 16) for value in actual["callWords"]] == words
 
 
 def parse_image(data):
@@ -293,27 +327,7 @@ def main():
     assert "case TimelineShopping: case TimelineTWShopping: return ChoiceShopping;" in native
     assert "nativeMenuAndIndexGenerationPreserved" in native
     for mapping in MAPPINGS:
-        mapping_source = (ROOT / "src/known/NativeTabMappings.m").read_text()
-        row_start = mapping_source.index(f'{{"{mapping["version"]}", "{mapping["build"]}",')
-        depth = 0
-        row_end = row_start
-        for row_end in range(row_start, len(mapping_source)):
-            if mapping_source[row_end] == "{":
-                depth += 1
-            elif mapping_source[row_end] == "}":
-                depth -= 1
-                if depth == 0:
-                    row_end += 1
-                    break
-        row = mapping_source[row_start:row_end]
-        values = [mapping["bridge"], mapping["table"], mapping["case_table"],
-                  mapping["first_witness"], mapping["last_witness"], *mapping["getters"],
-                  mapping["generation_function"], *EXPECTED_GENERATOR_PROLOGUE,
-                  *SLOTS, *EXPECTED_CASE_TABLE, *EXPECTED_BRIDGE]
-        for slot, getter, return_pc in mapping["refresh"]:
-            words = mapping["customizable_refresh_words"] if slot == 0x50 else REFRESH_WORDS[slot]
-            values.extend([slot,getter,return_pc,*words])
-        assert all(f"0x{value:x}" in row.lower() for value in values)
+        verify_compiled_mapping(mapping)
     strings = subprocess.run(["strings", "-a", str(binary)], check=True, capture_output=True, text=True).stdout
     assert shopping_controller in strings
     for filename in sys.argv[1:]:
