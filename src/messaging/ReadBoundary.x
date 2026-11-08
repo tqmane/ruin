@@ -34,9 +34,10 @@ static BOOL VerifyNativeReadSite(const RUINVersionMapping *versionMapping,
     return YES;
 #else
     if (RUINCurrentMapping() != versionMapping) return NO;
-    const struct mach_header_64 *header = (const void *)_dyld_get_image_header(0);
-    intptr_t slide = _dyld_get_image_vmaddr_slide(0);
-    if (!RUINVerifyInstructions(header, slide, mapping->anchors, mapping->anchorCount)) return NO;
+    RUINMainExecutableImage image;
+    if (!RUINResolveMainExecutableImage(&image)) return NO;
+    intptr_t slide = image.slide;
+    if (!RUINVerifyInstructions(image.header, slide, mapping->anchors, mapping->anchorCount)) return NO;
     uintptr_t address = mapping->callerReturnAddress;
     if (slide >= 0) {
         if (address > UINTPTR_MAX - (uintptr_t)slide) return NO;

@@ -3,6 +3,7 @@
 #import <UIKit/UIKit.h>
 #import "Features.h"
 #import "TargetMetadata.h"
+#import "BinaryVerifier.h"
 #import "BundleIdentity.h"
 #import "Keychain.h"
 #import "Sideload.h"
@@ -48,6 +49,7 @@
 #import "ClientVersionAdvertisement.h"
 #import "LegacyMessagingConfiguration.h"
 #import <objc/runtime.h>
+#import <mach-o/dyld.h>
 #import <string.h>
 
 extern void RUINInstallNativeEntry(void);
@@ -94,19 +96,67 @@ static void RUINInstallLocalNotificationLaunchBoundary(void) {
     sLocalNotificationLaunchHookInstalled = YES;
 }
 
+static NSString *RUINRuntimeImageUUID(const struct mach_header *header) {
+    if (!header || header->magic != MH_MAGIC_64) return nil;
+    const struct mach_header_64 *image = (const void *)header;
+    if (image->sizeofcmds > 1024 * 1024 ||
+        image->ncmds > image->sizeofcmds / sizeof(struct load_command)) return nil;
+    const uint8_t *cursor = (const void *)(image + 1), *end = cursor + image->sizeofcmds;
+    NSString *uuid = nil;
+    for (uint32_t i = 0; i < image->ncmds; i++) {
+        if ((size_t)(end - cursor) < sizeof(struct load_command)) return nil;
+        const struct load_command *command = (const void *)cursor;
+        if (command->cmdsize < sizeof(*command) || command->cmdsize > (size_t)(end - cursor)) return nil;
+        if (command->cmd == LC_UUID) {
+            if (uuid || command->cmdsize != sizeof(struct uuid_command)) return nil;
+            uuid = [[NSUUID alloc] initWithUUIDBytes:((const struct uuid_command *)command)->uuid].UUIDString;
+        }
+        cursor += command->cmdsize;
+    }
+    return cursor == end ? uuid : nil;
+}
+
 NSDictionary *RUINRuntimeDiagnostics(void) {
     NSDictionary *info = RUINMainBundleInfo();
     NSDictionary *featureDiagnostics = RUINFeatureDiagnostics() ?: @{};
     NSDictionary *compatibilityDiagnostics = RUINCompatibilityDiagnostics() ?: @{};
+    RUINMainExecutableImage executable;
+    BOOL resolved = RUINResolveMainExecutableImage(&executable);
+    const struct mach_header *mainImage = resolved ? (const void *)executable.header : NULL;
+    const char *imageName = resolved ? _dyld_get_image_name(executable.imageIndex) : NULL;
+    NSString *imageBasename = imageName ? [NSString stringWithUTF8String:imageName].lastPathComponent : nil;
+    const struct mach_header *imageZero = _dyld_get_image_header(0);
+    const char *imageZeroName = _dyld_get_image_name(0);
+    NSString *imageZeroBasename = imageZeroName ? [NSString stringWithUTF8String:imageZeroName].lastPathComponent : nil;
+#if defined(__arm64e__)
+    NSString *loadedArchitecture = @"arm64e";
+#elif defined(__arm64__)
+    NSString *loadedArchitecture = @"arm64";
+#else
+    NSString *loadedArchitecture = @"unknown";
+#endif
     return @{
         @"capturedAt": [[NSISO8601DateFormatter new] stringFromDate:NSDate.date],
-        @"ruin": @{ @"version": RUINVersion, @"loaded": @YES },
+        @"ruin": @{ @"version": RUINVersion, @"loaded": @YES,
+            @"loadedArchitecture": loadedArchitecture },
         @"app": @{
             @"originalBundleIdentifier": info[@"RUINOriginalBundleIdentifier"] ?: NSNull.null,
             @"signedBundleIdentifier": info[@"RUINSignedBundleIdentifier"] ?: NSNull.null,
             @"version": info[@"CFBundleShortVersionString"] ?: @"unknown",
             @"build": info[@"CFBundleVersion"] ?: @"unknown",
+            @"mainExecutableResolved": @(resolved),
+            @"machOImageIndex": resolved ? @(executable.imageIndex) : NSNull.null,
+            @"machOCPUType": mainImage ? @(mainImage->cputype) : NSNull.null,
+            @"machOCPUSubtype": mainImage ? @(mainImage->cpusubtype) : NSNull.null,
+            @"machOFileType": mainImage ? @(mainImage->filetype) : NSNull.null,
+            @"machOImageName": imageBasename ?: NSNull.null,
+            @"machOUUID": RUINRuntimeImageUUID(mainImage) ?: NSNull.null,
             @"compatible": @(RUINIsCompatible())
+        },
+        @"dyldImageZero": @{
+            @"name":imageZeroBasename ?: NSNull.null,
+            @"fileType":imageZero ? @(imageZero->filetype) : NSNull.null,
+            @"uuid":RUINRuntimeImageUUID(imageZero) ?: NSNull.null
         },
         @"compatibility": compatibilityDiagnostics,
         @"bundleIdentity": RUINBundleIdentityDiagnostics(),

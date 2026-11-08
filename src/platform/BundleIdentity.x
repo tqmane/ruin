@@ -168,8 +168,10 @@ void RUINInstallBundleIdentity(void) {
     BOOL alreadyOriginal = [info[identifierKey] isEqual:originalIdentifier];
     BOOL metadataValid = RUINTargetMetadataMatchesInfo(info);
     RUINCFBindingPlan cfPlan = RUINCFBindingPlanFor(!alreadyOriginal, RUINUsesAuthenticatedImports());
-    const struct mach_header_64 *header = (const void *)_dyld_get_image_header(0);
-    BOOL imageMatches = IdentityBinaryMatches(header, info);
+    RUINMainExecutableImage image;
+    BOOL mainResolved = RUINResolveMainExecutableImage(&image);
+    const struct mach_header_64 *header = mainResolved ? image.header : NULL;
+    BOOL imageMatches = mainResolved && IdentityBinaryMatches(header, info);
     if (!alreadyOriginal && !imageMatches) {
         identityStatus = header ? @"unsupported_binary" : @"mapping_unavailable";
         return;
@@ -209,7 +211,7 @@ void RUINInstallBundleIdentity(void) {
             return;
         }
         struct rebinding binding = {"CFBundleGetInfoDictionary", (void *)IdentityCFInfo, (void **)&originalCFInfo};
-        int result = rebind_symbols_image((void *)header, _dyld_get_image_vmaddr_slide(0), &binding, 1);
+        int result = rebind_symbols_image((void *)header, image.slide, &binding, 1);
         cfBindingInstalled = result == 0 && originalCFInfo;
         cfBindingStatus = cfBindingInstalled ? @"Installed" : @"Unavailable";
         if (!cfBindingInstalled) { identityStatus = @"cf_binding_unavailable"; return; }

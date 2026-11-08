@@ -2,6 +2,7 @@
 
 #import "LocalFont.h"
 #import "LocalFontUI.h"
+#import "BinaryVerifier.h"
 #import "../core/Localization.h"
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
@@ -77,8 +78,9 @@ static _Thread_local BOOL sReplacingFont;
 
 static UIFont *RUINReplaceTextFont(UIFont *original, void *caller) {
     Dl_info image;
-    if (!original || sReplacingFont || !dladdr(caller, &image) ||
-        image.dli_fbase != _dyld_get_image_header(0)) return original;
+    RUINMainExecutableImage mainImage;
+    if (!original || sReplacingFont || !RUINResolveMainExecutableImage(&mainImage) ||
+        !dladdr(caller, &image) || image.dli_fbase != (const void *)mainImage.header) return original;
     sReplacingFont = YES;
     UIFont *replacement = RUINLocalFontAtSize(original.pointSize);
     sReplacingFont = NO;

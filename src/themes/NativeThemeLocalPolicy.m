@@ -29,9 +29,9 @@ static const RUINThemeLocalPolicyMapping *RUINVerifiedLocalPolicyMapping(void)
     const RUINThemeLocalPolicyMapping *mapping = versionMapping
         ? &versionMapping->themes.localPolicy : NULL;
     if (!mapping || mapping->status != RUINMappingStatusVerified) return NULL;
-    const struct mach_header_64 *header = (const void *)_dyld_get_image_header(0);
-    intptr_t slide = _dyld_get_image_vmaddr_slide(0);
-    return RUINVerifyInstructions(header, slide, mapping->anchors, mapping->anchorCount) ? mapping : NULL;
+    RUINMainExecutableImage image;
+    if (!RUINResolveMainExecutableImage(&image)) return NULL;
+    return RUINVerifyInstructions(image.header, image.slide, mapping->anchors, mapping->anchorCount) ? mapping : NULL;
 }
 
 BOOL RUINNativeThemeRevocationFetchPCsMatch(const uintptr_t *PCs, NSUInteger count)

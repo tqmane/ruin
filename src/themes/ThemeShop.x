@@ -264,8 +264,10 @@ static const RUINThemeMappings *RUINThemeShopMappingForInfo(NSDictionary *info)
     if (!mapping || mapping->shopNavigation.status != RUINMappingStatusVerified) return NULL;
 #if !defined(RUIN_THEMESHOP_HOST_CHECK)
     if (RUINCurrentMapping() != versionMapping) return NULL;
-    const struct mach_header_64 *header = (const void *)_dyld_get_image_header(0);
-    intptr_t slide = _dyld_get_image_vmaddr_slide(0);
+    RUINMainExecutableImage image;
+    if (!RUINResolveMainExecutableImage(&image)) return NULL;
+    const struct mach_header_64 *header = image.header;
+    intptr_t slide = image.slide;
     char actualURL[sizeof("line://shop/theme")];
     if (!RUINVerifyInstructions(header, slide, mapping->shopNavigation.anchors,
             mapping->shopNavigation.anchorCount) ||
@@ -283,9 +285,9 @@ static BOOL RUINThemeShopVerifyEligibility(const RUINThemeMappings *mapping)
     if (!mapping || mapping->shopEligibility.nativeReadAdapterStatus != RUINMappingStatusVerified) return NO;
     const RUINVersionMapping *versionMapping = RUINCurrentMapping();
     if (!versionMapping || &versionMapping->themes != mapping) return NO;
-    const struct mach_header_64 *header = (const void *)_dyld_get_image_header(0);
-    intptr_t slide = _dyld_get_image_vmaddr_slide(0);
-    return RUINVerifyInstructions(header, slide, mapping->shopEligibility.anchors,
+    RUINMainExecutableImage image;
+    if (!RUINResolveMainExecutableImage(&image)) return NO;
+    return RUINVerifyInstructions(image.header, image.slide, mapping->shopEligibility.anchors,
             mapping->shopEligibility.anchorCount);
 }
 #endif

@@ -74,8 +74,10 @@ static BOOL VerifyCode(void) {
     activeUnsendMapping = selectedUnsendMapping;
     return YES;
 #else
-    const struct mach_header_64 *header = (const void *)_dyld_get_image_header(0);
-    intptr_t slide = _dyld_get_image_vmaddr_slide(0);
+    RUINMainExecutableImage image;
+    if (!RUINResolveMainExecutableImage(&image)) return NO;
+    const struct mach_header_64 *header = image.header;
+    intptr_t slide = image.slide;
     if (RUINCurrentMapping() != versionMapping ||
         !RUINVerifyInstructions(header, slide, selectedUnsendMapping->parserAnchors,
             selectedUnsendMapping->parserAnchorCount) ||

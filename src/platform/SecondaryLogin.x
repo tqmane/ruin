@@ -7,6 +7,7 @@
 #import "Features.h"
 #import "../core/TargetMetadata.h"
 #import "LINEPrivateCalls.h"
+#import "BinaryVerifier.h"
 #import <UIKit/UIKit.h>
 #import <UIKit/UIGestureRecognizerSubclass.h>
 #import <objc/runtime.h>
@@ -58,9 +59,11 @@ static BOOL RUINSecondaryLoginTargetMatches(void) {
     UIUserInterfaceIdiom nativeIdiom = %orig;
     if (RUINHasLoginProjectionScope()) {
         Dl_info info;
+        RUINMainExecutableImage image;
         // Capture LINE's caller here: a helper function's caller is this dylib.
         void *caller = __builtin_extract_return_addr(__builtin_return_address(0));
-        if (dladdr(caller, &info) && info.dli_fbase == (void *)_dyld_get_image_header(0)) {
+        if (RUINResolveMainExecutableImage(&image) && dladdr(caller, &info) &&
+            info.dli_fbase == (const void *)image.header) {
             atomic_fetch_add(&appIdiomRequests, 1);
             return UIUserInterfaceIdiomPad;
         }
