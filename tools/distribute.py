@@ -116,7 +116,7 @@ def verify_dylib(path):
         raise ValueError(f"Dylib must contain exactly arm64 and arm64e slices; found: {found}")
     subprocess.run(["lipo", str(path), "-verify_arch", *DYLIB_ARCHITECTURES], check=True)
     subprocess.run(["codesign", "--verify", "--strict", str(path)], check=True)
-    result = subprocess.run(["otool", "-L", str(path)], check=True,
+    result = subprocess.run(["otool", "-arch", "all", "-L", str(path)], check=True,
                             capture_output=True, text=True)
     blocks = dependency_blocks_from_otool(result.stdout)
     slice_architectures = [block["architecture"] for block in blocks]

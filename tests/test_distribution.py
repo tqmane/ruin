@@ -171,9 +171,14 @@ class DistributionTests(unittest.TestCase):
                 result = subprocess.CompletedProcess(args, 0, stdout="", stderr="")
             elif args[0] == "codesign":
                 result = subprocess.CompletedProcess(args, signature_status, stdout="", stderr="unsigned")
-            elif args[:2] == ["otool", "-L"]:
+            elif args[:4] == ["otool", "-arch", "all", "-L"]:
                 result = subprocess.CompletedProcess(args, 0,
                     stdout=otool_output or self.otool_slices(), stderr="")
+            elif args[:2] == ["otool", "-L"]:
+                # Some macOS versions default to one native slice without an architecture header.
+                host_output = self.otool_slices().split("/tmp/RUIN.dylib (architecture arm64e):")[0]
+                result = subprocess.CompletedProcess(args, 0,
+                    stdout=host_output.replace(" (architecture arm64)", ""), stderr="")
             else:
                 raise AssertionError(f"Unexpected command: {args}")
             if check and result.returncode:
@@ -192,7 +197,7 @@ class DistributionTests(unittest.TestCase):
             "/System/Library/Frameworks/Foundation.framework/Foundation"])
         self.assertIn(["lipo", str(self.dylib), "-verify_arch", "arm64", "arm64e"], calls)
         self.assertIn(["codesign", "--verify", "--strict", str(self.dylib)], calls)
-        self.assertIn(["otool", "-L", str(self.dylib)], calls)
+        self.assertIn(["otool", "-arch", "all", "-L", str(self.dylib)], calls)
 
     def test_fat_dylib_rejects_missing_or_extra_architectures(self):
         for archs in ("arm64", "arm64e", "arm64 arm64e x86_64"):
@@ -210,9 +215,11 @@ class DistributionTests(unittest.TestCase):
         self.assertFalse(any(call[0] == "otool" for call in calls))
 
         output = self.otool_slices().split("/tmp/RUIN.dylib (architecture arm64e):")[0]
-        patcher, _ = self.verify_dylib_with_tools(otool_output=output)
-        with patcher, self.assertRaisesRegex(ValueError, "one dependency list for each"):
-            distribute.verify_dylib(self.dylib)
+        for missing_slice in (output, output.replace(" (architecture arm64)", "")):
+            with self.subTest(header=missing_slice.splitlines()[0]):
+                patcher, _ = self.verify_dylib_with_tools(otool_output=missing_slice)
+                with patcher, self.assertRaisesRegex(ValueError, "one dependency list for each"):
+                    distribute.verify_dylib(self.dylib)
 
     def test_fat_dylib_rejects_dependency_from_either_slice(self):
         external = "/opt/homebrew/lib/libexample.dylib"
