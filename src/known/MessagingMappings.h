@@ -22,6 +22,3 @@ typedef struct {
     RUINReadBoundaryMapping readBoundary;
     RUINUnsendOperationMapping unsendOperation;
 } RUINMessagingMapping;
-
-FOUNDATION_EXPORT const RUINMessagingMapping *RUINMessagingMappingForHost(const RUINHostIdentity *host);
-FOUNDATION_EXPORT const RUINMessagingMapping *RUINMessagingMappingForInfo(NSDictionary *info);

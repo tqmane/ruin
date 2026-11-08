@@ -24,9 +24,4 @@ typedef void (*RUINVersionMappingEnumerator)(const RUINVersionMapping *mapping, 
 
 FOUNDATION_EXPORT const RUINVersionMapping *RUINMappingForInfo(NSDictionary *info);
 FOUNDATION_EXPORT const RUINVersionMapping *RUINCurrentMapping(void);
-FOUNDATION_EXPORT const RUINVersionMapping *RUINMappingForHostIdentity(const RUINHostIdentity *host);
 FOUNDATION_EXPORT void RUINEnumerateVersionMappings(RUINVersionMappingEnumerator callback, void *context);
-
-// Temporary compatibility accessors; new mapping consumers use the composite API.
-FOUNDATION_EXPORT const RUINHostIdentity *RUINKnownHostForVersion(NSString *version, NSString *build);
-FOUNDATION_EXPORT const RUINHostIdentity *RUINKnownHostForInfo(NSDictionary *info);

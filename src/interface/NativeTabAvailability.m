@@ -227,13 +227,12 @@ NSDictionary *RUINNativeTabAvailabilityDiagnostics(void) {
 
 void RUINInstallNativeTabAvailability(void) {
 #if !defined(RUIN_NATIVE_TAB_AVAILABILITY_HOST_CHECK)
+    const RUINVersionMapping *versionMapping = RUINCurrentMapping();
+    if (!versionMapping) { atomic_store(&status,1); return; }
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        NSDictionary *info = NSBundle.mainBundle.infoDictionary;
-        if (!RUINTargetMetadataMatchesInfo(info)) { atomic_store(&status,1); return; }
-        const RUINNativeTabMapping *mapping = RUINNativeTabMappingForHost(RUINKnownHostForInfo(info));
-        if (!mapping || mapping->status != RUINMappingStatusVerified ||
-            !RUINCurrentHostImageMatches(RUINKnownHostForInfo(info))) { atomic_store(&status,1); return; }
+        const RUINNativeTabMapping *mapping = &versionMapping->nativeTabs;
+        if (mapping->status != RUINMappingStatusVerified) { atomic_store(&status,1); return; }
         intptr_t slide = _dyld_get_image_vmaddr_slide(0);
         const struct mach_header_64 *header = (const void *)_dyld_get_image_header(0);
         RUINInstructionAnchor bridge = {mapping->bridgeVA,3,{0}};

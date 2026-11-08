@@ -2,12 +2,19 @@
 #import "BinaryVerifier.h"
 #import <mach-o/dyld.h>
 #import <mach-o/loader.h>
-#include <string.h>
 
+#define RUIN_VERSION_MAPPING_REGISTRY(X) \
+    X(RUINLINE26160) \
+    X(RUINLINE26170)
+#define RUIN_DECLARE_VERSION_MAPPING(symbol) extern const RUINVersionMapping symbol;
+RUIN_VERSION_MAPPING_REGISTRY(RUIN_DECLARE_VERSION_MAPPING)
+#undef RUIN_DECLARE_VERSION_MAPPING
+#define RUIN_VERSION_MAPPING_POINTER(symbol) &symbol,
 static const RUINVersionMapping *const kVersions[] = {
-    &RUINLINE26160,
-    &RUINLINE26170
+    RUIN_VERSION_MAPPING_REGISTRY(RUIN_VERSION_MAPPING_POINTER)
 };
+#undef RUIN_VERSION_MAPPING_POINTER
+#undef RUIN_VERSION_MAPPING_REGISTRY
 
 static BOOL RUINInfoIsLINE(NSDictionary *info)
 {
@@ -56,42 +63,10 @@ const RUINVersionMapping *RUINCurrentMapping(void)
     return RUINResolveMapping(info, header, YES, kVersions, sizeof(kVersions) / sizeof(*kVersions));
 }
 
-const RUINVersionMapping *RUINMappingForHostIdentity(const RUINHostIdentity *host)
-{
-    if (!host || !host->version || !host->build || !host->uuid) return NULL;
-    const RUINVersionMapping *match = NULL;
-    for (size_t i = 0; i < sizeof(kVersions) / sizeof(*kVersions); i++) {
-        const RUINHostIdentity *candidate = &kVersions[i]->host;
-        if (strcmp(candidate->version, host->version) || strcmp(candidate->build, host->build) ||
-            strcmp(candidate->uuid, host->uuid)) continue;
-        if (match) return NULL;
-        match = kVersions[i];
-    }
-    return match;
-}
-
 void RUINEnumerateVersionMappings(RUINVersionMappingEnumerator callback, void *context)
 {
     if (!callback) return;
     for (size_t i = 0; i < sizeof(kVersions) / sizeof(*kVersions); i++) callback(kVersions[i], context);
-}
-
-const RUINHostIdentity *RUINKnownHostForVersion(NSString *version, NSString *build)
-{
-    if (![version isKindOfClass:NSString.class] || ![build isKindOfClass:NSString.class]) return NULL;
-    NSDictionary *info = @{
-        @"CFBundleIdentifier": @"jp.naver.line",
-        @"CFBundleShortVersionString": version,
-        @"CFBundleVersion": build
-    };
-    const RUINVersionMapping *mapping = RUINMappingForInfo(info);
-    return mapping ? &mapping->host : NULL;
-}
-
-const RUINHostIdentity *RUINKnownHostForInfo(NSDictionary *info)
-{
-    const RUINVersionMapping *mapping = RUINMappingForInfo(info);
-    return mapping ? &mapping->host : NULL;
 }
 
 #if defined(RUIN_HOST_CHECK)

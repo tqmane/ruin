@@ -24,5 +24,3 @@ typedef struct {
     uintptr_t getters[5];
     RUINNativeTabRefreshRead refreshReads[5];
 } RUINNativeTabMapping;
-
-FOUNDATION_EXPORT const RUINNativeTabMapping *RUINNativeTabMappingForHost(const RUINHostIdentity *host);

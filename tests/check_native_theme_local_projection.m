@@ -2,14 +2,17 @@
 #import <CoreData/CoreData.h>
 #import "NativeThemeLocalPolicy.h"
 #import "ThemeMappings.h"
+#import "VersionMapping.h"
 #include <assert.h>
 static BOOL Matches(const RUINThemeLocalPolicyMapping *mapping, const uintptr_t *PCs, size_t count) {
  assert(mapping);
  return RUINThemeLocalPolicyCallersMatch(mapping,PCs,count);
 }
 int main(void) { @autoreleasepool {
- const RUINThemeMappings *mapping16=RUINThemeMappingsForHost(RUINKnownHostForVersion(@"26.16.0",@"2026.1006.1718"));
- const RUINThemeMappings *mapping17=RUINThemeMappingsForHost(RUINKnownHostForVersion(@"26.17.0",@"2026.1103.1841"));
+ const RUINVersionMapping *version16=RUINMappingForInfo(@{@"CFBundleIdentifier":@"jp.naver.line",@"CFBundleShortVersionString":@"26.16.0",@"CFBundleVersion":@"2026.1006.1718"});
+ const RUINVersionMapping *version17=RUINMappingForInfo(@{@"CFBundleIdentifier":@"jp.naver.line",@"CFBundleShortVersionString":@"26.17.0",@"CFBundleVersion":@"2026.1103.1841"});
+ const RUINThemeMappings *mapping16=version16?&version16->themes:NULL;
+ const RUINThemeMappings *mapping17=version17?&version17->themes:NULL;
  assert(mapping16&&mapping17&&mapping16->localPolicy.status==RUINMappingStatusVerified&&
      mapping17->localPolicy.status==RUINMappingStatusVerified);
  NSString *pid=@"9ddd1e78-ff28-4a4e-a5ce-f021b9ca9002";

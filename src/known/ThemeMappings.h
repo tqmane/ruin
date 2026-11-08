@@ -63,6 +63,5 @@ typedef struct {
     RUINThemeFeatureAddressesMapping featureAddresses;
 } RUINThemeMappings;
 
-FOUNDATION_EXPORT const RUINThemeMappings *RUINThemeMappingsForHost(const RUINHostIdentity *host);
 FOUNDATION_EXPORT BOOL RUINThemeLocalPolicyCallersMatch(const RUINThemeLocalPolicyMapping *mapping,
     const uintptr_t *PCs, size_t count);

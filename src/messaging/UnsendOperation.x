@@ -54,12 +54,16 @@ static BOOL Enabled(void) {
 }
 static BOOL VerifyCode(void) {
     NSDictionary *info = NSBundle.mainBundle.infoDictionary;
-    const RUINHostIdentity *host = RUINKnownHostForInfo(info);
-    const RUINMessagingMapping *mapping = RUINMessagingMappingForHost(host);
+#if defined(RUIN_UNSEND_OPERATION_HOST_CHECK) && RUIN_UNSEND_OPERATION_HOST_CHECK
+    const RUINVersionMapping *versionMapping = RUINMappingForInfo(info);
+#else
+    const RUINVersionMapping *versionMapping = RUINCurrentMapping();
+#endif
+    const RUINMessagingMapping *mapping = versionMapping ? &versionMapping->messaging : NULL;
     selectedUnsendMapping = mapping ? &mapping->unsendOperation : NULL;
     activeUnsendMapping = NULL;
     atomic_store(&imageSlide, 0);
-    if (!TargetMatches() || !host || !selectedUnsendMapping ||
+    if (!TargetMatches() || !versionMapping || !selectedUnsendMapping ||
         selectedUnsendMapping->parserStatus != RUINMappingStatusVerified || !selectedUnsendMapping->parserAnchors ||
         !selectedUnsendMapping->parserAnchorCount || !selectedUnsendMapping->parserParam1ReturnAddress) return NO;
 #if defined(RUIN_UNSEND_OPERATION_HOST_CHECK) && RUIN_UNSEND_OPERATION_HOST_CHECK
@@ -72,7 +76,7 @@ static BOOL VerifyCode(void) {
 #else
     const struct mach_header_64 *header = (const void *)_dyld_get_image_header(0);
     intptr_t slide = _dyld_get_image_vmaddr_slide(0);
-    if (!RUINVerifyHostImage(host, header) ||
+    if (RUINCurrentMapping() != versionMapping ||
         !RUINVerifyInstructions(header, slide, selectedUnsendMapping->parserAnchors,
             selectedUnsendMapping->parserAnchorCount) ||
         selectedUnsendMapping->lookupStatus != RUINMappingStatusVerified ||
@@ -353,7 +357,13 @@ BOOL RUINUnsendOperationHasRetainedMarker(NSDictionary *messageKey) {
 }
 NSDictionary *RUINUnsendOperationDiagnostics(void) {
     long long count = 0;
-    const RUINMessagingMapping *mapping = RUINMessagingMappingForInfo(NSBundle.mainBundle.infoDictionary);
+    NSDictionary *info = NSBundle.mainBundle.infoDictionary;
+#if defined(RUIN_UNSEND_OPERATION_HOST_CHECK) && RUIN_UNSEND_OPERATION_HOST_CHECK
+    const RUINVersionMapping *versionMapping = RUINMappingForInfo(info);
+#else
+    const RUINVersionMapping *versionMapping = RUINCurrentMapping();
+#endif
+    const RUINMessagingMapping *mapping = versionMapping ? &versionMapping->messaging : NULL;
     const RUINUnsendOperationMapping *operationMapping = mapping ? &mapping->unsendOperation : NULL;
     os_unfair_lock_lock(&markerLock);
     @try {

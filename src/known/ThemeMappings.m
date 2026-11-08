@@ -1,11 +1,4 @@
 #import "ThemeMappings.h"
-#import "VersionMapping.h"
-
-const RUINThemeMappings *RUINThemeMappingsForHost(const RUINHostIdentity *host)
-{
-    const RUINVersionMapping *mapping = RUINMappingForHostIdentity(host);
-    return mapping ? &mapping->themes : NULL;
-}
 
 BOOL RUINThemeLocalPolicyCallersMatch(const RUINThemeLocalPolicyMapping *mapping,
     const uintptr_t *PCs, size_t count)

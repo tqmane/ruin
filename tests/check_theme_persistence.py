@@ -5,7 +5,6 @@ from bisect import bisect_right
 import hashlib
 import json
 from pathlib import Path
-import re
 import struct
 import sys
 
@@ -14,30 +13,31 @@ from macho_integrity import _commands, read_executable, sections, verify_source
 
 ROOT = Path(__file__).resolve().parents[1]
 PROOF = ROOT / 'build/upgrade-2617/theme-mapping-proof.json'
-MAP_SOURCE = ROOT / 'src/known/ThemeMappings.m'
+MAPPING_MANIFEST = ROOT / 'tests/fixtures/version-mappings.json'
 
 
-def mapping_anchors(version):
-    suffix = {'26.16.0': '2616', '26.17.0': '2617'}.get(version)
-    if not suffix:
-        raise AssertionError(f'No theme mappings for known LINE version {version}')
-    source = MAP_SOURCE.read_text()
+def mapping_for_host(host):
+    manifest = json.loads(MAPPING_MANIFEST.read_text())
+    candidates = [row for row in manifest['mappings']
+                  if all(row['host'][key] == host[value] for key, value in
+                         (('version', 'version'), ('build', 'build'), ('uuid', 'uuid'),
+                          ('sourceSHA256', 'sha256')))]
+    assert len(candidates) == 1, (host, len(candidates))
+    return candidates[0]
+
+
+def mapping_anchors(mapping):
+    features = mapping['themes']
     arrays = {}
-    for name, body in re.findall(
-            r'static const RUINInstructionAnchor (\w+)\[\]\s*=\s*\{(.*?)\};', source, re.S):
-        if not name.endswith(suffix):
-            continue
-        rows = []
-        for address, count, values in re.findall(
-                r'\{\s*(0x[0-9a-fA-F]+)\s*,\s*(\d+)\s*,\s*\{([^}]+)\}\s*\}', body):
-            words = [int(value.strip(), 16) for value in values.split(',')]
-            assert len(words) == int(count), name
-            rows.append({'address': int(address, 16), 'wordCount': int(count), 'words': words})
-        arrays[name] = rows
-    required = ({'kShopNavigation2616', 'kShopEligibility2616', 'kThemeValidation2616',
-                 'kThemeLocalPolicy2616'} if suffix == '2616' else
-                {'kShopNavigation2617', 'kThemeValidation2617', 'kThemeLocalPolicy2617'})
-    assert set(arrays) == required, (version, set(arrays))
+    for feature in ('shopNavigation', 'shopEligibility', 'validation', 'localPolicy'):
+        record = features[feature]
+        anchors = record['anchors']
+        if record['status'] == 'verified' and anchors:
+            arrays[feature] = [
+                {'address': int(row['address'], 16), 'wordCount': row['wordCount'],
+                 'words': [int(word, 16) for word in row['words']]}
+                for row in anchors
+            ]
     return arrays
 
 
@@ -154,7 +154,8 @@ def check(source, proof_path):
     data = read_executable(source)
     host = verify_source(data)
     version = host['version']
-    arrays = mapping_anchors(version)
+    mapping = mapping_for_host(host)
+    arrays = mapping_anchors(mapping)
     _, image_sections, _ = sections(data)
 
     def at(address, size):
@@ -192,18 +193,15 @@ def check(source, proof_path):
             raw = at(row['address'], row['wordCount'] * 4)
             assert raw == struct.pack('<' + 'I' * row['wordCount'], *row['words']), (name, hex(row['address']))
 
-    # Identity fields are owned by KnownHosts.def; each theme row points at
-    # that canonical host record and carries only feature data.
-    mapping_header = (ROOT / 'src/known/ThemeMappings.h').read_text()
-    mapping_source = MAP_SOURCE.read_text()
-    assert 'const RUINHostIdentity *host;' in mapping_header
-    assert '.host = &RUINKnownHosts[0]' in mapping_source
-    assert '.host = &RUINKnownHosts[1]' in mapping_source
-    assert '.sourceSHA256 =' not in mapping_source and '.uuid =' not in mapping_source
+    assert mapping['host']['supportStatus'] in ('verified', 'unverified')
+    assert mapping['themes']['shopEligibility']['status'] == (
+        'verified' if version == '26.16.0' else 'unsupported')
+    assert mapping['messaging']['unsendOperation']['lookupStatus'] == (
+        'verified' if version == '26.16.0' else 'unsupported')
 
     if version == '26.16.0':
-        assert len(arrays['kShopEligibility2616']) == 23
-        assert len(arrays['kThemeLocalPolicy2616']) == 3
+        assert len(arrays['shopEligibility']) == 23
+        assert len(arrays['localPolicy']) == 3
         assert at(0x10a44eb50, len(b'line://shop/theme\0')) == b'line://shop/theme\0'
         assert at(0x10a742270, len(b'validateTheme result:\0')) == b'validateTheme result:\0'
 
@@ -223,17 +221,17 @@ def check(source, proof_path):
         assert validity_call & 0xfc000000 == 0x94000000
         assert 0x105df1848 + (signed(validity_call & 0x03ffffff, 26) << 2) == 0x105df18a8
     else:
-        assert len(arrays['kThemeValidation2617']) == 2
-        assert len(arrays['kThemeLocalPolicy2617']) == 4
+        assert len(arrays['validation']) == 2
+        assert len(arrays['localPolicy']) == 4
         assert at(0x10a647430, len(b'line://shop/theme\0')) == b'line://shop/theme\0'
         assert at(0x10a93cbf0, len(b'validateTheme result:\0')) == b'validateTheme result:\0'
         assert adrp_add_target(0x1057a5c94) == 0x10a93cbf0
         assert branch_target(0x1057a5ce8) == 0x10961fd00
         assert word(0x1025cc684) == 0x39402000
         assert word(0x1025cc688) == 0xd65f03c0
-        assert arrays['kShopNavigation2617'][0]['address'] == 0x100043524
-        assert arrays['kThemeValidation2617'][1]['address'] + 8 == 0x1057a5cec
-        assert [row['address'] for row in arrays['kThemeLocalPolicy2617']] == [
+        assert arrays['shopNavigation'][0]['address'] == 0x100043524
+        assert arrays['validation'][1]['address'] + 8 == 0x1057a5cec
+        assert [row['address'] for row in arrays['localPolicy']] == [
             0x105951164, 0x105955ea0, 0x1059556d4, 0x10595829c]
         assert branch_target(0x105951168) == 0x1095c3048
         assert branch_target(0x105955ea4) == 0x105951120
@@ -250,8 +248,17 @@ def check(source, proof_path):
         assert record['build'] == host['build'] and record['uuid'] == host['uuid']
         assert record['sha256'] == host['sha256']
         verify_local_policy_functions(data, record['localPolicy'], version)
+        proof_names = {
+            '26.16.0': {'shopNavigation': 'kShopNavigation2616',
+                        'shopEligibility': 'kShopEligibility2616',
+                        'validation': 'kThemeValidation2616',
+                        'localPolicy': 'kThemeLocalPolicy2616'},
+            '26.17.0': {'shopNavigation': 'kShopNavigation2617',
+                        'validation': 'kThemeValidation2617',
+                        'localPolicy': 'kThemeLocalPolicy2617'}
+        }[version]
         for name, rows in arrays.items():
-            assert record['instructionAnchors'][name] == encoded_rows(rows), name
+            assert record['instructionAnchors'][proof_names[name]] == encoded_rows(rows), name
         if version == '26.17.0':
             assert record['shopNavigation']['status'] == 'ported'
             assert record['themeValidation']['status'] == 'ported'

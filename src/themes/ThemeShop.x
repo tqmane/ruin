@@ -556,10 +556,12 @@ static NSNumber *RUINThemeShopTestNativeRead(RUINThemeShopGateScope kind)
 }
 static void RUINThemeShopCheckGate(void)
 {
-    const RUINHostIdentity *host16 = RUINKnownHostForVersion(@"26.16.0", @"2026.1006.1718");
-    const RUINHostIdentity *host17 = RUINKnownHostForVersion(@"26.17.0", @"2026.1103.1841");
-    const RUINThemeMappings *mapping16 = RUINThemeMappingsForHost(host16);
-    const RUINThemeMappings *mapping17 = RUINThemeMappingsForHost(host17);
+    const RUINVersionMapping *version16 = RUINMappingForInfo(@{@"CFBundleIdentifier":@"jp.naver.line",
+        @"CFBundleShortVersionString":@"26.16.0", @"CFBundleVersion":@"2026.1006.1718"});
+    const RUINVersionMapping *version17 = RUINMappingForInfo(@{@"CFBundleIdentifier":@"jp.naver.line",
+        @"CFBundleShortVersionString":@"26.17.0", @"CFBundleVersion":@"2026.1103.1841"});
+    const RUINThemeMappings *mapping16 = version16 ? &version16->themes : NULL;
+    const RUINThemeMappings *mapping17 = version17 ? &version17->themes : NULL;
     assert(mapping16 && mapping16->shopNavigation.status == RUINMappingStatusVerified &&
         mapping16->shopEligibility.status == RUINMappingStatusVerified &&
         mapping16->validation.status == RUINMappingStatusVerified &&
@@ -568,8 +570,8 @@ static void RUINThemeShopCheckGate(void)
         mapping17->shopEligibility.status == RUINMappingStatusUnsupported &&
         mapping17->validation.status == RUINMappingStatusVerified &&
         mapping17->localPolicy.status == RUINMappingStatusVerified);
-    assert(!RUINThemeMappingsForHost(NULL) &&
-        !RUINThemeMappingsForHost(RUINKnownHostForVersion(@"26.18.0", @"unsupported")));
+    assert(!RUINMappingForInfo(@{@"CFBundleIdentifier":@"jp.naver.line",
+        @"CFBundleShortVersionString":@"26.18.0", @"CFBundleVersion":@"unsupported"}));
     gThemeShopMappings = mapping16;
     Method integer = class_getInstanceMethod(NSUserDefaults.class, @selector(integerForKey:));
     Method object = class_getInstanceMethod(NSUserDefaults.class, @selector(objectForKey:));
