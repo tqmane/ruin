@@ -228,8 +228,10 @@ static BOOL RUINTargetMatches(void)
 }
 
 static BOOL RUINKeepNativeMenusForLaunch(void) {
-    if (!NSThread.isMainThread ||
-        ![NSUserDefaults.standardUserDefaults boolForKey:RUINHideAppsTabDefaultsKey]) return NO;
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    BOOL hideMore = [defaults boolForKey:RUINHideAppsTabDefaultsKey] ||
+        [defaults boolForKey:RUINHideWalletTabDefaultsKey];
+    if (!NSThread.isMainThread || !hideMore) return NO;
     NSDictionary *visibility = RUINNativeTabAvailabilityDiagnostics();
     if ([visibility[@"status"] intValue] != 5 || [visibility[@"tabFilterRecoveryMode"] boolValue]) return NO;
     Class root = objc_getClass("_TtC22LineSharedUIComponents20RootTabBarController");
