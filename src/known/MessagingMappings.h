@@ -19,7 +19,6 @@ typedef struct {
 } RUINUnsendOperationMapping;
 
 typedef struct {
-    const RUINHostIdentity *host;
     RUINReadBoundaryMapping readBoundary;
     RUINUnsendOperationMapping unsendOperation;
 } RUINMessagingMapping;

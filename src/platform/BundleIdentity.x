@@ -22,8 +22,8 @@ static BOOL cfBindingInstalled;
 static BOOL verifiedBinary;
 
 static BOOL IdentityBinaryMatches(const struct mach_header_64 *header, NSDictionary *info) {
-    const RUINHostIdentity *host = RUINKnownHostForVersion(info[@"CFBundleShortVersionString"], info[@"CFBundleVersion"]);
-    return RUINVerifyHostImage(host, header);
+    const RUINVersionMapping *mapping = RUINMappingForInfo(info);
+    return mapping && RUINVerifyHostImage(&mapping->host, header);
 }
 
 static BOOL IdentityScope(NSBundle *bundle, const void *image) {
@@ -159,7 +159,8 @@ void RUINInstallBundleIdentity(void) {
 void RUINInstallBundleIdentity(void) {}
 int main(void) {
     @autoreleasepool {
-        actualMainInfo = @{identifierKey:@"example.signed.line", @"CFBundleVersion":@"2026.1006.1718",
+        actualMainInfo = @{identifierKey:@"example.signed.line", @"RUINOriginalBundleIdentifier":originalIdentifier,
+            @"CFBundleVersion":@"2026.1006.1718",
             @"CFBundleShortVersionString":@"26.16.0", @"unchanged":@"value"};
         struct { struct mach_header_64 header; struct uuid_command uuid; } image = {0};
         image.header = (struct mach_header_64){.magic=MH_MAGIC_64, .cputype=CPU_TYPE_ARM64,

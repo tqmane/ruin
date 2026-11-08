@@ -1034,6 +1034,12 @@ static NSDictionary *RUINThemeOperation(NSString *name, NSString *reason)
     };
 }
 
+static id RUINThemeFeatureAddress(RUINMappingStatus status, uintptr_t address)
+{
+    if (status != RUINMappingStatusVerified || !address) return NSNull.null;
+    return [NSString stringWithFormat:@"0x%llx", (unsigned long long)address];
+}
+
 void RUINInstallThemeFeatures(void)
 {
     os_unfair_lock_lock(&gThemeInstallLock);
@@ -1065,6 +1071,13 @@ NSDictionary<NSString *, id> *RUINThemeDiagnostics(void)
     BOOL resetControllerVisible = RUINThemeVisibleManagementController() != nil;
     NSDictionary *info = [NSBundle mainBundle].infoDictionary ?: @{};
     NSString *bundleIdentifier = [NSBundle mainBundle].bundleIdentifier ?: @"";
+#if defined(RUIN_HOST_CHECK)
+    const RUINVersionMapping *versionMapping = RUINMappingForInfo(info);
+#else
+    const RUINVersionMapping *versionMapping = RUINCurrentMapping();
+#endif
+    const RUINThemeFeatureAddressesMapping *featureAddresses = versionMapping
+        ? &versionMapping->themes.featureAddresses : NULL;
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     BOOL shopDownloadEnabled = [defaults boolForKey:RUINThemeShopDownloadEnabledDefaultsKey];
     BOOL randomEnabled = [defaults boolForKey:RUINThemeRandomEnabledDefaultsKey];
@@ -1183,8 +1196,10 @@ NSDictionary<NSString *, id> *RUINThemeDiagnostics(void)
             @"bundleIdentifier": bundleIdentifier,
             @"version": info[@"CFBundleShortVersionString"] ?: @"",
             @"build": info[@"CFBundleVersion"] ?: @"",
-            @"expectedVersion": @"26.16.0",
-            @"expectedBuild": @"2026.1006.1718",
+            @"expectedVersion": versionMapping
+                ? [NSString stringWithUTF8String:versionMapping->host.version] : NSNull.null,
+            @"expectedBuild": versionMapping
+                ? [NSString stringWithUTF8String:versionMapping->host.build] : NSNull.null,
             @"matches": @(RUINThemeTargetMatches())
         },
         @"installInvoked": @(atomic_load_explicit(&gThemeInstallInvoked, memory_order_acquire)),
@@ -1199,7 +1214,9 @@ NSDictionary<NSString *, id> *RUINThemeDiagnostics(void)
             @"priceTierDisplayGate": @{
                 @"available": @(priceTierGateInstalled),
                 @"status": RUINThemePriceTierStatusName(),
-                @"replacementVA": @"0xfd0c8",
+                @"replacementVA": featureAddresses
+                    ? RUINThemeFeatureAddress(featureAddresses->status, featureAddresses->priceTierReplacementVA)
+                    : NSNull.null,
                 @"preferenceKey": RUINThemeShopDownloadEnabledDefaultsKey,
                 @"eligibleProductGate": @[@"type == theme", @"owned", @"grantedByDefault", @"unexpired validUntil"],
                 @"purchaseOrOrderAction": @NO
@@ -1207,7 +1224,9 @@ NSDictionary<NSString *, id> *RUINThemeDiagnostics(void)
             @"nativeApplyObserver": @{
                 @"available": @(applyObserverInstalled),
                 @"status": RUINThemeApplyObserverStatusName(),
-                @"nativeMethodVA": @"0x105733ce8",
+                @"nativeMethodVA": featureAddresses
+                    ? RUINThemeFeatureAddress(featureAddresses->status, featureAddresses->applyObserverMethodVA)
+                    : NSNull.null,
                 @"successEventsObserved": @(atomic_load(&gThemeApplyEvents)),
                 @"failureObserverStatus": RUINThemeHookStatusNameValue(atomic_load(&gThemeApplyFailureObserverStatus)),
                 @"failureEventsObserved": @(atomic_load(&gThemeApplyFailures)),
@@ -1218,7 +1237,9 @@ NSDictionary<NSString *, id> *RUINThemeDiagnostics(void)
             @"dynamicThemeAutoUpdateFreeze": @{
                 @"available": @(defaultsFreezeInstalled),
                 @"status": RUINThemeDefaultsFreezeStatusName(),
-                @"replacementVA": @"0x128c18",
+                @"replacementVA": featureAddresses
+                    ? RUINThemeFeatureAddress(featureAddresses->status, featureAddresses->defaultsFreezeReplacementVA)
+                    : NSNull.null,
                 @"active": @(defaultsFreezeInstalled && (appliedThemeMarkerPresent || randomEnabled)),
                 @"markerKey": RUINThemeAppliedThemeIDDefaultsKey,
                 @"interceptedKey": RUINThemeDynamicThemeNextUpdateDateDefaultsKey,
@@ -1228,7 +1249,9 @@ NSDictionary<NSString *, id> *RUINThemeDiagnostics(void)
             @"manualDownload": @{
                 @"available": @(manualDownloadAvailable),
                 @"status": manualDownloadAvailable ? @"public_asset_get_and_validated_local_archive" : @"unavailable",
-                @"sourceReplacementVA": @"0xfd688",
+                @"sourceReplacementVA": featureAddresses
+                    ? RUINThemeFeatureAddress(featureAddresses->status, featureAddresses->manualDownloadSourceReplacementVA)
+                    : NSNull.null,
                 @"completion": @"Returns a local .linetheme URL only after HTTP 200, transfer-size checks, and ZIP structure/path/type/expanded-size validation; CRC and package schema remain unchecked; does not extract or apply.",
                 @"requiresEnableThemeDL": @YES,
                 @"requiresNativeOwnedGrantOrActiveValidity": @NO,
@@ -1248,7 +1271,9 @@ NSDictionary<NSString *, id> *RUINThemeDiagnostics(void)
             @"remove": RUINThemeOperation(@"Theme removal", nil),
             @"reset": @{
                 @"available": @(resetActionAvailable && applyObserverInstalled && applyFailureObserverInstalled),
-                @"nativeMethodVA": @"0x10579271c",
+                @"nativeMethodVA": featureAddresses
+                    ? RUINThemeFeatureAddress(featureAddresses->status, featureAddresses->resetMethodVA)
+                    : NSNull.null,
                 @"status": resetActionAvailable ? (resetControllerVisible ? @"native_reset_action_ready" : @"native_screen_required") : @"unsupported_native_api",
                 @"nativeManagementScreenVisible": @(resetControllerVisible),
                 @"completionRequiresDefaultApplyEvent": @YES,

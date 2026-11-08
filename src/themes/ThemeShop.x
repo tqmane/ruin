@@ -5,6 +5,7 @@
 #import "../known/ThemeMappings.h"
 #import "../core/Localization.h"
 #import "../core/TargetMetadata.h"
+#import "../known/VersionMapping.h"
 
 #import <objc/runtime.h>
 #import <stdatomic.h>
@@ -215,15 +216,15 @@ __attribute__((noinline, disable_tail_calls))
 
 static const RUINThemeMappings *RUINThemeShopMappingForInfo(NSDictionary *info)
 {
-    const RUINHostIdentity *host = RUINKnownHostForInfo(info);
-    const RUINThemeMappings *mapping = RUINThemeMappingsForHost(host);
+    const RUINVersionMapping *versionMapping = RUINMappingForInfo(info);
+    const RUINThemeMappings *mapping = versionMapping ? &versionMapping->themes : NULL;
     if (!mapping || mapping->shopNavigation.status != RUINMappingStatusVerified) return NULL;
 #if !defined(RUIN_THEMESHOP_HOST_CHECK)
+    if (RUINCurrentMapping() != versionMapping) return NULL;
     const struct mach_header_64 *header = (const void *)_dyld_get_image_header(0);
     intptr_t slide = _dyld_get_image_vmaddr_slide(0);
     char actualURL[sizeof("line://shop/theme")];
-    if (!RUINVerifyHostImage(host, header) ||
-        !RUINVerifyInstructions(header, slide, mapping->shopNavigation.anchors,
+    if (!RUINVerifyInstructions(header, slide, mapping->shopNavigation.anchors,
             mapping->shopNavigation.anchorCount) ||
         !RUINReadImageBytes(header, slide, mapping->shopNavigation.themeURLString,
             actualURL, sizeof(actualURL), "__TEXT") ||
@@ -237,11 +238,11 @@ static const RUINThemeMappings *RUINThemeShopMappingForInfo(NSDictionary *info)
 static BOOL RUINThemeShopVerifyEligibility(const RUINThemeMappings *mapping)
 {
     if (!mapping || mapping->shopEligibility.status != RUINMappingStatusVerified) return NO;
-    const RUINHostIdentity *host = mapping->host;
+    const RUINVersionMapping *versionMapping = RUINCurrentMapping();
+    if (!versionMapping || &versionMapping->themes != mapping) return NO;
     const struct mach_header_64 *header = (const void *)_dyld_get_image_header(0);
     intptr_t slide = _dyld_get_image_vmaddr_slide(0);
-    return RUINVerifyHostImage(host, header) &&
-        RUINVerifyInstructions(header, slide, mapping->shopEligibility.anchors,
+    return RUINVerifyInstructions(header, slide, mapping->shopEligibility.anchors,
             mapping->shopEligibility.anchorCount);
 }
 #endif
@@ -402,12 +403,13 @@ static RUINThemeShopStatus RUINThemeShopDispatch(id delegate, NSDictionary *info
 NSDictionary<NSString *, id> *RUINThemeShopDiagnostics(void)
 {
     NSDictionary *info = NSBundle.mainBundle.infoDictionary;
-    const RUINThemeMappings *mapping = RUINThemeShopMappingForInfo(info);
+    const RUINVersionMapping *versionMapping = RUINMappingForInfo(info);
+    const RUINThemeMappings *mapping = versionMapping ? &versionMapping->themes : NULL;
     NSMutableDictionary *result = [@{
         @"targetMatches": @(RUINThemeShopTargetMatches(info)),
-        @"expectedVersion": mapping ? [NSString stringWithUTF8String:mapping->host->version]
+        @"expectedVersion": versionMapping ? [NSString stringWithUTF8String:versionMapping->host.version]
             : info[@"CFBundleShortVersionString"] ?: (id)NSNull.null,
-        @"expectedBuild": mapping ? [NSString stringWithUTF8String:mapping->host->build]
+        @"expectedBuild": versionMapping ? [NSString stringWithUTF8String:versionMapping->host.build]
             : info[@"CFBundleVersion"] ?: (id)NSNull.null,
         @"fixedURL": RUINThemeShopURLString,
         @"stickerURL": RUINStickerShopURLString,

@@ -1,6 +1,7 @@
 SDK = $(shell xcrun --sdk iphoneos --show-sdk-path)
 CC := xcrun --sdk iphoneos clang
-HOST_COMMON := $(wildcard src/known/*.m)
+VERSION_MAPPING_SOURCES := $(wildcard src/known/versions/*.m)
+HOST_COMMON := $(wildcard src/known/*.m) $(VERSION_MAPPING_SOURCES)
 HOST_CC = xcrun --sdk macosx clang -DRUIN_HOST_CHECK=1 $(HOST_COMMON)
 HOST_WARNINGS := -Wall -Wextra -Werror
 RUIN_BUILD_VERSION ?= $(shell cat VERSION)
@@ -21,7 +22,7 @@ LOGOS_DEPS := $(wildcard \
 source = $(if $(filter $(1:.m=.x),$(LOGOS_SOURCES)),build/logos/$(1),$(1))
 CFLAGS = -arch arm64 -isysroot $(SDK) -miphoneos-version-min=18.0 -fobjc-arc -fblocks -Wall -Wextra -O2 \
 	-DRUIN_BUILD_VERSION='@"$(RUIN_BUILD_VERSION)"'
-SOURCES := $(sort $(wildcard src/*/*.m))
+SOURCES := $(sort $(wildcard src/*/*.m) $(VERSION_MAPPING_SOURCES))
 OBJECTS := $(SOURCES:%.m=build/%.o) $(LOGOS_SOURCES:%.x=build/%.o) build/fishhook.o build/SwiftFields.o
 
 .PHONY: all check check-host check-portable check-packaging check-fixtures logos clean dist version FORCE

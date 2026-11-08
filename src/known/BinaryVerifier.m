@@ -37,15 +37,9 @@ BOOL RUINVerifyHostImage(const RUINHostIdentity *host, const struct mach_header_
 }
 
 BOOL RUINCurrentHostImageMatches(const RUINHostIdentity *host) {
-    if (!host) return NO;
-    static const RUINHostIdentity *verified;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        const struct mach_header_64 *header = (const void *)_dyld_get_image_header(0);
-        for (size_t i = 0; i < RUINKnownHostCount; i++)
-            if (RUINVerifyHostImage(&RUINKnownHosts[i], header)) { verified = &RUINKnownHosts[i]; break; }
-    });
-    return verified == host;
+    if (!host || !host->version || !host->build || !host->uuid) return NO;
+    const struct mach_header_64 *header = (const void *)_dyld_get_image_header(0);
+    return RUINVerifyHostImage(host, header);
 }
 
 BOOL RUINReadImageBytes(const struct mach_header_64 *header, intptr_t slide,
