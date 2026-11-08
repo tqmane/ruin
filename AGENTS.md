@@ -41,9 +41,9 @@ RUIN/
 ### 対象バージョン・環境要件
 - **LINE**: `KnownHosts.def` および配列インデックス（`RUINKnownHosts`）による管理は廃止され、不変の `const RUINVersionMapping` 構造体が単一の (バージョン、ビルド番号、Mach-O UUID) の同一性を保持します。異なるビルド/UUIDバリアントは独立したレコードとして扱われ、同一バージョン文字列のバリアントも同一の `src/known/versions/LINE*.m` 内で個別のレジストリエントリとして共存可能です。バイナリマッピング値は `src/known/versions/LINE*.m` が所有し、`KnownMappings.h/m` が共有APIおよび中央レジストリを提供します。
   - 対象バージョン: LINE 26.16.0 (Build: `2026.1006.1718`、UUID: `292883E8-E011-3583-ADF5-F02241E3277B`) および 26.17.0 (Build: `2026.1103.1841`、UUID: `614CED59-07E5-372D-94B2-D4901870C7A0`)。
-  - 26.17.0のホスト全体は `Unverified` とし、部分対応警告を維持します。起動・ログイン維持・Keychain・タブ非表示はiPhoneで実機確認済みですが、iPad最新版とテーマ機能全体は未完了です。
-  - 26.17.0のバージョン固有機能status: shop eligibilityと旧getter投影のreadBoundaryは `Unsupported`、unsend lookup/parserと通常トークmanualReadのABI statusは `Verified` です。unsend lookupは6 frame/16 anchorで、受信本文保持・取消済表示・再起動後の保持を実機確認済みです。readBoundaryの旧数値/anchorsは持たず、送信前pending filterは構造的に独立して維持します。26.16.0の送信前投影は維持します。`RUINMappingStatus` は版別mapping featureに適用し、一般的なObjective-C runtime diagnosticsの統一statusとはしません。
-- **アーキテクチャ**: `arm64`
+  - 26.17.0のホスト全体は `Unverified` とし、部分対応警告を維持します。起動・ログイン維持・Keychain・タブ非表示、およびiPhone（LINE 26.17.0）でのネイティブ着せかえダウンロード・プレビュー・適用・再ダウンロード復元フローは実機確認済みです。一方、Rootless iPadではRUIN 0.5.2インストール・厳格署名検証・dylib SHA一致・RUIN入口および設定UI表示・再起動後の通常起動復帰の確認にとどまり、ネイティブThemeShop/マイ着せかえ画面遷移はURLエラーで到達不可、Page Sheet展開も未試験でテーマ機能全体（ショップ資格等）は未完了です。
+  - 26.17.0の機能status: RUINThemeShopEligibilityMappingの総括shopEligibilityは `Unsupported`、nativeReadAdapterStatusは21アンカー検証済みの `Verified`（スタイルシート限定）、shopSchemeScopeStatusは所有権未証明のため `Unverified`（無効化）です。unsend lookup（6 frame/16 anchor、実機で本文保持・取消表示・再起動後保持を確認）および通常トークmanualReadのABI statusは `Verified` です。旧getter投影のreadBoundaryは `Unsupported`（旧アンカー不保持、送信前pending filterは構造的に独立維持、26.16.0送信前投影は維持）とし、`RUINMappingStatus` は版別mapping featureに適用します。
+- **アーキテクチャ**: `arm64` および `arm64e`。アーキテクチャ別のオブジェクトディレクトリで個別ビルドし、双方のスライスのSwiftコンパイル・リンク対象をiOS 18.0として `lipo -create` で単一のFatバイナリを生成します。なお、両スライスの内包は実機での完全動作を保証するものではなく、既知の原バイナリおよび実機QA対象のLINE本体実行ファイルはarm64であり、実行時プロセスの実CPU subtype証跡は未取得かつarm64eメインプロセスの機能QAは未検証です。
 - **下限OS**: iOS 18.0 以降 (※ビルド下限値であり、全機種・全環境での動作を保証するものではありません)
 - **ビルド依存**: macOSホスト、フルXcode (iOS SDK含む)、`make`、`perl` (Logos internal用)、`python3`、`node` (ホスト検査・JS構文検査用)。`Makefile` の `SOURCES` および `HOST_COMMON` に `src/known/versions/*.m` が含まれます。
 - **ランタイム依存**: Apple系のシステムライブラリ・フレームワーク、同梱リソースのみ。脱獄版DEBにおける注入ローダー（mobilesubstrate仮想パッケージ）への依存は許容しますが、バイナリ自体が外部の Cydia Substrate、libhooker、pip パッケージ等へ動的リンクすることは禁止。
@@ -55,7 +55,8 @@ RUIN/
 - **バージョンマッピングと共通API**:
   - テーマ、メッセージング、ネイティブタブの各マッピング値はバージョン別定義ファイル（`src/known/versions/LINE*.m`）内に保持されます。
   - `RUINMappingForInfo(info)` はLINEのバンドル識別子およびバージョン/ビルド番号のみから選択を行い、メタデータに曖昧さがある場合は `NULL` を返し、実行バイナリの真正性認証は行いません（明示的なフィクスチャやテストで使用）。
-  - ランタイムの数値呼び出し元は共通API `RUINCurrentMapping()` を使用します。これは現在のメタデータと実際のメインMach-O UUIDを照合し、同一バージョン/ビルドの候補からUUIDによって一意に解決します。不一致または未知のバイナリでは `NULL` を返し、フォールバックは一切行わず、ミス（不一致）のキャッシュも行いません。
+  - ランタイムの数値呼び出し元は共通API `RUINCurrentMapping()` を使用します。現在のメタデータとメインMach-O UUIDを照合して一意に解決し、未知・不一致時はフォールバックやミスのキャッシュを行わず `NULL` を返します。
+  - ThemeShopアダプターは、26.16.0で全ステータスが `Verified` で有効な一方、26.17.0ではスタイルシート限定の数値読み取り（21アンカー検証済み）のみが `Verified` であり、所有権未証明のgenericSchemeは `Unverified`（無効化）を維持します。なお、`RUINThemeShopReturnChain`（`accountChainAlternatives` / `accountChainAlternativeCount`）等の型付き代替リターンチェーンは版別定義が値を保持し、共通ロジックが消費します。
   - `readUntilABIStatus` は版別mappingが所有し、共通manualRead helperにversion literalを置きません。`AnyCancelableTask` はSwiftObject rootのためNSObject継承を仮定せず、native-root hostfixtureで検証します。
 - **コンパイル済みマニフェスト検証**: `tools/export_version_mappings.m` はコンパイル済みレジストリ値から `tests/fixtures/version-mappings.json` を出力し、`make check-mapping-manifest` によってマニフェストの整合性を検証します。Python/Linuxツール群はこのマニフェストを消費する一方、Mach-Oのバイト列、制御フロー、UUID、SHAによる独立した検証・証明も維持されます。
 - **段階的フェイルセーフと独立機能の保護**:
@@ -63,11 +64,11 @@ RUIN/
   - ビルド固有のSwift呼び出し位置、命令列、データ表へのフックは、該当ビルド・UUID・アドレス範囲・fingerprint検証が完全に一致する定義が存在する場合にのみ適用する。
   - 特定のフックが無効化された場合でも、安全性が確認されている他の独立機能の動作を巻き込んで停止させないこと。
 - **Mach-O完全性とコード署名**: IPA内のMach-O命令コードや定数テーブルへの直接バイナリパッチは禁止です。署名用の `LC_LOAD_DYLIB` 追加と署名メタデータのみを許可し、元バイナリの全既存セクションおよびロードコマンドの整合性を `tools/macho_integrity.py` 等で厳格に確認してください。汎用注入ツールへの無条件の全対応は前提としません。
-- **dylibコード署名と検査**: `make all` の出力dylibはApple codesignによりadhoc署名を行い、パッケージング（`distribute.py`）およびCI検証において `codesign --verify --strict` で厳格検査します（未署名は拒否、有効なadhoc署名を受理。証明書は不要ですが、Jailed環境でのIPA組み込み時は環境に応じた再署名が必要）。
+- **dylibコード署名と検査**: `make all` の出力dylibはApple codesignによりadhoc署名を行い、パッケージング（`distribute.py`）およびCI検証において `arm64`/`arm64e` の正確な2スライス構成、スライスごとの依存関係（外部フック依存の追加禁止）、および `codesign --verify --strict` による厳格検査を行います（未署名やスライス欠落・不正依存は拒否、有効なadhoc署名を受理。証明書は不要ですが、Jailed環境でのIPA組み込み時は環境に応じた再署名が必要）。
 - **UI設計原則**:
   - UIKit標準コンポーネントおよびLINE本来のネイティブタブ生成・インデックスを尊重し、自前UIへの差し替えや配列インデックス改変、Mach-O直接パッチは行わないこと。
-  - タブ非表示はメニュー生成および標準のタブ更新処理の確認済み呼び出しスコープに限定してフィルタリングを行い、内部ファクトリ等の他呼び出し元へは元の値を返します。旧実装の制約（one-service制約）は解除され、ショッピングとアプリの同時非表示にも対応（再起動後に反映。トラブルシューティング用として `RUIN_DISABLE_TAB_HIDING=1` で一時解除可能）。
-  - iPadの設定画面表示はサブ端末モードフラグに依存せず、可視の親コントローラからNavigation Pushで展開する動作を実機確認済み（実装済みの標準Page Sheet展開は未試験であり、完了を断言しない）。
+  - タブ非表示はメニュー生成および標準のタブ更新処理の確認済み呼び出しスコープに限定してフィルタリングを行い、内部ファクトリ等の他呼び出し元へは元の値を返します。旧実装の制約（one-service制約）は解除され、ショッピングとアプリの同時非表示に対応（再起動後に反映。実機ではウォレット単体の非表示がネイティブ設定往復後も維持されることを確認済み。トラブルシューティング用として `RUIN_DISABLE_TAB_HIDING=1` で一時解除可能）。
+  - iPadの設定画面表示はサブ端末モードフラグに依存せず、可視の親コントローラからNavigation Pushで展開する動作を実機確認済みです。Rootless iPadではRUIN 0.5.2インストール、厳格署名検証、dylib SHA一致、RUIN入口および設定UI表示、再起動後の通常起動復帰を確認済みですが、ネイティブThemeShop・マイ着せかえ画面遷移はURLエラーで到達不可であり、実装済みの標準Page Sheet展開も未試験のため最新iPadの全機能完了とは断言しません。
 
 ---
 
@@ -80,7 +81,10 @@ RUIN/
   - 暗号鍵やメッセージの移植、強制復号、削除、結合は一切行わないこと。
   - キーチェーンはOSが許可した実アクセスグループを検出し、自前の非機密メタデータのみを共有グループに保持してBundle ID変更後も継続参照します。既存の暗号鍵や認証情報のコピー・改変・消去は絶対に行わないこと。
   - これらはRUIN側の保存領域切り替え事故によるデータ喪失を防ぐ安全策であり、Appleの署名制限を超えるアクセス権限の付与やOS端末移行全経路の動作を保証するものではありません。
+  - キーチェーン補正では、マッピング辞書が空かつ旧アプリ・旧共有グループ双方の実権限プローブでAllowedが確認された場合のみ、全アーキテクチャでCインポート書き換えを行わずにNativePassthrough（Ready）として扱います。一方、arm64e環境で空でないグループマッピングが必要な場合はインポート書き換え前に停止してUnsupportedAuthenticatedImports（準備未了）とし、既存のarm64向けC互換動作は維持します。
+  - Bundle ID補正では、元のCFBundle情報が既にjp.naver.lineを示す場合はNativePassthroughを適用します。リネームされたバンドルのarm64e環境でもObjective-C層の識別子補正を維持し、CF関数のCインポート書き換えのみをUnsupportedAuthenticatedImportsとして停止させ、既存のarm64向けC投影は保持します。
 - **マイグレーションの保護**: 既存のLINEアカウント設定、トーク履歴データベース、ログインセッションのデータ移行処理を削除・破壊しないこと。Bundle ID、App Group、キーチェーン共有の整合性を常に意識してください。
+- **着せかえストレージのルート分離と名前空間検証**: ネイティブ着せかえ登録では、Application Supportツリー配下の所有テーマSQLite DB（OwnedDB）と、明示的にマッピングされたApp Groupツリー配下のテーマパッケージディレクトリ（Packages）が別個の検証済みルートを持ちます。両者が同一ルートを共有すると仮定しないこと。PrimaryおよびSecondaryの名前空間は、いずれも `ThemeAccountNamespace.h` の厳格な共通バリデータによって検証してください。
 
 ---
 
@@ -111,13 +115,17 @@ RUIN/
   - **LINE新バージョン対応時**: 対象バイナリのバージョン、ビルド番号、UUID、型定義、対象ファイル、関数ABI情報、ネイティブUI制約を確認し、実機検証が完了していないバージョンは作業中として扱うこと
 - **実機検証の安全管理**: 実機検証において、別チャットへのメッセージ送信、通話発信、データ削除等の破壊的操作を行う場合は、事前に合意された具体的な許可範囲内でのみ実行し、未許可の行為は事前にユーザーへ確認すること。既存の許可は引き継ぎ、自己承認ではなくメッセージ送信等に必要な許可が既にある時は毎回再質問しないこと。
 - **機能ステータスの厳密化と設計規約**:
+  - LINE 26.17における「ログイン」長押し対応は、既存のUIControl探索に加えSwiftUIアクセシビリティ要素（AX識別子login完全一致）の検出を実装し、通常ログイン・サブ端末ログイン・ABI不一致のホスト検証に合格していますが、実機での端末認証試験は行っておらず、実際のログインや実機でのモード切り替え動作は未検証です。
   - 既読者一覧シートの長押しアイコンはTabler `eye` を使用。
   - 既読者一覧の完全性をテストしないという規則は禁止です。既知のテストデータによる欠落検査やパース検証、および後日の取得時刻による記録済み実イベント日時の上書き防止検証は必ず実施してください（※未観測の正確な日時や常に完全な一覧の提供を保証する宣伝を行わないという意味であり、テストを怠るものではありません）。
   - **独立スイッチの維持**: ローカルLYP（アプリアイコン等のローカルUI表示）と、『24h送信取消・ミュートメッセージ』は独立した別スイッチとして管理し、後者をローカルLYPにネストさせないこと。ローカルLYPが無効な状態でも独立スイッチが有効であれば機能が動作する仕様として整理する。
   - **manualRead検証**: 26.17.0通常トークで未読I/Jを用意し、Iまでを選ぶと対向端末のレシートはIのみseen、peerReadUpToはI、後着Kは未読のまま、既読隠しの全体設定/例外は不変、受信端末のNative unread countは3から1へ変わることを確認します。グループトークでも未読A/BからAまでを選び、AのみreadCount 1、Bは0、カーソルはA、設定/例外は不変であることを実機確認済みです。iPad最新版は未検証です。メニューはTabler `checks` アイコンと「このメッセージまで既読」が狭いグリッドで2行程度に自然表示されることを確認します。
   - **返信時自動既読**: prior KVO gateで返信成功・失敗・古い境界を区別し、通常トークでF未読→G返信成功後にF既読→後続H未読を確認します。
   - **既読者一覧の複数ストア**: 26.17で複数の他者表示名と日時、および再取得時に記録済みイベント日時が上書きされないことを実機確認したのはPrimaryP_のみです。PrimaryP_/SecondaryS_双方の名前空間処理はホストfixtureで検証し、最新iPadでのSecondaryS_は未検証です。
-  - **ローカルカスタムフォント**: 実機ではTTFの取り込みとnativeBodyへの適用を確認します（OTFは拡張子受付のホスト検証のみ）。
+  - **ローカルカスタムフォント**: 実機にてTTFおよびOTFサンプルの取り込み、フォント登録、トーク本文（nativeBody）への描画適用、および標準フォントへの復元を確認済み。
+  - **ネイティブ着せかえの実機検証と復元**: iPhone（LINE 26.17.0）にて着せかえのダウンロード・プレビュー・適用、およびパッケージアセットと保存ZIP退避後の再ダウンロード復元（マイ着せかえのダウンロード矢印からの新規パッケージ生成・再適用）を確認済みです。検証後は元アーカイブ、「基本」を選び「適用する」操作による標準テーマ復元、標準フォントへの復帰、および一時ファイル消去による原状復帰を確認済み。
+  - **着せかえリセット仕様の明確化**: マイ着せかえ画面のリセットボタン（didTapResetButton）は選択中テーマの編集・リセットを行うものであり、デフォルトテーマ適用ではない。スタンドアロンのRUINResetThemeは呼出元が存在せず単体動作は未確立である。標準テーマへの復元は「基本」を選び「適用する」操作により成功を確認済み。
+  - **通知機能の制限事項**: 単体iPhone環境におけるバックグラウンド通知受信の復帰は未確立であり、APNs通知連携の動作は未確認（全端末環境に一般化せず、未保証として扱うこと）。
   - **送信取消の対応範囲**: 送信取消の対応範囲は24時間までとし、24時間超の研究や7日保証などの追加拡張を今後の課題として強制・仮定しないこと。
   - **ミュート送信の操作仕様**: 本文入力確定後、送信ボタンを約2秒長押しすることでLINEネイティブのメニュー（ミュート／通常）が表示される仕様とする。NativeLINEラボへの別移動を必須操作として案内しないこと。
 - **スクリーンショット管理**:
@@ -139,7 +147,7 @@ RUIN/
 2. **整合性確認**: `make version` を実行し、パッケージメタデータとの不整合がないことを確認します。
 3. **CI検証と保守運用**:
    - PR、`main` へのpush、および手動実行 (`workflow_dispatch`) により `Validate RUIN` ワークフローが実行されます。
-     - macOS環境: iOS SDKを用いたビルド検証、ホストテスト（Node.js構文検査含む）、合成フィクスチャ検証、パッケージ構造検証を実施。
+     - macOS環境: iOS SDKを用いたFat 2スライスビルド検証、ホストテスト（Node.js構文検査含む）、合成フィクスチャ検証、実パッケージおよび合成パッケージ構造検証を実施。
      - Linux環境: `make check-portable` によるLogos前処理検証、Python unittestを実施（Linux上でのバイナリビルドは行わない）。
      - テストデータ: 秘密の原IPAや復号バイナリは使用せず、合成フィクスチャおよびホスト検証データのみを使用。
    - 保守エージェントは、特定の会話時点の状態に依存せず、実行結果を確認した上で成功報告を行う普遍的な運用手順を遵守してください。
@@ -150,4 +158,4 @@ RUIN/
      - `RUIN-<version>-rootless.deb` (Architecture: `iphoneos-arm64`、`/var/jb/Library/MobileSubstrate/DynamicLibraries/` 配下、Debian Depends: `firmware (>=18.0), mobilesubstrate`、`dladdr` による隣接リソース解決)
      - `RUIN-<version>-jailed.deb` (Architecture: `iphoneos-arm64`、`X-RUIN-Variant: jailed`、`/Library/MobileSubstrate/DynamicLibraries/` レイアウト、復号IPAへの注入・独自署名用ペイロードであり直接のdpkgインストール用ではない)
      - `SHA256SUMS` (上記3DEBのSHA-256ハッシュ一覧)
-   - 全DEBパッケージに同一の `arm64` バイナリ、5言語対応 `RUINResources.bundle`、XMLフィルタ、ライセンス通知 (`usr/share/doc/com.tqmane.ruin/RUIN-ThirdPartyNotices.txt`、rootlessは `/var/jb` 配下) を内包します。
+   - 全DEBパッケージに同一の `arm64`+`arm64e` Fatバイナリ、5言語対応 `RUINResources.bundle`、LINE限定XMLフィルタ、ライセンス通知 (`usr/share/doc/com.tqmane.ruin/RUIN-ThirdPartyNotices.txt`、rootlessは `/var/jb` 配下) を内包します。
