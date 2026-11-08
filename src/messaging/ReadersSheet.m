@@ -240,7 +240,6 @@ static NSArray<NSManagedObjectContext *> *RUINReaderContexts(UIViewController *s
 @property(nonatomic) BOOL started;
 @property(nonatomic) NSUInteger nameGeneration;
 - (void)applyReaders:(NSArray<NSDictionary *> *)readers;
-- (void)updateEmptyView;
 @end
 
 @implementation RUINReadersSheetController
@@ -254,18 +253,6 @@ static NSArray<NSManagedObjectContext *> *RUINReaderContexts(UIViewController *s
         style:UIBarButtonItemStylePlain target:self action:@selector(refreshReaders)];
     self.tableView.rowHeight = UITableViewAutomaticDimension;
     self.tableView.estimatedRowHeight = 82;
-    [self updateEmptyView];
-}
-- (void)updateEmptyView {
-    self.tableView.backgroundView = nil;
-    if (!self.readers.count) {
-        UILabel *empty = [UILabel new];
-        empty.text = RUINLocalizedString(@"記録はありません");
-        empty.textAlignment = NSTextAlignmentCenter;
-        empty.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
-        empty.adjustsFontForContentSizeCategory = YES;
-        self.tableView.backgroundView = empty;
-    }
 }
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
@@ -303,7 +290,6 @@ static NSArray<NSManagedObjectContext *> *RUINReaderContexts(UIViewController *s
         [rows addObject:[item copy]]; [ids addObject:mid];
     }
     self.readers = [rows copy]; self.resolving = ids.count > 0;
-    [self updateEmptyView];
     [self.tableView reloadData];
     NSUInteger generation = ++self.nameGeneration;
     __weak typeof(self) weakSelf = self;
@@ -316,9 +302,20 @@ static NSArray<NSManagedObjectContext *> *RUINReaderContexts(UIViewController *s
 }
 - (void)close { [self.navigationController dismissViewControllerAnimated:YES completion:nil]; }
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
-{ (void)tableView; (void)section; return self.readers.count; }
+{ (void)tableView; (void)section; return MAX(self.readers.count, 1); }
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
 {
+    if (!self.readers.count) {
+        UITableViewCell *empty = [tableView dequeueReusableCellWithIdentifier:@"empty"];
+        if (!empty) empty = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"empty"];
+        empty.textLabel.text = RUINLocalizedString(@"記録はありません");
+        empty.textLabel.textColor = UIColor.secondaryLabelColor;
+        empty.textLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
+        empty.textLabel.adjustsFontForContentSizeCategory = YES;
+        empty.textLabel.numberOfLines = 0;
+        empty.selectionStyle = UITableViewCellSelectionStyleNone;
+        return empty;
+    }
     UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"reader"];
     if (!cell) cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"reader"];
     NSDictionary *reader = self.readers[indexPath.row];
@@ -345,6 +342,7 @@ static NSArray<NSManagedObjectContext *> *RUINReaderContexts(UIViewController *s
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
 {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
+    if ((NSUInteger)indexPath.row >= self.readers.count) return;
     NSString *mid = self.readers[indexPath.row][@"readerID"];
     if (self.profileAction && mid.length) self.profileAction(self, mid);
 }

@@ -72,7 +72,7 @@ static NSAttributeDescription *Attribute(NSString *name, NSAttributeType type) {
 static void Require(BOOL condition, NSString *reason) {
     if (!condition) @throw [NSException exceptionWithName:@"ReadBoundaryCheck" reason:reason userInfo:nil];
 }
-static void CheckVersionMappings(void) {
+static const RUINVersionMapping *CheckVersionMappings(void) {
     NSDictionary *info16 = @{@"RUINOriginalBundleIdentifier":@"jp.naver.line", @"CFBundleShortVersionString":@"26.16.0", @"CFBundleVersion":@"2026.1006.1718"};
     NSDictionary *info17 = @{@"RUINOriginalBundleIdentifier":@"jp.naver.line", @"CFBundleShortVersionString":@"26.17.0", @"CFBundleVersion":@"2026.1103.1841"};
     NSDictionary *unknown = @{@"RUINOriginalBundleIdentifier":@"jp.naver.line", @"CFBundleShortVersionString":@"26.99.0", @"CFBundleVersion":@"unknown"};
@@ -82,10 +82,9 @@ static void CheckVersionMappings(void) {
     const RUINMessagingMapping *map17 = version17 ? &version17->messaging : NULL;
     Require(map16 && map16->readBoundary.anchorCount == 1 && map16->readBoundary.callerReturnAddress,
         @"26.16 read boundary mapping was not preserved");
-    Require(map17 && map17->readBoundary.anchorCount == 1 && map17->readBoundary.callerReturnAddress &&
-        map17->readBoundary.callerReturnAddress != map16->readBoundary.callerReturnAddress,
-        @"26.17 read boundary mapping was not resolved independently");
+    Require(map17 != NULL, @"26.17 version mapping was not resolved independently");
     Require(!RUINMappingForInfo(unknown), @"unknown host acquired a numeric read mapping");
+    return version17;
 }
 static NSEntityDescription *ChatEntity(NSString *name, NSString *className) {
     NSEntityDescription *entity = [NSEntityDescription new];
@@ -93,6 +92,60 @@ static NSEntityDescription *ChatEntity(NSString *name, NSString *className) {
     entity.properties = @[Attribute(@"mid", NSStringAttributeType), Attribute(@"readUpToMessageID", NSInteger64AttributeType),
         Attribute(@"readUpToMessageIDSynced", NSInteger64AttributeType), Attribute(@"lastReceivedMessageID", NSInteger64AttributeType)];
     return entity;
+}
+
+// Native post-success cursor semantics established in the pristine 26.17 code.
+// Exercise the actual installed getter/filter against selected F < later H.
+static void NativeConfirmedCursorUpdate(ManagedChat *chat, int64_t selected) {
+    if (chat.readUpToMessageIDSynced >= selected) return;
+    chat.readUpToMessageIDSynced = selected;
+    if (chat.readUpToMessageID < selected) chat.readUpToMessageID = selected;
+}
+static void CheckConfirmedCursor(NSManagedObjectContext *context, NSUserDefaults *defaults,
+                                 const RUINVersionMapping *postSuccessMapping) {
+    RUINBoundaryTestVersionMapping(postSuccessMapping);
+    [defaults setBool:YES forKey:RUINReadControlEnabledDefaultsKey];
+    [defaults setBool:NO forKey:RUINMarkReadOnReplyDefaultsKey];
+    [defaults setObject:@[] forKey:RUINReadExceptionsDefaultsKey]; RUINInstallFeatures();
+    ManagedChat *chat = [NSEntityDescription insertNewObjectForEntityForName:@"ConfirmedChat" inManagedObjectContext:context];
+    chat.mid = @"confirmed-peer"; chat.readUpToMessageID = 20; chat.readUpToMessageIDSynced = 10; chat.lastReceivedMessageID = 30;
+    Require([context save:NULL], @"confirmed-cursor fixture save failed");
+    IMP getter = class_getMethodImplementation(object_getClass(chat), @selector(readUpToMessageIDSynced));
+    RUINInstallReadBoundary();
+    Require(![RUINReadBoundaryDiagnostics()[@"syncedGetterProjectionActive"] boolValue] &&
+        [RUINReadBoundaryDiagnostics()[@"pendingFetchFilterInstalled"] boolValue],
+        @"post-success mapping disabled the pending filter or enabled a getter projection");
+    Require(getter == class_getMethodImplementation(object_getClass(chat), @selector(readUpToMessageIDSynced)),
+        @"post-success install replaced a native getter");
+    Require(chat.readUpToMessageIDSynced == 10 && [[chat primitiveValueForKey:@"readUpToMessageIDSynced"] longLongValue] == 10,
+        @"read hide projected or wrote a confirmed synced cursor");
+    NativeConfirmedCursorUpdate(chat, 25);
+    Require(chat.readUpToMessageIDSynced == 25 && chat.readUpToMessageID == 25 && chat.lastReceivedMessageID == 30,
+        @"selected F cursor was blocked or advanced to later H");
+    Require([defaults boolForKey:RUINReadControlEnabledDefaultsKey] && RUINShouldSuppressReadForChat(chat) &&
+        ![chat canMarkChatAsReadToServer], @"confirmed selected cursor opened the global/per-chat read policy");
+    NativeConfirmedCursorUpdate(chat, 24);
+    Require(chat.readUpToMessageIDSynced == 25, @"older confirmation regressed the native synced cursor");
+    // A later local/UI read can make H pending; it still must not produce a
+    // receipt while hide is enabled, despite the confirmed cursor staying real.
+    chat.readUpToMessageID = 30; Require([context save:NULL], @"pending H save failed");
+    NSFetchRequest *pending = [NSFetchRequest fetchRequestWithEntityName:@"ConfirmedChat"];
+    pending.predicate = [NSPredicate predicateWithFormat:@"readUpToMessageIDSynced < readUpToMessageID"];
+    Require([[context executeFetchRequest:pending error:NULL] count] == 0, @"post-confirmation pending H escaped filtering");
+    NSFetchRequest *ordinary = [NSFetchRequest fetchRequestWithEntityName:@"ConfirmedChat"];
+    Require([[context executeFetchRequest:ordinary error:NULL] count] == 1 && chat.readUpToMessageIDSynced == 25,
+        @"ordinary post-confirmation reads lost their actual cursor or row");
+    [defaults setObject:@[@"chat:confirmed-peer"] forKey:RUINReadExceptionsDefaultsKey]; RUINInstallFeatures();
+    Require([[context executeFetchRequest:pending error:NULL] count] == 1, @"post-confirmation exception was suppressed");
+    [defaults setObject:@[] forKey:RUINReadExceptionsDefaultsKey]; RUINInstallFeatures();
+    chat.lastReceivedMessageID = 31; chat.readUpToMessageID = 31; Require([context save:NULL], @"new receive save failed");
+    Require([[context executeFetchRequest:pending error:NULL] count] == 0 && RUINShouldSuppressReadForChat(chat) &&
+        chat.readUpToMessageIDSynced == 25, @"new receive inherited a manual-read bypass or projected synced cursor");
+    [defaults setBool:NO forKey:RUINReadControlEnabledDefaultsKey]; RUINInstallFeatures();
+    Require([[context executeFetchRequest:pending error:NULL] count] == 1 && chat.readUpToMessageIDSynced == 25,
+        @"disabled read hide changed the native confirmed cursor/filter result");
+    RUINBoundaryTestVersionMapping(NULL);
+    RUINInstallReadBoundary();
 }
 static void CheckAccessorChains(NSManagedObjectContext *context, NSUserDefaults *defaults) {
     ManagedChat *a = [NSEntityDescription insertNewObjectForEntityForName:@"ChainA" inManagedObjectContext:context];
@@ -154,15 +207,19 @@ int main(int argc, const char **argv) { @autoreleasepool {
     NSURL *fixture = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:[@"ruin-boundary-" stringByAppendingString:NSUUID.UUID.UUIDString]] isDirectory:YES];
     [NSFileManager.defaultManager createDirectoryAtURL:fixture withIntermediateDirectories:YES attributes:nil error:NULL];
     @try {
-        CheckVersionMappings();
+        const RUINVersionMapping *version17 = CheckVersionMappings();
+        RUINVersionMapping postSuccessMapping = *version17;
+        // The parent owns this semantic correction in versions/LINE26170.m.
+        postSuccessMapping.messaging.readBoundary.status = RUINMappingStatusUnsupported;
         [defaults setBool:NO forKey:RUINReadControlEnabledDefaultsKey];
         [defaults setBool:NO forKey:RUINMarkReadOnReplyDefaultsKey];
         [defaults setObject:@[] forKey:RUINReadExceptionsDefaultsKey];
         RUINInstallFeatures();
         if (early) RUINInstallReadBoundary();
+        else RUINBoundaryTestVersionMapping(&postSuccessMapping);
         NSManagedObjectModel *model = [NSManagedObjectModel new];
         model.entities = @[ChatEntity(@"Chat", @"ManagedChat"), ChatEntity(@"ChainA", @"RUINBoundaryChainA"),
-            ChatEntity(@"ChainB", @"RUINBoundaryChainB")];
+            ChatEntity(@"ChainB", @"RUINBoundaryChainB"), ChatEntity(@"ConfirmedChat", @"ManagedChat")];
         NSPersistentStoreCoordinator *coordinator = [[NSPersistentStoreCoordinator alloc] initWithManagedObjectModel:model];
         NSURL *databaseURL = [fixture URLByAppendingPathComponent:@"fixture.sqlite"];
         NSPersistentStore *persistent = [coordinator addPersistentStoreWithType:NSSQLiteStoreType configuration:nil URL:databaseURL options:nil error:NULL];
@@ -174,6 +231,7 @@ int main(int argc, const char **argv) { @autoreleasepool {
         Require(chat.readUpToMessageIDSynced == 10, @"disabled getter changed native value");
         Require([context save:NULL], @"initial native save failed");
         if (!early) RUINInstallReadBoundary();
+        CheckConfirmedCursor(context, defaults, &postSuccessMapping);
         CheckAccessorChains(context, defaults);
         [defaults setBool:YES forKey:RUINReadControlEnabledDefaultsKey]; RUINInstallFeatures();
         long long held = chat.readUpToMessageIDSynced;
@@ -240,6 +298,7 @@ int main(int argc, const char **argv) { @autoreleasepool {
     } @catch (NSException *exception) {
         fprintf(stderr, "Read-boundary check failed: %s\n", exception.reason.UTF8String); status = 1;
     } @finally {
+        RUINBoundaryTestVersionMapping(NULL);
         for (NSString *key in keys) { id value = old[key]; if (value == NSNull.null) [defaults removeObjectForKey:key]; else [defaults setObject:value forKey:key]; }
         method_setImplementation(infoMethod, savedInfo);
         [NSFileManager.defaultManager removeItemAtURL:fixture error:NULL];

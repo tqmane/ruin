@@ -45,9 +45,18 @@ FOUNDATION_EXPORT BOOL RUINReadPolicyHasIdentity(id chat);
  Parent calls only after a verified, user-approved reply is committed, on the
  chat's owning queue. With RUINMarkReadOnReply enabled, permits LINE's original
  predicate while lastReceivedMessageID is unchanged; it sends no receipt and
- makes no claim that a receipt was sent. No automatic send hook is installed.
+ makes no claim that a receipt was sent. ReadOnReply correlates a native sent
+ notification with its explicit send entry before calling the token API below.
  */
 FOUNDATION_EXPORT void RUINAllowReadAfterUserReply(id chat);
+/** Copy at send entry; commit only on that message's successful sent notification. */
+FOUNDATION_EXPORT NSDictionary *RUINCaptureReadOnReplyToken(id chat);
+FOUNDATION_EXPORT BOOL RUINAllowReadAfterUserReplyWithToken(id chat, NSDictionary *token);
+/** Called before lastReceivedMessageID changes; returns the revoked allowance for an unchanged-value notification. */
+FOUNDATION_EXPORT NSDictionary *RUINRevokeReadAfterUserReply(id chat);
+/** Copied-token check for the main-queue gate write; does not access a managed object. */
+FOUNDATION_EXPORT BOOL RUINReadOnReplyTokenNeedsRearm(NSDictionary *token);
+FOUNDATION_EXPORT BOOL RUINReadOnReplyTokenIsAllowed(NSDictionary *token);
 FOUNDATION_EXPORT void RUINSetReplyObserverInstalled(BOOL installed);
 
 NS_ASSUME_NONNULL_END

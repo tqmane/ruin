@@ -20,7 +20,9 @@ static atomic_ulong nativeSiteReads;
 static uintptr_t nativeReadCaller;
 #if defined(RUIN_BOUNDARY_HOST_CHECK)
 static BOOL testNativeCaller = YES;
+static const RUINVersionMapping *testVersionMapping;
 void RUINBoundaryTestNativeCaller(BOOL value) { testNativeCaller = value; }
+void RUINBoundaryTestVersionMapping(const RUINVersionMapping *mapping) { testVersionMapping = mapping; }
 #endif
 
 static BOOL VerifyNativeReadSite(const RUINVersionMapping *versionMapping,
@@ -148,7 +150,7 @@ static long long ReadSyncedBoundary(NSManagedObject *chat, IMP original, uintptr
                                     : PrimitiveBoundary(chat, @"readUpToMessageIDSynced");
         if (!outermost) return actual;
 #if defined(RUIN_BOUNDARY_HOST_CHECK)
-        BOOL nativeSite = testNativeCaller;
+        BOOL nativeSite = nativeReadCaller && testNativeCaller;
 #else
         BOOL nativeSite = nativeReadCaller && caller == nativeReadCaller;
 #endif
@@ -279,12 +281,12 @@ void RUINInstallReadBoundary(void) {
     nativeReadCaller = 0;
     if (!RUINTargetMetadataMatchesInfo(info)) return;
 #if defined(RUIN_BOUNDARY_HOST_CHECK)
-    const RUINVersionMapping *versionMapping = RUINMappingForInfo(info);
+    const RUINVersionMapping *versionMapping = testVersionMapping ?: RUINMappingForInfo(info);
 #else
     const RUINVersionMapping *versionMapping = RUINCurrentMapping();
 #endif
     const RUINMessagingMapping *mapping = versionMapping ? &versionMapping->messaging : NULL;
-    if (!mapping || !VerifyNativeReadSite(versionMapping, &mapping->readBoundary)) return;
+    BOOL projectPreSendBoundary = mapping && VerifyNativeReadSite(versionMapping, &mapping->readBoundary);
     @synchronized (NSManagedObjectContext.class) {
         if (!installedBoundaries) installedBoundaries = [NSMutableDictionary dictionary];
         if (!installedImplementations) installedImplementations = [NSMutableDictionary dictionary];
@@ -298,6 +300,11 @@ void RUINInstallReadBoundary(void) {
                 fetchFilterInstalled = YES;
             }
         }
+        // Receipt production is filtered before sending. A confirmed native
+        // cursor update must still see its real synced value after RPC success.
+        // An unavailable/inapplicable numeric projection must not disable this
+        // independent structural filter.
+        if (!projectPreSendBoundary) return;
         NSArray *baseNames = @[@"ManagedChat", @"ManagedSquareChat", @"ManagedSquareChatThread"];
         NSMutableArray *targets = [NSMutableArray array];
         for (NSString *baseName in baseNames) {
@@ -322,7 +329,8 @@ void RUINInstallReadBoundary(void) {
 NSDictionary *RUINReadBoundaryDiagnostics(void) {
     return @{@"accessors":installedBoundaries ?: @{}, @"reads":@(atomic_load(&boundaryReads)),
         @"nativeReadSiteVerified":@(nativeReadCaller != 0), @"nativeReadSiteReads":@(atomic_load(&nativeSiteReads)),
-        @"getterScope":@"verified native pre-advance comparison only; other consumers see actual synced value",
+        @"getterScope":nativeReadCaller ? @"verified legacy pre-send comparison only" : @"native synced getter; no projection",
+        @"syncedGetterProjectionActive":@(nativeReadCaller != 0),
         @"pendingFetchFilterInstalled":@(fetchFilterInstalled), @"pendingFetchQueries":@(atomic_load(&pendingFetchQueries)),
         @"pendingRowsSuppressed":@(atomic_load(&pendingRowsSuppressed)),
         @"heldBoundaryReads":@(atomic_load(&heldBoundaries)), @"unknownPoliciesHeld":@(atomic_load(&unknownPolicies)),

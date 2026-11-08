@@ -184,7 +184,7 @@ static NSRelationshipDescription *Relationship(NSString *name, NSEntityDescripti
     r.name = name; r.destinationEntity = destination; r.maxCount = 1; r.optional = YES;
     return r;
 }
-static void CheckNativePositions(NSURL *directory, RUINHistoryStore *store) {
+static void CheckNativePositions(NSURL *directory, RUINHistoryStore *store, NSString *rolePrefix) {
     NSString *own = @"uaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", *peer = @"ubbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
     NSEntityDescription *chatEntity = [NSEntityDescription new], *metaEntity = [NSEntityDescription new];
     NSEntityDescription *messageEntity = [NSEntityDescription new], *userEntity = [NSEntityDescription new];
@@ -201,7 +201,7 @@ static void CheckNativePositions(NSURL *directory, RUINHistoryStore *store) {
     NSPersistentStoreCoordinator *psc = [[NSPersistentStoreCoordinator alloc] initWithManagedObjectModel:model];
     NSURL *folder = [[[[[directory URLByAppendingPathComponent:@"Library/Application Support" isDirectory:YES]
         URLByAppendingPathComponent:@"PrivateStore" isDirectory:YES]
-        URLByAppendingPathComponent:[@"S_" stringByAppendingString:own] isDirectory:YES]
+        URLByAppendingPathComponent:[rolePrefix stringByAppendingString:own] isDirectory:YES]
         URLByAppendingPathComponent:@"Messages" isDirectory:YES] standardizedURL];
     CHECK([NSFileManager.defaultManager createDirectoryAtURL:folder withIntermediateDirectories:YES attributes:nil error:nil], @"native cursor directory failed");
     CHECK([psc addPersistentStoreWithType:NSSQLiteStoreType configuration:nil URL:[folder URLByAppendingPathComponent:@"Line.sqlite"] options:nil error:nil] != nil, @"native cursor store failed");
@@ -233,12 +233,14 @@ static void CheckNativePositions(NSURL *directory, RUINHistoryStore *store) {
     }];
     RUINHistoryHostCheckConfigure(store, YES); RUINHistoryHostCheckSetProfileMID(own);
     NSDictionary *key = RUINHistoryMessageKey(message);
+    CHECK(RUINHistoryValidateReadChatKey(key, chat), @"active primary/secondary chat binding was rejected");
     NSDictionary *outgoingKey = RUINHistoryMessageKey(outgoing);
     NSDictionary *ambiguousKey = RUINHistoryMessageKey(ambiguous), *unknownKey = RUINHistoryMessageKey(unknown);
     CHECK([key[@"sender"] isEqual:peer], @"incoming sender relationship was not copied as author");
     CHECK([outgoingKey[@"sender"] isEqual:own], @"verified outgoing message did not use its scoped account author");
     CHECK(!ambiguousKey[@"sender"] && !unknownKey[@"sender"], @"ambiguous direction flags guessed an author");
     RUINHistoryHostCheckSetProfileMID(peer);
+    CHECK(!RUINHistoryValidateReadChatKey(key, chat), @"foreign profile acquired the active chat binding");
     CHECK(!RUINHistoryMessageKey(outgoing)[@"sender"], @"outgoing flag used a mismatched active profile");
     RUINHistoryHostCheckSetProfileMID(own);
     NSMutableDictionary *wrong = [key mutableCopy]; wrong[@"store"] = @"foreign-store";
@@ -660,7 +662,8 @@ int main(void) {
             CHECK(Scalar(url, "SELECT COUNT(*) FROM snapshots WHERE store='threads'") == 96 &&
                   Scalar(url, "SELECT COUNT(*) FROM read_ranges WHERE store='threads'") == 96, @"concurrent writes were lost");
             CheckReadRanges(store);
-            CheckNativePositions(directory, store);
+            CheckNativePositions(directory, store, @"S_");
+            CheckNativePositions(directory, store, @"P_");
             store = nil;
             store = [[RUINHistoryStore alloc] initWithURL:url error:&error];
             CHECK(store && [store.counts[@"ambiguousReadRanges"] integerValue] == 1 &&

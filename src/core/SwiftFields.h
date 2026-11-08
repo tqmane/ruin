@@ -26,8 +26,8 @@ FOUNDATION_EXPORT NSString * _Nullable RUINCopySwiftFieldKind(id _Nullable objec
 FOUNDATION_EXPORT NSString * _Nullable RUINCopySwiftEnumCaseName(id _Nullable object,
     const char * _Nullable fieldPath) NS_RETURNS_RETAINED;
 
-// LINE26.16 only: exact ChatMarkAsReadController class, Mirror Bool field,
-// runtime allocation/ivar and verified offset56. Returns previous 0/1, -1 if rejected.
+// Exact ChatMarkAsReadController class and Mirror Bool field; locate the ivar
+// through runtime metadata and check allocation bounds. Returns previous 0/1, -1 if rejected.
 FOUNDATION_EXPORT int32_t RUINWriteReadControllerEnabled(id _Nullable object, int32_t enabled);
 
 NS_ASSUME_NONNULL_END

@@ -136,6 +136,8 @@ Unsent</string>
 	<string>No available sharing destinations found for this file.</string>
 	<key>このファイルのプレビューには対応していません。共有メニューからファイルを操作できます。</key>
 	<string>Preview is not supported for this file. You can manage it from the share menu.</string>
+	<key>このメッセージまで既読</key>
+	<string>Mark Read to Here</string>
 	<key>この環境ではLINEの着せかえ記録を取得できません。</key>
 	<string>Unable to retrieve LINE theme records in this environment.</string>
 	<key>この端末でのトーク名だけを変更します。相手には反映されません。</key>
@@ -424,6 +426,8 @@ Version: %@%@</string>
 	<string>To protect existing chat history and keys, this operation cannot be started. Please check the signing and storage diagnostics.</string>
 	<key>既存の別名</key>
 	<string>Existing alias</string>
+	<key>既読にできませんでした。もう一度お試しください。</key>
+	<string>Could not mark as read. Please try again.</string>
 	<key>既読の例外</key>
 	<string>Read receipt exceptions</string>
 	<key>既読の管理</key>

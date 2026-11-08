@@ -16,10 +16,6 @@ static const RUINInstructionAnchor kThemeLocalPolicy[] = {
     {0x10595829c, 4, {0xaa1303e0, 0x97ffe3a0, 0xaa0003f4, 0xf9400ab3}}
 };
 
-static const RUINInstructionAnchor kReadBoundary[] = {
-    {0x103ebdce8, 4, {0xaa1403e0, 0x955e035d, 0xeb13001f, 0x5400026a}}
-};
-
 static const RUINInstructionAnchor kUnsendParser[] = {
     {0x1000bb634, 3, {0x951acd7b, 0xb400d2c0, 0xaa0003f3}},
     {0x1000bb648, 1, {0x94f85864}},
@@ -29,7 +25,18 @@ static const RUINInstructionAnchor kUnsendParser[] = {
     {0x10476eea4, 1, {0x953b144f}},
     {0x10476ef5c, 1, {0x953ca309}},
     {0x10476ef68, 1, {0xf10102bf}},
-    {0x10476ef70, 1, {0xf10106bf}}
+    {0x10476ef70, 1, {0xf10106bf}},
+    {0x103f7e610, 1, {0x9559128e}},
+    {0x103f7e4cc, 1, {0x9400002f}},
+    {0x1040da76c, 1, {0x97fa8f50}},
+    {0x103ed1930, 2, {0x94082383, 0xb4000415}},
+    {0x103ed19b8, 1, {0xb4fffc20}},
+    {0x103ed18e0, 1, {0x94000003}},
+    {0x103f7e628, 2, {0xd63f02c0, 0xb4000160}}
+};
+static const uintptr_t kUnsendLookup[] = {
+    0x103f7e614, 0x103f7e4d0, 0x1040da770,
+    0x103ed1934, 0x103ed18e4, 0x1000bb64c
 };
 
 const RUINVersionMapping RUINLINE26170 = {
@@ -46,11 +53,13 @@ const RUINVersionMapping RUINLINE26170 = {
         .featureAddresses = {.status = RUINMappingStatusUnsupported}
     },
     .messaging = {
-        .readBoundary = {RUINMappingStatusVerified, kReadBoundary,
-            sizeof(kReadBoundary) / sizeof(*kReadBoundary), 0x103ebdcf0},
+        // This version's cursor comparison runs after server success.
+        // Preserve native synchronization; suppress reads at their producer.
+        .readBoundary = {.status = RUINMappingStatusUnsupported},
         .unsendOperation = {RUINMappingStatusVerified, kUnsendParser,
             sizeof(kUnsendParser) / sizeof(*kUnsendParser), 0x10476ec44,
-            RUINMappingStatusUnsupported, NULL, 0}
+            RUINMappingStatusVerified, kUnsendLookup, sizeof(kUnsendLookup) / sizeof(*kUnsendLookup)},
+        .readUntilABIStatus = RUINMappingStatusVerified
     },
     .nativeTabs = {
         .status = RUINMappingStatusVerified,

@@ -488,7 +488,8 @@ static NSString *NativeAccountMIDForStore(NSPersistentStore *store) {
     for (NSUInteger i = 0; i + 2 < parts.count; i++) {
         if (![parts[i] isEqual:@"PrivateStore"] || ![parts[i + 2] isEqual:@"Messages"]) continue;
         NSString *account = parts[i + 1];
-        if (![account hasPrefix:@"S_"] || !NativeUserMID([account substringFromIndex:2]) || result) return nil;
+        if (!([account hasPrefix:@"P_"] || [account hasPrefix:@"S_"]) ||
+            !NativeUserMID([account substringFromIndex:2]) || result) return nil;
         result = [account substringFromIndex:2];
     }
     return result;
