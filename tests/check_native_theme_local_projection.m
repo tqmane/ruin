@@ -10,7 +10,8 @@ static BOOL Matches(const RUINThemeLocalPolicyMapping *mapping, const uintptr_t 
 int main(void) { @autoreleasepool {
  const RUINThemeMappings *mapping16=RUINThemeMappingsForHost(RUINKnownHostForVersion(@"26.16.0",@"2026.1006.1718"));
  const RUINThemeMappings *mapping17=RUINThemeMappingsForHost(RUINKnownHostForVersion(@"26.17.0",@"2026.1103.1841"));
- assert(mapping16&&mapping17&&mapping16->localPolicy.verified&&mapping17->localPolicy.verified);
+ assert(mapping16&&mapping17&&mapping16->localPolicy.status==RUINMappingStatusVerified&&
+     mapping17->localPolicy.status==RUINMappingStatusVerified);
  NSString *pid=@"9ddd1e78-ff28-4a4e-a5ce-f021b9ca9002";
  NSSet *ids=[NSSet setWithObject:pid];
  NSDictionary *local=@{@"productID":pid,@"owned":@NO,@"name":@"local",@"grantedByDefault":@YES,@"defaultOrder":@(-1)};

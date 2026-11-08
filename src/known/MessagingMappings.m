@@ -40,14 +40,16 @@ static const RUINInstructionAnchor unsend2617ParserAnchors[] = {
 static const RUINMessagingMapping mappings[] = {
     {
         &RUINKnownHosts[0],
-        {readBoundary2616Anchors, sizeof(readBoundary2616Anchors) / sizeof(readBoundary2616Anchors[0]), 0x103e15640},
-        {unsend2616Anchors, sizeof(unsend2616Anchors) / sizeof(unsend2616Anchors[0]), 0x10461ef10,
+        {RUINMappingStatusVerified, readBoundary2616Anchors, sizeof(readBoundary2616Anchors) / sizeof(readBoundary2616Anchors[0]), 0x103e15640},
+        {RUINMappingStatusVerified, unsend2616Anchors, sizeof(unsend2616Anchors) / sizeof(unsend2616Anchors[0]), 0x10461ef10,
+            RUINMappingStatusVerified,
             unsend2616LookupReturnAddresses, sizeof(unsend2616LookupReturnAddresses) / sizeof(unsend2616LookupReturnAddresses[0])}
     },
     {
         &RUINKnownHosts[1],
-        {readBoundary2617Anchors, sizeof(readBoundary2617Anchors) / sizeof(readBoundary2617Anchors[0]), 0x103ebdcf0},
-        {unsend2617ParserAnchors, sizeof(unsend2617ParserAnchors) / sizeof(unsend2617ParserAnchors[0]), 0x10476ec44, NULL, 0}
+        {RUINMappingStatusVerified, readBoundary2617Anchors, sizeof(readBoundary2617Anchors) / sizeof(readBoundary2617Anchors[0]), 0x103ebdcf0},
+        {RUINMappingStatusVerified, unsend2617ParserAnchors, sizeof(unsend2617ParserAnchors) / sizeof(unsend2617ParserAnchors[0]), 0x10476ec44,
+            RUINMappingStatusUnsupported, NULL, 0}
     }
 };
 

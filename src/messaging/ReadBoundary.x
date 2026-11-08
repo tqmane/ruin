@@ -24,7 +24,8 @@ void RUINBoundaryTestNativeCaller(BOOL value) { testNativeCaller = value; }
 #endif
 
 static BOOL VerifyNativeReadSite(const RUINHostIdentity *host, const RUINReadBoundaryMapping *mapping) {
-    if (!host || !mapping || !mapping->anchors || !mapping->anchorCount || !mapping->callerReturnAddress) return NO;
+    if (!host || !mapping || mapping->status != RUINMappingStatusVerified ||
+        !mapping->anchors || !mapping->anchorCount || !mapping->callerReturnAddress) return NO;
 #if defined(RUIN_BOUNDARY_HOST_CHECK)
     nativeReadCaller = 1;
     return YES;

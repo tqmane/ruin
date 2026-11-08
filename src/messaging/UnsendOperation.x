@@ -59,11 +59,13 @@ static BOOL VerifyCode(void) {
     selectedUnsendMapping = mapping ? &mapping->unsendOperation : NULL;
     activeUnsendMapping = NULL;
     atomic_store(&imageSlide, 0);
-    if (!TargetMatches() || !host || !selectedUnsendMapping || !selectedUnsendMapping->parserAnchors ||
+    if (!TargetMatches() || !host || !selectedUnsendMapping ||
+        selectedUnsendMapping->parserStatus != RUINMappingStatusVerified || !selectedUnsendMapping->parserAnchors ||
         !selectedUnsendMapping->parserAnchorCount || !selectedUnsendMapping->parserParam1ReturnAddress) return NO;
 #if defined(RUIN_UNSEND_OPERATION_HOST_CHECK) && RUIN_UNSEND_OPERATION_HOST_CHECK
     atomic_store(&imageSlide, 0);
-    if (!testImageMatches || !selectedUnsendMapping->orderedLookupReturnAddresses ||
+    if (!testImageMatches || selectedUnsendMapping->lookupStatus != RUINMappingStatusVerified ||
+        !selectedUnsendMapping->orderedLookupReturnAddresses ||
         !selectedUnsendMapping->orderedLookupReturnAddressCount) return NO;
     activeUnsendMapping = selectedUnsendMapping;
     return YES;
@@ -73,6 +75,7 @@ static BOOL VerifyCode(void) {
     if (!RUINVerifyHostImage(host, header) ||
         !RUINVerifyInstructions(header, slide, selectedUnsendMapping->parserAnchors,
             selectedUnsendMapping->parserAnchorCount) ||
+        selectedUnsendMapping->lookupStatus != RUINMappingStatusVerified ||
         !selectedUnsendMapping->orderedLookupReturnAddresses ||
         !selectedUnsendMapping->orderedLookupReturnAddressCount) return NO;
     atomic_store(&imageSlide, (uintptr_t)slide);

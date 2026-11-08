@@ -12,6 +12,7 @@ typedef struct {
 typedef struct {
     const char *version;
     const char *build;
+    RUINMappingStatus status;
     uintptr_t bridgeVA;
     uintptr_t witnessTableVA;
     uintptr_t caseTableVA;

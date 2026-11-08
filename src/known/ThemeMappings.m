@@ -60,10 +60,10 @@ static const RUINInstructionAnchor kThemeLocalPolicy2617[] = {
 static const RUINThemeMappings kMappings[] = {
     {
         .host = &RUINKnownHosts[0],
-        .shopNavigation = {YES, 0x100043398, 0x10a44eb50,
+        .shopNavigation = {RUINMappingStatusVerified, 0x100043398, 0x10a44eb50,
             kShopNavigation2616, sizeof(kShopNavigation2616) / sizeof(*kShopNavigation2616)},
         .shopEligibility = {
-            .verified = YES,
+            .status = RUINMappingStatusVerified,
             .modeReturnPC = 0x10694677c,
             .accountReturnPC = 0x10692e7dc,
             .modeCopyReturnPC = 0x10692e638,
@@ -79,20 +79,20 @@ static const RUINThemeMappings kMappings[] = {
             .anchors = kShopEligibility2616,
             .anchorCount = sizeof(kShopEligibility2616) / sizeof(*kShopEligibility2616)
         },
-        .validation = {YES, 0x1056453d8, 0x10257a434, 0x10a742270,
+        .validation = {RUINMappingStatusVerified, 0x1056453d8, 0x10257a434, 0x10a742270,
             kThemeValidation2616, sizeof(kThemeValidation2616) / sizeof(*kThemeValidation2616)},
-        .localPolicy = {YES, 0x1057f9058, {0x1057fdda0, 0x1057fd5d4}, 0x10580019c,
+        .localPolicy = {RUINMappingStatusVerified, 0x1057f9058, {0x1057fdda0, 0x1057fd5d4}, 0x10580019c,
             kThemeLocalPolicy2616, sizeof(kThemeLocalPolicy2616) / sizeof(*kThemeLocalPolicy2616)}
     },
     {
         .host = &RUINKnownHosts[1],
-        .shopNavigation = {YES, 0x100043524, 0x10a647430,
+        .shopNavigation = {RUINMappingStatusVerified, 0x100043524, 0x10a647430,
             kShopNavigation2617, sizeof(kShopNavigation2617) / sizeof(*kShopNavigation2617)},
         // Eligibility remains unported; the independent revocation closure pair is mapped.
-        .shopEligibility = {.verified = NO},
-        .validation = {YES, 0x1057a5cec, 0x1025cc684, 0x10a93cbf0,
+        .shopEligibility = {.status = RUINMappingStatusUnsupported},
+        .validation = {RUINMappingStatusVerified, 0x1057a5cec, 0x1025cc684, 0x10a93cbf0,
             kThemeValidation2617, sizeof(kThemeValidation2617) / sizeof(*kThemeValidation2617)},
-        .localPolicy = {YES, 0x10595116c, {0x105955ea8, 0x1059556dc}, 0x1059582a4,
+        .localPolicy = {RUINMappingStatusVerified, 0x10595116c, {0x105955ea8, 0x1059556dc}, 0x1059582a4,
             kThemeLocalPolicy2617, sizeof(kThemeLocalPolicy2617) / sizeof(*kThemeLocalPolicy2617)}
     }
 };
@@ -110,7 +110,7 @@ const RUINThemeMappings *RUINThemeMappingsForHost(const RUINHostIdentity *host)
 BOOL RUINThemeLocalPolicyCallersMatch(const RUINThemeLocalPolicyMapping *mapping,
     const uintptr_t *PCs, size_t count)
 {
-    return mapping && mapping->verified && PCs && count >= 2 &&
+    return mapping && mapping->status == RUINMappingStatusVerified && PCs && count >= 2 &&
         PCs[0] == mapping->repositoryReturnPC &&
         (PCs[1] == mapping->serverSyncReturnPCs[0] || PCs[1] == mapping->serverSyncReturnPCs[1]);
 }

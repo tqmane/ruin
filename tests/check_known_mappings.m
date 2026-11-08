@@ -1,10 +1,26 @@
 #import "KnownMappings.h"
+#import "VersionMapping.h"
 #import "BinaryVerifier.h"
 #import "TargetMetadata.h"
 #include <assert.h>
 #include <string.h>
 
+static const RUINVersionMapping kStaticInitProbe = {
+    .host = {"26.16.0", "2026.1006.1718", "292883E8-E011-3583-ADF5-F02241E3277B",
+        "e1ad61171b021566f4a318c93ba1260747bfb220c81a79d5a80121311787d6ad", YES},
+    .themes = {.shopNavigation = {.status = RUINMappingStatusVerified},
+        .shopEligibility = {.status = RUINMappingStatusUnsupported}},
+    .messaging = {.readBoundary = {.status = RUINMappingStatusVerified},
+        .unsendOperation = {.parserStatus = RUINMappingStatusVerified,
+            .lookupStatus = RUINMappingStatusUnsupported}},
+    .nativeTabs = {.version = "26.16.0", .build = "2026.1006.1718",
+        .status = RUINMappingStatusVerified}
+};
+
 int main(void) { @autoreleasepool {
+    assert(kStaticInitProbe.themes.shopNavigation.status == RUINMappingStatusVerified &&
+        kStaticInitProbe.messaging.unsendOperation.lookupStatus == RUINMappingStatusUnsupported &&
+        kStaticInitProbe.nativeTabs.status == RUINMappingStatusVerified);
     // Expectations are independent of KnownHosts.def and include cross-version
     // combinations: a recognized version must never admit another build/UUID.
     const RUINHostIdentity *old = RUINKnownHostForVersion(@"26.16.0", @"2026.1006.1718");

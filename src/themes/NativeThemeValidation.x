@@ -22,7 +22,8 @@ static const RUINThemeMappings *gThemeMappings;
 static BOOL Result(BOOL original, uintptr_t returnPC, BOOL registered,
     const RUINThemeValidationMapping *mapping)
 {
-    return original || (mapping && mapping->verified && returnPC == mapping->resultReturnPC && registered);
+    return original || (mapping && mapping->status == RUINMappingStatusVerified &&
+        returnPC == mapping->resultReturnPC && registered);
 }
 
 static uintptr_t RUINThemeValidationCanonicalIMP(IMP implementation)
@@ -64,7 +65,7 @@ void RUINInstallNativeThemeValidation(void)
     NSDictionary *info = NSBundle.mainBundle.infoDictionary;
     const RUINHostIdentity *host = RUINKnownHostForInfo(info);
     const RUINThemeMappings *mapping = RUINThemeMappingsForHost(host);
-    if (!mapping || !mapping->validation.verified) return;
+    if (!mapping || mapping->validation.status != RUINMappingStatusVerified) return;
     const struct mach_header_64 *header = (const void *)_dyld_get_image_header(0);
     intptr_t slide = _dyld_get_image_vmaddr_slide(0);
     char logString[sizeof("validateTheme result:")];
@@ -95,7 +96,7 @@ NSDictionary *RUINNativeThemeValidationDiagnostics(void)
 #endif
     return @{@"installed":@(gInstalled), @"calls":@(atomic_load(&gCalls)),
         @"localResultsAccepted":@(atomic_load(&gOverrides)),
-        @"mappingAvailable":@(mapping && mapping->validation.verified),
+        @"mappingAvailable":@(mapping && mapping->validation.status == RUINMappingStatusVerified),
         @"secondaryStylesheetPersistence":persistence[@"installed"],
         @"secondaryStylesheetPersistenceAdapter":persistence,
         @"scope":@"native validateTheme result; applied registered local theme only"};
@@ -107,15 +108,16 @@ BOOL RUINIsRegisteredNativeThemeID(NSString *productID) { (void)productID; retur
 int main(void) { @autoreleasepool {
     const RUINThemeMappings *mapping = RUINThemeMappingsForHost(
         RUINKnownHostForVersion(@"26.16.0", @"2026.1006.1718"));
-    assert(mapping && mapping->validation.verified);
+    assert(mapping && mapping->validation.status == RUINMappingStatusVerified);
     assert(Result(NO, mapping->validation.resultReturnPC, YES, &mapping->validation));
     assert(!Result(NO, mapping->validation.resultReturnPC, NO, &mapping->validation));
     assert(!Result(NO, mapping->validation.resultReturnPC + 4, YES, &mapping->validation));
     assert(Result(YES, mapping->validation.resultReturnPC + 4, NO, &mapping->validation));
     const RUINThemeMappings *newMapping = RUINThemeMappingsForHost(
         RUINKnownHostForVersion(@"26.17.0", @"2026.1103.1841"));
-    assert(newMapping && newMapping->validation.verified &&
-        !newMapping->shopEligibility.verified && newMapping->localPolicy.verified);
+    assert(newMapping && newMapping->validation.status == RUINMappingStatusVerified &&
+        newMapping->shopEligibility.status == RUINMappingStatusUnsupported &&
+        newMapping->localPolicy.status == RUINMappingStatusVerified);
     assert(Result(NO, newMapping->validation.resultReturnPC, YES, &newMapping->validation));
     assert(!Result(NO, newMapping->validation.resultReturnPC + 4, YES, &newMapping->validation));
     puts("PASS theme validation caller and registered-package isolation");

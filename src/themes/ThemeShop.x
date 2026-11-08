@@ -61,7 +61,7 @@ static RUINThemeShopScope RUINThemeShopClassifyFrames(const RUINThemeShopEligibi
     const RUINThemeShopFrame *frames, size_t count, BOOL mode)
 {
     RUINThemeShopScope none = {0};
-    if (!mapping || !mapping->verified || !frames || count < (mode ? 7u : 6u) ||
+    if (!mapping || mapping->status != RUINMappingStatusVerified || !frames || count < (mode ? 7u : 6u) ||
         frames[0].returnPC != (mode ? mapping->modeReturnPC : mapping->accountReturnPC)) return none;
     size_t i = 1;
     uintptr_t valueFrame = frames[0].callerFrame;
@@ -105,7 +105,7 @@ static RUINThemeShopScope RUINThemeShopCaptureScope(void *frame, BOOL mode)
 }
 static BOOL RUINThemeShopFrameUsesPlainMode(uintptr_t frame)
 {
-    return frame && gThemeShopMappings && gThemeShopMappings->shopEligibility.verified &&
+    return frame && gThemeShopMappings && gThemeShopMappings->shopEligibility.status == RUINMappingStatusVerified &&
         gThemeShopTestReadMode == 0;
 }
 #else
@@ -140,7 +140,7 @@ static BOOL RUINThemeShopFrameUsesPlainMode(uintptr_t frame)
 {
     uintptr_t top = (uintptr_t)pthread_get_stackaddr_np(pthread_self());
     size_t size = pthread_get_stacksize_np(pthread_self());
-    if (!gThemeShopMappings || !gThemeShopMappings->shopEligibility.verified || !top || size > top ||
+    if (!gThemeShopMappings || gThemeShopMappings->shopEligibility.status != RUINMappingStatusVerified || !top || size > top ||
         frame < top - size + gThemeShopMappings->shopEligibility.plainModeStackOffset || frame > top) return NO;
     uint32_t mode;
     memcpy(&mode, (const void *)(frame - gThemeShopMappings->shopEligibility.plainModeStackOffset), sizeof(mode));
@@ -217,7 +217,7 @@ static const RUINThemeMappings *RUINThemeShopMappingForInfo(NSDictionary *info)
 {
     const RUINHostIdentity *host = RUINKnownHostForInfo(info);
     const RUINThemeMappings *mapping = RUINThemeMappingsForHost(host);
-    if (!mapping || !mapping->shopNavigation.verified) return NULL;
+    if (!mapping || mapping->shopNavigation.status != RUINMappingStatusVerified) return NULL;
 #if !defined(RUIN_THEMESHOP_HOST_CHECK)
     const struct mach_header_64 *header = (const void *)_dyld_get_image_header(0);
     intptr_t slide = _dyld_get_image_vmaddr_slide(0);
@@ -236,7 +236,7 @@ static const RUINThemeMappings *RUINThemeShopMappingForInfo(NSDictionary *info)
 #if !defined(RUIN_THEMESHOP_HOST_CHECK)
 static BOOL RUINThemeShopVerifyEligibility(const RUINThemeMappings *mapping)
 {
-    if (!mapping || !mapping->shopEligibility.verified) return NO;
+    if (!mapping || mapping->shopEligibility.status != RUINMappingStatusVerified) return NO;
     const RUINHostIdentity *host = mapping->host;
     const struct mach_header_64 *header = (const void *)_dyld_get_image_header(0);
     intptr_t slide = _dyld_get_image_vmaddr_slide(0);
@@ -251,7 +251,7 @@ static void RUINThemeShopInstallGate(void)
 {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        if (!gThemeShopMappings || !gThemeShopMappings->shopEligibility.verified) {
+        if (!gThemeShopMappings || gThemeShopMappings->shopEligibility.status != RUINMappingStatusVerified) {
             atomic_store(&gThemeShopGateStatus, 5); return;
         }
         if (!RUINThemeShopVerifyEligibility(gThemeShopMappings)) {
@@ -331,7 +331,7 @@ static BOOL RUINThemeShopRouterAvailable(id delegate, const RUINThemeMappings *m
     if (!types || strcmp(types, "B24@0:8@16") || !implementation) return NO;
 #if !defined(RUIN_THEMESHOP_HOST_CHECK)
     // Missing numeric mappings still allow the guarded Objective-C route.
-    if (mapping && mapping->shopNavigation.verified)
+    if (mapping && mapping->shopNavigation.status == RUINMappingStatusVerified)
         return RUINThemeShopCanonicalIMP(implementation) == mapping->shopNavigation.methodIMP + gThemeShopSlide;
 #endif
     return YES;
@@ -424,12 +424,12 @@ NSDictionary<NSString *, id> *RUINThemeShopDiagnostics(void)
         @"externalURLFallback": @NO,
         @"gateOverrideInstalled": @(atomic_load(&gThemeShopGateReady)),
         @"gateOverrideStatus": RUINThemeShopGateStatusName(),
-        @"gateScope": mapping && mapping->shopEligibility.verified
+        @"gateScope": mapping && mapping->shopEligibility.status == RUINMappingStatusVerified
             ? @"verified theme capability, ShopScheme router and StylesheetManager settings-save caller chains"
             : mapping ? @"Shop navigation binary verified; numeric eligibility scope unported for this host"
             : @"Shop navigation uses structural Objective-C ABI guard; numeric eligibility scope unavailable",
-        @"shopNavigationMappingVerified": @(mapping && mapping->shopNavigation.verified),
-        @"shopEligibilityMappingVerified": @(mapping && mapping->shopEligibility.verified),
+        @"shopNavigationMappingVerified": @(mapping && mapping->shopNavigation.status == RUINMappingStatusVerified),
+        @"shopEligibilityMappingVerified": @(mapping && mapping->shopEligibility.status == RUINMappingStatusVerified),
         @"gateModeProjections": @(atomic_load(&gThemeShopModeProjections)),
         @"gateRoleReadProjections": @(atomic_load(&gThemeShopRoleProjections)),
         @"gateScopeMisses": @(atomic_load(&gThemeShopScopeMisses)),
@@ -558,10 +558,14 @@ static void RUINThemeShopCheckGate(void)
     const RUINHostIdentity *host17 = RUINKnownHostForVersion(@"26.17.0", @"2026.1103.1841");
     const RUINThemeMappings *mapping16 = RUINThemeMappingsForHost(host16);
     const RUINThemeMappings *mapping17 = RUINThemeMappingsForHost(host17);
-    assert(mapping16 && mapping16->shopNavigation.verified && mapping16->shopEligibility.verified &&
-        mapping16->validation.verified && mapping16->localPolicy.verified);
-    assert(mapping17 && mapping17->shopNavigation.verified && !mapping17->shopEligibility.verified &&
-        mapping17->validation.verified && mapping17->localPolicy.verified);
+    assert(mapping16 && mapping16->shopNavigation.status == RUINMappingStatusVerified &&
+        mapping16->shopEligibility.status == RUINMappingStatusVerified &&
+        mapping16->validation.status == RUINMappingStatusVerified &&
+        mapping16->localPolicy.status == RUINMappingStatusVerified);
+    assert(mapping17 && mapping17->shopNavigation.status == RUINMappingStatusVerified &&
+        mapping17->shopEligibility.status == RUINMappingStatusUnsupported &&
+        mapping17->validation.status == RUINMappingStatusVerified &&
+        mapping17->localPolicy.status == RUINMappingStatusVerified);
     assert(!RUINThemeMappingsForHost(NULL) &&
         !RUINThemeMappingsForHost(RUINKnownHostForVersion(@"26.18.0", @"unsupported")));
     gThemeShopMappings = mapping16;

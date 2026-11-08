@@ -25,7 +25,7 @@ static const RUINThemeLocalPolicyMapping *RUINVerifiedLocalPolicyMapping(void)
     dispatch_once(&once, ^{
         const RUINHostIdentity *host = RUINKnownHostForInfo(NSBundle.mainBundle.infoDictionary);
         const RUINThemeMappings *mapping = RUINThemeMappingsForHost(host);
-        if (!mapping || !mapping->localPolicy.verified) return;
+        if (!mapping || mapping->localPolicy.status != RUINMappingStatusVerified) return;
         const struct mach_header_64 *header = (const void *)_dyld_get_image_header(0);
         intptr_t slide = _dyld_get_image_vmaddr_slide(0);
         if (RUINVerifyHostImage(host, header) &&
@@ -238,7 +238,7 @@ NSDictionary *RUINNativeThemeLocalPolicyDiagnostics(void)
         @"readonlyObjectsProjected":@(atomic_load(&gReadonlyProjectedObjects)),
         @"serverRevocationScansIsolated":@(atomic_load(&gRevocationScansIsolated)),
         @"serverRevocationMappingVerified":@(RUINVerifiedLocalPolicyMapping() != NULL),
-        @"serverRevocationMappingStatus":mapping && mapping->localPolicy.verified
+        @"serverRevocationMappingStatus":mapping && mapping->localPolicy.status == RUINMappingStatusVerified
             ? @"verified" : host ? @"unported_for_host" : @"unknown_host",
         @"contextSavePerformed":@NO};
 }
