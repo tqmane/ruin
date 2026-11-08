@@ -22,6 +22,10 @@ MAPPINGS = [
         "last_witness": 0x100725540,
         "getters": [0x10072529C, 0x100725304, 0x100725440, 0x1007254C8, 0x100725520],
         "generation_function": 0x107D5CBDC,
+        "refresh": [(0x30, 0x1007252A0, 0x1003D57A4), (0x40, 0x1007252C4, 0x1003D5844),
+                    (0x48, 0x1007252E4, 0x1003D57E8), (0x70, 0x100725440, 0x1003D59A8),
+                    (0x50, 0x100725304, 0x1003D5170)],
+        "customizable_refresh_words": [0x8B080260, 0xA941D815, 0x97F20C47, 0xF9402AC8, 0x97F21C0C],
         "generation": {
             "switch_ref": 0x107D5CCEC,
             "switch_words": [0x90000009, 0x913D2129, 0x1000000A, 0xB8A8792B, 0x8B0B014A, 0xD61F0140],
@@ -44,6 +48,10 @@ MAPPINGS = [
         "last_witness": 0x1007365A4,
         "getters": [0x100736300, 0x100736368, 0x1007364A4, 0x10073652C, 0x100736584],
         "generation_function": 0x107EE1058,
+        "refresh": [(0x30, 0x100736304, 0x1003DEA3C), (0x40, 0x100736328, 0x1003DEADC),
+                    (0x48, 0x100736348, 0x1003DEA80), (0x70, 0x1007364A4, 0x1003DEC40),
+                    (0x50, 0x100736368, 0x1003DE408)],
+        "customizable_refresh_words": [0x8B080260, 0xA941D815, 0x97F1E7C9, 0xF9402AC8, 0x97F1F79A],
         "generation": {
             "switch_ref": 0x107EE1168,
             "switch_words": [0x90000009, 0x910F1129, 0x1000000A, 0xB8A8792B, 0x8B0B014A, 0xD61F0140],
@@ -56,6 +64,12 @@ MAPPINGS = [
     },
 ]
 SLOTS = [0x28, 0x50, 0x70, 0x80, 0x98]
+REFRESH_WORDS = {
+    0x30: [0xF9401AE8, 0xAA0003F4, 0xAA1603E0, 0xAA1703E1, 0xD63F0100],
+    0x40: [0xF94022E8, 0xAA0003F4, 0xAA1603E0, 0xAA1703E1, 0xD63F0100],
+    0x48: [0xF94026E8, 0xAA0003F4, 0xAA1603E0, 0xAA1703E1, 0xD63F0100],
+    0x70: [0xF9403AC8, 0xAA0003F4, 0xAA1303E0, 0xAA1603E1, 0xD63F0100],
+}
 EXPECTED_CASE_TABLE = [0x24, 0x10, 0x20, 0x18, 0x40]
 EXPECTED_BRIDGE = [0xAA1603E0, 0xAA1503E1, 0xD61F0100]
 EXPECTED_GENERATOR_PROLOGUE = [0xD10183FF, 0xA90167FA, 0xA9025FF8, 0xA90357F6]
@@ -199,6 +213,23 @@ def check_binary(path, mapping):
         assert actual == getter
         getter_pointers[hex(slot)] = hex(actual)
 
+    refresh_proof = []
+    for slot, getter, return_pc in mapping["refresh"]:
+        assert chained_pointer(data, segments, mapping["table"] + slot) == getter
+        actual = [word(data, segments, return_pc - 20 + 4*i) for i in range(5)]
+        expected = mapping["customizable_refresh_words"] if slot == 0x50 else REFRESH_WORDS[slot]
+        assert actual == expected, f"changed native refresh reader at {return_pc:#x}"
+        if slot == 0x50:
+            call = actual[4]
+            assert call & 0xFC000000 == 0x94000000
+            delta = call & 0x03FFFFFF
+            if delta & 0x02000000:
+                delta -= 0x04000000
+            target = return_pc - 4 + delta*4
+            assert [word(data,segments,target+4*i) for i in range(4)] == [
+                0xAA0003F4,0xAA1503E0,0xAA1603E1,0xD61F0100]
+        refresh_proof.append({"slot":hex(slot), "getterVA":hex(getter), "returnVA":hex(return_pc)})
+
     generation = mapping["generation"]
     for address, expected in zip(range(generation["switch_ref"], generation["switch_ref"] + 24, 4),
                                  generation["switch_words"]):
@@ -236,7 +267,7 @@ def check_binary(path, mapping):
         "caseTableVA": hex(mapping["case_table"]), "caseTableWords": [hex(x) for x in case_values],
         "switchReferenceVA": hex(generation["switch_ref"]),
         "switchWords": [hex(x) for x in generation["switch_words"]],
-        "getterCallSites": call_proof,
+        "getterCallSites": call_proof, "refreshReadSites":refresh_proof,
         "timelineSwitchTargets": {
             "squareTab": hex(case_targets[0]),
             "voom": hex(case_targets[1]),
@@ -279,6 +310,9 @@ def main():
                   mapping["first_witness"], mapping["last_witness"], *mapping["getters"],
                   mapping["generation_function"], *EXPECTED_GENERATOR_PROLOGUE,
                   *SLOTS, *EXPECTED_CASE_TABLE, *EXPECTED_BRIDGE]
+        for slot, getter, return_pc in mapping["refresh"]:
+            words = mapping["customizable_refresh_words"] if slot == 0x50 else REFRESH_WORDS[slot]
+            values.extend([slot,getter,return_pc,*words])
         assert all(f"0x{value:x}" in row.lower() for value in values)
     strings = subprocess.run(["strings", "-a", str(binary)], check=True, capture_output=True, text=True).stdout
     assert shopping_controller in strings

@@ -8,6 +8,8 @@
 #import <stdatomic.h>
 #import <stdlib.h>
 #import <string.h>
+#import <mach-o/dyld.h>
+#import <dlfcn.h>
 
 #import "Features.h"
 #import "NativeTabAvailability.h"
@@ -183,6 +185,8 @@ static atomic_int gTabVisibilityStatus;
 static atomic_uint_fast64_t gNativeTabCount, gUIKitTabCount;
 static char gOriginalCompactTabsKey;
 static NSHashTable<UITabBarController *> *gTrackedTabControllers;
+static BOOL gTabConfigurationHookInstalled;
+static atomic_uint_fast64_t gKeptNativeMenuRefreshes;
 static _Thread_local unsigned int gTabSetterDepth;
 static _Thread_local unsigned int gHiddenSetterDepth;
 static _Thread_local unsigned int gInternalHiddenUpdateDepth;
@@ -222,6 +226,36 @@ static BOOL RUINTargetMatches(void)
 {
     return RUINTargetMetadataMatchesInfo(NSBundle.mainBundle.infoDictionary);
 }
+
+static BOOL RUINKeepNativeMenusForLaunch(void) {
+    if (!NSThread.isMainThread ||
+        ![NSUserDefaults.standardUserDefaults boolForKey:RUINHideAppsTabDefaultsKey]) return NO;
+    NSDictionary *visibility = RUINNativeTabAvailabilityDiagnostics();
+    if ([visibility[@"status"] intValue] != 5 || [visibility[@"tabFilterRecoveryMode"] boolValue]) return NO;
+    Class root = objc_getClass("_TtC22LineSharedUIComponents20RootTabBarController");
+    if (!root) return NO;
+    for (UITabBarController *controller in gTrackedTabControllers.allObjects)
+        if ([controller isKindOfClass:root] && controller.viewIfLoaded.window && !controller.isBeingDismissed)
+            return YES;
+    return NO;
+}
+
+%group RUINNativeTabConfiguration
+%hook RUINNativeTabConfigurationDelegate
+- (void)didReceiveChangedConfigurationNotification:(NSNotification *)notification
+{
+    // This callback only rebuilds the native tab controllers. Its More-tab
+    // updater reads the Mini App flag directly, bypassing protocol witnesses.
+    // ponytail: keep this launch's native menu; new server tab choices apply
+    // after restart. Configuration storage and service factories stay native.
+    if (RUINKeepNativeMenusForLaunch()) {
+        atomic_fetch_add(&gKeptNativeMenuRefreshes,1);
+        return;
+    }
+    %orig(notification);
+}
+%end
+%end
 
 // Separate Logos groups keep original implementations scoped to each
 // concrete class; no hook is installed on UIView or UITabBarController itself.
@@ -959,6 +993,15 @@ static void RUINMarkHooksVersionGated(void)
 
 static void RUINInstallHooks(void)
 {
+    if (!gTabConfigurationHookInstalled) {
+        Class delegate = objc_getClass("_TtC4LINE11AppDelegate");
+        Method method = delegate ? class_getInstanceMethod(delegate,
+            @selector(didReceiveChangedConfigurationNotification:)) : NULL;
+        if (method && !strcmp(method_getTypeEncoding(method), "v24@0:8@16")) {
+            %init(RUINNativeTabConfiguration, RUINNativeTabConfigurationDelegate=delegate);
+            gTabConfigurationHookInstalled = YES;
+        }
+    }
     Class tabClass = objc_getClass(gSetControllersHook.className);
     RUINMethodHook *tabHooks[] = {
         &gSetControllersHook, &gSetControllersAnimatedHook,
@@ -1281,10 +1324,27 @@ static void RUINRegisterTabController(UITabBarController *controller)
     [gTrackedTabControllers addObject:controller];
 }
 
+static NSMutableArray *gTabSetterTrace;
+static void RUINTraceTabSetter(UITabBarController *controller, NSArray *requested) {
+    if (![NSProcessInfo.processInfo.environment[@"RUIN_ENABLE_RUNTIME_INSPECTOR"] isEqual:@"1"] ||
+        gTabSetterTrace.count >= 24) return;
+    NSMutableArray *PCs = [NSMutableArray array];
+    for (NSNumber *frame in NSThread.callStackReturnAddresses) {
+        Dl_info info;
+        if (dladdr((void *)frame.unsignedLongLongValue, &info) &&
+            info.dli_fbase == _dyld_get_image_header(0))
+            [PCs addObject:[NSString stringWithFormat:@"0x%llx", frame.unsignedLongLongValue - _dyld_get_image_vmaddr_slide(0)]];
+    }
+    if (!gTabSetterTrace) gTabSetterTrace = [NSMutableArray array];
+    [gTabSetterTrace addObject:@{@"controllerClass":NSStringFromClass(controller.class),
+        @"controller": [NSString stringWithFormat:@"%p",controller], @"count":@(requested.count), @"nativeReturnPCs":PCs}];
+}
+
 static void RUINRecordRequestedControllers(UITabBarController *controller, NSArray *requested)
 {
     RUINRegisterTabController(controller);
     if (!requested) return;
+    RUINTraceTabSetter(controller, requested);
 
     // LINE can resubmit the already-filtered list while rebuilding its tab UI.
     // Keep the prior full request in that case so a later refresh can restore it.
@@ -1657,6 +1717,9 @@ NSDictionary *RUINInterfaceDiagnostics(void)
     return @{
         @"gate": gated ? @"version_gated" : installedForTarget ? @"matched" : @"pending",
         @"tabs": @{
+            @"configurationRefreshHookInstalled":@(gTabConfigurationHookInstalled),
+            @"keptNativeMenuRefreshes":@(atomic_load(&gKeptNativeMenuRefreshes)),
+            @"setterTrace":gTabSetterTrace ?: @[],
             @"nativeAvailability":RUINNativeTabAvailabilityDiagnostics(),
             @"setViewControllers": RUINTargetStatusName(atomic_load(&gSetControllersHook.status)),
             @"setViewControllersAnimated": RUINTargetStatusName(atomic_load(&gSetControllersAnimatedHook.status)),

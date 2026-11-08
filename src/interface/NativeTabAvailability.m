@@ -32,8 +32,10 @@ static atomic_bool nativeMoreAvailable, nativeFallbackMoreAvailable;
 static atomic_int status;
 #if !defined(RUIN_NATIVE_TAB_AVAILABILITY_HOST_CHECK)
 static uintptr_t menuStartVA, menuEndVA;
-static intptr_t imageSlide;
 #endif
+static intptr_t imageSlide;
+static const RUINNativeTabRefreshRead *refreshReads;
+static size_t refreshReadCount;
 static BOOL menuScopeVerified, recoveryMode;
 #if defined(RUIN_NATIVE_TAB_AVAILABILITY_HOST_CHECK)
 static BOOL testMenuCaller = YES;
@@ -120,13 +122,20 @@ static BOOL IsMenuCaller(uintptr_t caller) {
     return menuScopeVerified && unslid >= menuStartVA && unslid < menuEndVA;
 #endif
 }
+static BOOL IsVisibilityCaller(unsigned slot, uintptr_t caller) {
+    if (IsMenuCaller(caller)) return YES;
+    uintptr_t unslid = caller - (uintptr_t)imageSlide;
+    for (size_t i = 0; i < refreshReadCount; i++)
+        if (refreshReads[i].slot == slot && refreshReads[i].returnVA == unslid) return YES;
+    return NO;
+}
 static uint8_t Filter(unsigned slot, const void *metadata, const void *witness, void *context, uintptr_t caller) {
     atomic_fetch_add(&calls,1);
     uint8_t value = Original(slot, metadata, witness, context);
     // The same getters construct required internal services. Change only the
-    // native menu generator's reads; factories and all other consumers retain
+    // native menu generation/refresh reads; factories and all other consumers retain
     // LINE's actual availability even when every optional tab is hidden.
-    if (recoveryMode || !IsMenuCaller(caller)) return value;
+    if (recoveryMode || !IsVisibilityCaller(slot,caller)) return value;
     if (slot == 0x28 ? (value == TimelineSquare || value >= TimelineNone) : !value)
         return Result(slot,value,value);
     unsigned choice = 0;
@@ -137,6 +146,8 @@ static uint8_t Filter(unsigned slot, const void *metadata, const void *witness, 
             if (choice == ChoiceVOOM) key = RUINHideVOOMTabDefaultsKey;
             else if (choice == ChoiceShopping) key = RUINHideShoppingTabDefaultsKey;
             break;
+        case 0x30: choice=ChoiceVOOM; key=RUINHideVOOMTabDefaultsKey; break;
+        case 0x40: case 0x48: choice=ChoiceShopping; key=RUINHideShoppingTabDefaultsKey; break;
         case 0x50:
             if (!Original(0x58,metadata,witness,context)) break;
             choice=ChoiceNews; key=RUINHideNewsCallTabsDefaultsKey; break;
@@ -172,7 +183,23 @@ GATE(GateCustomizable,0x50)
 GATE(GateNewsRow,0x70)
 GATE(GateMore,0x80)
 GATE(GateFallbackMore,0x98)
+GATE(GateRefreshVOOM,0x30)
+GATE(GateRefreshTWShopping,0x40)
+GATE(GateRefreshShopping,0x48)
 #undef GATE
+
+#if !defined(RUIN_NATIVE_TAB_AVAILABILITY_HOST_CHECK)
+static NativeGetter RefreshGate(unsigned slot) {
+    switch (slot) {
+        case 0x30: return GateRefreshVOOM;
+        case 0x40: return GateRefreshTWShopping;
+        case 0x48: return GateRefreshShopping;
+        case 0x70: return GateNewsRow;
+        case 0x50: return GateCustomizable;
+        default: return NULL;
+    }
+}
+#endif
 
 NSArray<NSString *> *RUINObservedNativeTabChoices(void) {
     unsigned choices = atomic_load(&observedChoices);
@@ -193,6 +220,7 @@ NSDictionary *RUINNativeTabAvailabilityDiagnostics(void) {
         @"nativeTimeline":@(atomic_load(&nativeTimeline)), @"nativeMoreKind":@(atomic_load(&nativeMoreKind)),
         @"nativeMoreAvailable":@(atomic_load(&nativeMoreAvailable) || atomic_load(&nativeFallbackMoreAvailable)),
         @"menuOnlyScopeVerified":@(menuScopeVerified), @"tabFilterRecoveryMode":@(recoveryMode),
+        @"nativeRefreshScopeVerified":@(refreshReadCount != 0),
         @"nativeServiceAvailabilityChanged":@NO,
         @"nativeMenuAndIndexGenerationPreserved":@YES, @"customTabViewsAdded":@NO};
 }
@@ -223,6 +251,26 @@ void RUINInstallNativeTabAvailability(void) {
         for (unsigned i=0;i<5;i++)
             if (mapping->slots[i]/8 >= 23 ||
                 (uintptr_t)snapshot[mapping->slots[i]/8] != (uintptr_t)(slide + mapping->getters[i])) { atomic_store(&status,2); return; }
+        const size_t refreshCount = sizeof(mapping->refreshReads)/sizeof(mapping->refreshReads[0]);
+        for (size_t i=0;i<refreshCount;i++) {
+            const RUINNativeTabRefreshRead *read = &mapping->refreshReads[i];
+            uint32_t actual[5];
+            if (!RefreshGate(read->slot) || read->slot/8 >= 23 || read->returnVA < sizeof(actual) ||
+                (uintptr_t)snapshot[read->slot/8] != (uintptr_t)(slide + read->getterVA) ||
+                !RUINReadImageBytes(header,slide,read->returnVA-sizeof(actual),actual,sizeof(actual),"__TEXT") ||
+                memcmp(actual,read->callWords,sizeof(actual))) { atomic_store(&status,2); return; }
+            if (read->slot == 0x50) {
+                // This reader tail-calls a Swift ABI bridge rather than BLR.
+                // Derive the bridge from the verified BL, then validate its
+                // argument forwarding before binding the witness.
+                int64_t delta = actual[4] & 0x03ffffff;
+                if (delta & 0x02000000) delta -= 0x04000000;
+                RUINInstructionAnchor thunk = {(uintptr_t)((int64_t)read->returnVA-4+delta*4),4,
+                    {0xaa0003f4,0xaa1503e0,0xaa1603e1,0xd61f0100}};
+                if ((actual[4] & 0xfc000000) != 0x94000000 ||
+                    !RUINVerifyInstructions(header,slide,&thunk,1)) { atomic_store(&status,2); return; }
+            }
+        }
         memcpy(originals,snapshot,sizeof(originals));
         NativeGetter *table = (void *)(slide + mapping->witnessTableVA);
         vm_address_t page = (vm_address_t)table & ~((vm_address_t)vm_page_size-1);
@@ -239,14 +287,20 @@ void RUINInstallNativeTabAvailability(void) {
             atomic_store(&status,3); return;
         }
         for (unsigned i=0;i<5;i++) __atomic_store_n(&table[mapping->slots[i]/8],replacements[i],__ATOMIC_RELEASE);
+        for (size_t i=0;i<refreshCount;i++) __atomic_store_n(&table[mapping->refreshReads[i].slot/8],
+            RefreshGate(mapping->refreshReads[i].slot),__ATOMIC_RELEASE);
         if (vm_protect(mach_task_self(),page,vm_page_size,FALSE,regionInfo.protection) != KERN_SUCCESS) {
             for (unsigned i=0;i<5;i++) __atomic_store_n(&table[mapping->slots[i]/8],originals[mapping->slots[i]/8],__ATOMIC_RELEASE);
+            for (size_t i=0;i<refreshCount;i++) __atomic_store_n(&table[mapping->refreshReads[i].slot/8],
+                originals[mapping->refreshReads[i].slot/8],__ATOMIC_RELEASE);
             vm_protect(mach_task_self(),page,vm_page_size,FALSE,regionInfo.protection);
             atomic_store(&status,4); return;
         }
         imageSlide = slide;
         menuStartVA = mapping->menuGenerator.address;
         menuEndVA = mapping->menuGeneratorEndVA;
+        refreshReads = mapping->refreshReads;
+        refreshReadCount = refreshCount;
         recoveryMode = [NSProcessInfo.processInfo.environment[@"RUIN_DISABLE_TAB_HIDING"] isEqual:@"1"];
         menuScopeVerified = YES;
         atomic_store(&status,5);
@@ -280,7 +334,7 @@ int main(void) { @autoreleasepool {
         twShopping=TimelineTWShopping,none=TimelineNone;
     menuScopeVerified = YES;
     [NSUserDefaults.standardUserDefaults setVolatileDomain:@{
-        RUINHideShoppingTabDefaultsKey:@YES, RUINHideAppsTabDefaultsKey:@YES,
+        RUINHideShoppingTabDefaultsKey:@YES, RUINHideAppsTabDefaultsKey:@YES, RUINHideVOOMTabDefaultsKey:@YES,
         RUINHideNewsCallTabsDefaultsKey:@YES, RUINHideSettingsTabDefaultsKey:@YES} forName:NSArgumentDomain];
     // Factories retain actual services while the menu hides both optional slots.
     originals[0x78/8]=TestAvailable;
@@ -288,6 +342,19 @@ int main(void) { @autoreleasepool {
     assert(GateTimeline((void *)1,(void *)2,&shopping)==TimelineShopping);
     assert(GateMore((void *)1,(void *)2,&yes)==1);
     assert(GateNewsRow((void *)1,(void *)2,&yes)==1);
+    const RUINNativeTabRefreshRead refresh[] = {
+        {.slot=0x30,.returnVA=0x1234}, {.slot=0x40,.returnVA=0x1238},
+        {.slot=0x48,.returnVA=0x123c}, {.slot=0x70,.returnVA=0x1240}, {.slot=0x50,.returnVA=0x1244}};
+    refreshReads = refresh; refreshReadCount = sizeof(refresh)/sizeof(refresh[0]);
+    for (size_t i=0;i<refreshReadCount;i++) {
+        assert(Filter(refresh[i].slot,(void *)1,(void *)2,&yes,refresh[i].returnVA)==0);
+        assert(Filter(refresh[i].slot,(void *)1,(void *)2,&yes,refresh[i].returnVA+0x100)==1);
+    }
+    assert(Filter(0x30,(void *)1,(void *)2,&yes,0x123c)==1);
+    assert(Filter(0x28,(void *)1,(void *)2,&shopping,0x123c)==TimelineShopping);
+    assert(GateRefreshShopping((void *)1,(void *)2,&yes)==1);
+    assert(GateRefreshTWShopping((void *)1,(void *)2,&yes)==1);
+    assert(GateRefreshVOOM((void *)1,(void *)2,&yes)==1);
     testMenuCaller = YES;
     assert(GateTimeline((void *)1,(void *)2,&shopping)==TimelineNone);
     assert(GateTimeline((void *)1,(void *)2,&twShopping)==TimelineNone);
