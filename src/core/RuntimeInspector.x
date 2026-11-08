@@ -89,10 +89,37 @@ static NSArray *RUINSettingsFactoryMetadata(UIViewController *controller) {
     if (![name hasPrefix:@"LINE."] && ![name hasPrefix:@"Line"] && ![name hasPrefix:@"NL"]) return @[];
     if ([name rangeOfString:@"settings" options:NSCaseInsensitiveSearch].location == NSNotFound &&
         [name rangeOfString:@"theme" options:NSCaseInsensitiveSearch].location == NSNotFound) return @[];
-    return RUINFactoryFieldMetadata(controller, @[@"", @"viewModel", @"dependency", @"dependencies",
+    NSArray *rows = RUINFactoryFieldMetadata(controller, @[@"", @"viewModel", @"dependency", @"dependencies",
         @"viewModel.viewControllerFactory", @"viewModel.sections", @"viewModel.cellConfigurators",
         @"viewModel.cellConfiguratorsMap", @"createThemeEditPage", @"openThemeShopPage",
         @"openThemeDetail", @"changeCycleSettingModelComposer"]);
+    if ([name isEqual:@"LINE.SettingsViewController"] && NSThread.isMainThread &&
+        RUINInspectorEnabled() && RUINInspectorTargetMatches()) {
+        for (NSMutableDictionary *row in rows) {
+            NSString *path = row[@"path"];
+            if (![path isEqual:@"viewModel.cellConfigurators"] && ![path isEqual:@"viewModel.sections"]) continue;
+            NSDictionary *metadata = RUINCopySwiftArrayMetadata(controller, path.UTF8String);
+            if (metadata) row[@"arrayMetadata"] = metadata;
+            if (![path isEqual:@"viewModel.sections"] ||
+                ![RUINCopySwiftFieldTypeName(controller, path.UTF8String)
+                    isEqual:@"Swift.Array<LineSettingsUICore.SettingsBaseSection>"]) continue;
+            id sections = RUINCopySwiftField(controller, path.UTF8String);
+            Class sectionClass = NSClassFromString(@"LineSettingsUICore.SettingsBaseSection");
+            if (!sectionClass || ![sections isKindOfClass:NSArray.class] || [sections count] > 16) continue;
+            // These observed section elements are class instances. Retain the
+            // existing objects and re-root at items rather than boxing models.
+            NSMutableArray *sectionItems = [NSMutableArray array];
+            NSUInteger index = 0;
+            for (id section in sections) {
+                if (object_getClass(section) != sectionClass) break;
+                NSDictionary *items = RUINCopySwiftArrayMetadata(section, "items");
+                if (items) [sectionItems addObject:@{@"sectionIndex":@(index), @"items":items}];
+                index++;
+            }
+            row[@"sectionItems"] = sectionItems;
+        }
+    }
+    return rows;
 }
 
 static NSDictionary *RUINThemePackageMetadata(id package) {
@@ -699,9 +726,16 @@ static void RUINAppendBannerGeometry(UIView *view, NSUInteger depth, NSUInteger 
                 [heights addObject:@{@"constant":@(constraint.constant), @"active":@(constraint.active),
                     @"priority":@(constraint.priority)}];
         }
+        NSMutableArray *enumCases = [NSMutableArray array];
+        if (RUINInspectorEnabled() && RUINInspectorTargetMatches() && NSThread.isMainThread) {
+            NSString *path = [name isEqual:@"LineChatTabUI.TopBannerBoxView"] ? @"bannerType" :
+                ([name isEqual:@"LineSmartCh.SmartChView"] ? @"$__lazy_storage_$_errorView.errorType" : nil);
+            NSString *caseName = path ? RUINCopySwiftEnumCaseName(view, path.UTF8String) : nil;
+            if (caseName) [enumCases addObject:@{@"path":path, @"payloadlessEnumCase":caseName}];
+        }
         [rows addObject:@{@"class":name, @"frame":NSStringFromCGRect(view.frame),
             @"bounds":NSStringFromCGRect(view.bounds), @"hidden":@(view.hidden),
-            @"ancestors":ancestors, @"heightConstraints":heights,
+            @"ancestors":ancestors, @"heightConstraints":heights, @"enumCases":enumCases,
             @"storedMetadata":RUINFactoryFieldMetadata(view, @[@"", @"viewModel", @"banner", @"currentBanner"])}];
     }
     for (UIView *child in view.subviews) RUINAppendBannerGeometry(child, depth + 1, visited, rows);
