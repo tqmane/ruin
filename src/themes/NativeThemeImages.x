@@ -3,6 +3,7 @@
 #import "TargetMetadata.h"
 #import "ThemePrivateAPI.h"
 #import "NativeThemeImages.h"
+#import "ThemeAccountNamespace.h"
 #if !defined(RUIN_NATIVE_THEME_IMAGES_HOST_CHECK)
 #import "NativeReadRangeSync.h"
 #endif
@@ -23,7 +24,7 @@ enum { kPending, kInstalled, kTargetMismatch, kClassMismatch, kMissingSelector,
        kABIMismatch, kPeerMismatch, kInstallFailed };
 enum { kCacheNotRequested, kCacheTargetMismatch, kCacheScheduled, kCacheRunning,
        kCacheComplete, kCacheUnavailable };
-enum { kMaxNamespaces = 64, kMaxDirectoryEntries = 1024, kMaxNamespaceName = 67 };
+enum { kMaxNamespaces = 64, kMaxDirectoryEntries = 1024 };
 
 static const char *gSelectorNames[kHookCount] = {
     "dataTaskWithRequest:", "dataTaskWithRequest:completionHandler:",
@@ -442,19 +443,6 @@ static BOOL RUINImageCacheFilename(const char *name)
     return YES;
 }
 
-static BOOL RUINCacheNamespaceName(const char *name)
-{
-    if (!name || strncmp(name, "S_", 2) != 0) return NO;
-    size_t length = strlen(name);
-    if (length < 3 || length > kMaxNamespaceName) return NO;
-    for (size_t i = 2; i < length; i++) {
-        char c = name[i];
-        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-              (c >= '0' && c <= '9') || c == '_' || c == '-')) return NO;
-    }
-    return YES;
-}
-
 static int RUINOpenDirectoryAt(int parentFD, const char *name)
 {
     int fd = openat(parentFD, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
@@ -522,7 +510,7 @@ static NSUInteger RUINRepairCacheAtURL(NSURL *cachesURL)
     struct dirent *namespaceEntry;
     while (namespaceEntries++ < kMaxDirectoryEntries &&
            (namespaceEntry = readdir(namespaceDirectory)) != NULL) {
-        if (!RUINCacheNamespaceName(namespaceEntry->d_name)) continue;
+        if (!RUINThemeAccountNamespaceIsValidCString(namespaceEntry->d_name)) continue;
         if (namespaces >= kMaxNamespaces) break;
         int namespaceFD = RUINOpenDirectoryAt(privateStoreFD, namespaceEntry->d_name);
         if (namespaceFD < 0) continue;

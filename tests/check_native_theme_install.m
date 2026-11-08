@@ -4,6 +4,7 @@
 
 #import "NativeThemeInstall.h"
 #import "NativeThemeRegistration.h"
+#import "NativeThemeReceipt.h"
 #import "ThemeFeatures.h"
 
 #include <assert.h>
@@ -100,54 +101,83 @@ int main(int argc, const char *argv[])
         char *rootPath = mkdtemp(temporary);
         assert(rootPath != NULL);
         NSURL *rootURL = [NSURL fileURLWithPath:[NSString stringWithUTF8String:rootPath] isDirectory:YES];
-        NSURL *storeDirectory = [[[[[rootURL URLByAppendingPathComponent:@"Library" isDirectory:YES]
-            URLByAppendingPathComponent:@"Application Support" isDirectory:YES]
-            URLByAppendingPathComponent:@"PrivateStore" isDirectory:YES]
-            URLByAppendingPathComponent:@"S_fixture" isDirectory:YES]
-            URLByAppendingPathComponent:@"Owned Themes" isDirectory:YES];
-        NSURL *storeURL = [storeDirectory URLByAppendingPathComponent:@"OwnedThemeProduct.sqlite"];
-        NSURL *groupURL = [rootURL URLByAppendingPathComponent:@"MappedGroup" isDirectory:YES];
-        assert([[NSFileManager defaultManager] createDirectoryAtURL:storeDirectory
-            withIntermediateDirectories:YES attributes:nil error:nil]);
+        NSURL *applicationSupportURL = [rootURL URLByAppendingPathComponent:@"Library/Application Support" isDirectory:YES];
+        NSURL *groupURL = [applicationSupportURL URLByAppendingPathComponent:
+            @"RUIN/AppGroups/group.com.linecorp.line" isDirectory:YES];
         assert([[NSFileManager defaultManager] createDirectoryAtURL:groupURL
             withIntermediateDirectories:YES attributes:nil error:nil]);
-
-        NSPersistentStoreCoordinator *coordinator = [[NSPersistentStoreCoordinator alloc] initWithManagedObjectModel:Theme2Model()];
-        NSError *error = nil;
-        NSPersistentStore *store = [coordinator addPersistentStoreWithType:NSSQLiteStoreType
-            configuration:nil URL:storeURL options:nil error:&error];
-        assert(store && !error);
-        NSManagedObjectContext *context = [[NSManagedObjectContext alloc] initWithConcurrencyType:NSPrivateQueueConcurrencyType];
-        context.persistentStoreCoordinator = coordinator;
-        assert(RUINNativeThemeRegistrationCaptureContextForTesting(context));
         RUINNativeThemeRegistrationSetGroupContainerForTesting(groupURL);
+        RUINNativeThemeRegistrationSetApplicationSupportForTesting(applicationSupportURL);
 
-        NSDictionary *result = Import(gCatalogRecord, &error);
-        assert(result && [result[@"committed"] boolValue] && !error);
-        NSURL *packageURL = result[@"packageURL"];
-        assert(RUINIsRegisteredNativeThemeID(packageURL.lastPathComponent));
-        assert([[NSFileManager defaultManager] fileExistsAtPath:
-            [packageURL URLByAppendingPathComponent:@"theme.json"].path]);
-        NSDictionary *metadata = result[@"metadata"];
-        assert([metadata[@"rawVersion"] longLongValue] == strtoll(rawVersion.UTF8String, NULL, 10));
-        assert([metadata[@"versionString"] isKindOfClass:NSString.class]);
-        assert([metadata[@"imagePath"] hasSuffix:@"/ANDROID/icon_136x202.png"]);
+        NSString *mid = @"u00000000000000000000000000000000";
+        NSArray *accounts = @[[@"P_" stringByAppendingString:mid], [@"S_" stringByAppendingString:mid]];
+        NSMutableArray<NSURL *> *packageURLs = [NSMutableArray array];
+        for (NSString *account in accounts) {
+            NSURL *storeDirectory = [[[applicationSupportURL URLByAppendingPathComponent:@"PrivateStore" isDirectory:YES]
+                URLByAppendingPathComponent:account isDirectory:YES]
+                URLByAppendingPathComponent:@"Owned Themes" isDirectory:YES];
+            NSURL *storeURL = [storeDirectory URLByAppendingPathComponent:@"OwnedThemeProduct.sqlite"];
+            assert([[NSFileManager defaultManager] createDirectoryAtURL:storeDirectory
+                withIntermediateDirectories:YES attributes:nil error:nil]);
 
-        NSString *markerPath = [packageURL URLByAppendingPathComponent:@"rollback-marker"].path;
-        assert([@"prior package" writeToFile:markerPath atomically:YES encoding:NSUTF8StringEncoding error:nil]);
-        AddDuplicateRow(context, productID);
-        result = Import(gCatalogRecord, &error);
-        assert(result == nil && error != nil);
-        assert([[NSString stringWithContentsOfFile:markerPath encoding:NSUTF8StringEncoding error:nil]
-            isEqual:@"prior package"]);
+            NSPersistentStoreCoordinator *coordinator = [[NSPersistentStoreCoordinator alloc] initWithManagedObjectModel:Theme2Model()];
+            NSError *error = nil;
+            NSPersistentStore *store = [coordinator addPersistentStoreWithType:NSSQLiteStoreType
+                configuration:nil URL:storeURL options:nil error:&error];
+            assert(store && !error);
+            NSManagedObjectContext *context = [[NSManagedObjectContext alloc] initWithConcurrencyType:NSPrivateQueueConcurrencyType];
+            context.persistentStoreCoordinator = coordinator;
+            assert(RUINNativeThemeRegistrationCaptureContextForTesting(context));
 
-        [context reset];
-        context.persistentStoreCoordinator = nil;
-        context = nil;
-        error = nil;
-        assert([coordinator removePersistentStore:store error:&error] && !error);
+            NSDictionary *result = Import(gCatalogRecord, &error);
+            if (!result || error)
+                NSLog(@"Native theme import fixture %@ failed: %@", account, error);
+            assert(result && [result[@"committed"] boolValue] && !error);
+            assert([result[@"receiptSaved"] boolValue]);
+            assert([(NSManagedObjectID *)result[@"objectID"] persistentStore] == store);
+            NSURL *packageURL = result[@"packageURL"];
+            NSDictionary *receipt = RUINReadThemeReceipt(packageURL.URLByDeletingLastPathComponent, productID);
+            assert([receipt[@"productID"] isEqual:productID] && [receipt[@"name"] isEqual:name]);
+            NSString *packagePath = [NSString pathWithComponents:@[@"Library", @"Application Support",
+                @"PrivateStore", account, @"Theme Packages", productID]];
+            assert([packageURL.URLByResolvingSymlinksInPath.standardizedURL isEqual:
+                [groupURL.URLByResolvingSymlinksInPath URLByAppendingPathComponent:packagePath isDirectory:YES].standardizedURL]);
+            for (NSURL *previous in packageURLs)
+                assert(![previous.URLByResolvingSymlinksInPath isEqual:packageURL.URLByResolvingSymlinksInPath]);
+            [packageURLs addObject:packageURL];
+            assert(RUINIsRegisteredNativeThemeID(packageURL.lastPathComponent));
+            assert([[NSFileManager defaultManager] fileExistsAtPath:
+                [packageURL URLByAppendingPathComponent:@"theme.json"].path]);
+            NSDictionary *metadata = result[@"metadata"];
+            assert([metadata[@"rawVersion"] longLongValue] == strtoll(rawVersion.UTF8String, NULL, 10));
+            assert([metadata[@"versionString"] isKindOfClass:NSString.class]);
+            assert([metadata[@"imagePath"] hasSuffix:@"/ANDROID/icon_136x202.png"]);
+
+            NSString *markerPath = [packageURL URLByAppendingPathComponent:@"rollback-marker"].path;
+            NSString *priorPackage = [@"prior package " stringByAppendingString:account];
+            assert([priorPackage writeToFile:markerPath atomically:YES encoding:NSUTF8StringEncoding error:nil]);
+            AddDuplicateRow(context, productID);
+            result = Import(gCatalogRecord, &error);
+            assert(result == nil && error != nil);
+            assert([[NSString stringWithContentsOfFile:markerPath encoding:NSUTF8StringEncoding error:nil]
+                isEqual:priorPackage]);
+            assert([RUINReadThemeReceipt(packageURL.URLByDeletingLastPathComponent, productID) isEqual:receipt]);
+
+            [context performBlockAndWait:^{
+                [context reset];
+                context.persistentStoreCoordinator = nil;
+            }];
+            context = nil;
+            error = nil;
+            assert([coordinator removePersistentStore:store error:&error] && !error);
+        }
+        for (NSUInteger i = 0; i < accounts.count; i++) {
+            NSString *marker = [NSString stringWithContentsOfURL:
+                [packageURLs[i] URLByAppendingPathComponent:@"rollback-marker"] encoding:NSUTF8StringEncoding error:nil];
+            assert([marker isEqual:[@"prior package " stringByAppendingString:accounts[i]]]);
+        }
         [[NSFileManager defaultManager] removeItemAtURL:rootURL error:nil];
-        puts("native theme install host success and rollback checks passed");
+        puts("native theme install P_/S_ namespace commit and rollback checks passed");
     }
     return 0;
 }

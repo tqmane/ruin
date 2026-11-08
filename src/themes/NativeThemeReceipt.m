@@ -1,4 +1,5 @@
 #import "NativeThemeReceipt.h"
+#import "ThemeAccountNamespace.h"
 
 #include <CoreFoundation/CoreFoundation.h>
 #include <dirent.h>
@@ -28,18 +29,6 @@ static BOOL RUINReceiptPOSIXFail(NSError **error, int code, NSString *message)
     if (error) *error = [NSError errorWithDomain:NSPOSIXErrorDomain code:code
         userInfo:@{NSLocalizedDescriptionKey: message}];
     return NO;
-}
-
-static BOOL RUINReceiptSafeAccount(NSString *account)
-{
-    if (![account hasPrefix:@"S_"] || account.length < 3) return NO;
-    for (NSUInteger i = 2; i < account.length; i++) {
-        unichar c = [account characterAtIndex:i];
-        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-              (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.')) return NO;
-    }
-    NSString *suffix = [account substringFromIndex:2];
-    return ![suffix isEqual:@"."] && ![suffix isEqual:@".."];
 }
 
 static NSString *RUINReceiptCanonicalUUID(id value)
@@ -103,7 +92,7 @@ static BOOL RUINReceiptOpenPaths(NSURL *packagesRoot, int *accountFD, int *rootF
     NSURL *privateStoreURL = accountURL.URLByDeletingLastPathComponent;
     NSString *account = accountURL.lastPathComponent;
     if (![privateStoreURL.lastPathComponent isEqual:@"PrivateStore"] ||
-        !RUINReceiptSafeAccount(account)) return NO;
+        !RUINThemeAccountNamespaceIsValid(account)) return NO;
 
     int store = open(privateStoreURL.path.fileSystemRepresentation,
         O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);

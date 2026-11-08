@@ -3,6 +3,7 @@
 #import "TargetMetadata.h"
 #import "NativeThemeRegistration.h"
 #import "NativeThemeLocalPolicy.h"
+#import "ThemeAccountNamespace.h"
 #if !defined(RUIN_NATIVE_THEME_REGISTRATION_HOST_CHECK)
 #import "RuntimeInspector.h"
 #import <execinfo.h>
@@ -32,10 +33,12 @@ static __weak NSPersistentStore *gNativeStore;
 static NSString *gNativeStorePath;
 static NSString *gNativeAccount;
 static dispatch_queue_t gRegistrationQueue;
+static NSURL *RUINNativeApplicationSupportURL(void);
 static NSURL *RUINMappedGroupContainerURL(void);
 static NSURL *RUINPackageDirectory(NSURL *container, NSString *account, NSString *productID);
 #if defined(RUIN_NATIVE_THEME_REGISTRATION_HOST_CHECK)
 static NSURL *gTestGroupContainerURL;
+static NSURL *gTestApplicationSupportURL;
 #endif
 
 enum {
@@ -98,18 +101,6 @@ static BOOL RUINTheme2EntityIsSupported(NSEntityDescription *entity)
         RUINAttributeHasType(entity, @"productAvailability", NSInteger16AttributeType);
 }
 
-static BOOL RUINIsSafeAccountComponent(NSString *account)
-{
-    if (![account hasPrefix:@"S_"] || account.length < 3) return NO;
-    for (NSUInteger i = 2; i < account.length; i++) {
-        unichar c = [account characterAtIndex:i];
-        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-              (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.')) return NO;
-    }
-    NSString *suffix = [account substringFromIndex:2];
-    return ![suffix isEqual:@"."] && ![suffix isEqual:@".."];
-}
-
 static BOOL RUINStorePathHasNativeNamespace(NSURL *URL, NSString **storePath, NSString **account)
 {
     if (!URL.isFileURL) return NO;
@@ -117,11 +108,10 @@ static BOOL RUINStorePathHasNativeNamespace(NSURL *URL, NSString **storePath, NS
     NSArray<NSString *> *parts = path.pathComponents;
     if (parts.count < 6) return NO;
     NSUInteger i = parts.count - 4;
-    if (![parts[i] isEqual:@"PrivateStore"] || ![parts[i + 1] hasPrefix:@"S_"] ||
+    if (![parts[i] isEqual:@"PrivateStore"] || !RUINThemeAccountNamespaceIsValid(parts[i + 1]) ||
         ![parts[i + 2] isEqual:@"Owned Themes"] ||
         ![parts[i + 3] isEqual:@"OwnedThemeProduct.sqlite"] || i < 2 ||
-        ![parts[i - 1] isEqual:@"Application Support"] || ![parts[i - 2] isEqual:@"Library"] ||
-        !RUINIsSafeAccountComponent(parts[i + 1])) return NO;
+        ![parts[i - 1] isEqual:@"Application Support"] || ![parts[i - 2] isEqual:@"Library"]) return NO;
     if (storePath) *storePath = path;
     if (account) *account = parts[i + 1];
     return YES;
@@ -157,6 +147,14 @@ static BOOL RUINContextNativeScope(NSManagedObjectContext *context,
         account = candidateAccount;
     }
     if (matches != 1 || !match || (requireWritable && !RUINStoreIsWritableSQLite(match))) return NO;
+    // LINE keeps its owned-theme DB in the app container, separate from packages.
+    NSURL *applicationSupport = RUINNativeApplicationSupportURL();
+    if (!applicationSupport.isFileURL) return NO;
+    NSString *relativePath = [NSString pathWithComponents:@[@"PrivateStore", account,
+        @"Owned Themes", @"OwnedThemeProduct.sqlite"]];
+    NSURL *expected = [applicationSupport.URLByResolvingSymlinksInPath URLByAppendingPathComponent:relativePath];
+    if (![match.URL.URLByResolvingSymlinksInPath.standardizedURL.path
+        isEqual:expected.standardizedURL.path]) return NO;
     if (modelOut) *modelOut = model;
     if (entityOut) *entityOut = entity;
     if (coordinatorOut) *coordinatorOut = coordinator;
@@ -403,21 +401,35 @@ id RUINNativeThemeRegistrationScopeToken(void)
     return token;
 }
 
+static NSURL *RUINNativeApplicationSupportURL(void)
+{
+#if defined(RUIN_NATIVE_THEME_REGISTRATION_HOST_CHECK)
+    os_unfair_lock_lock(&gCaptureLock);
+    NSURL *URL = gTestApplicationSupportURL;
+    os_unfair_lock_unlock(&gCaptureLock);
+    return URL;
+#else
+    return [NSFileManager.defaultManager URLsForDirectory:NSApplicationSupportDirectory
+        inDomains:NSUserDomainMask].firstObject;
+#endif
+}
+
 static NSURL *RUINMappedGroupContainerURL(void)
 {
 #if defined(RUIN_NATIVE_THEME_REGISTRATION_HOST_CHECK)
     os_unfair_lock_lock(&gCaptureLock);
     NSURL *fixtureURL = gTestGroupContainerURL;
     os_unfair_lock_unlock(&gCaptureLock);
-    if (fixtureURL) return fixtureURL;
-#endif
+    return fixtureURL;
+#else
     // RUINSideload maps this original identifier to the active profile container.
     return [NSFileManager.defaultManager containerURLForSecurityApplicationGroupIdentifier:@"group.com.linecorp.line"];
+#endif
 }
 
 static NSURL *RUINPackageDirectory(NSURL *container, NSString *account, NSString *productID)
 {
-    if (!container.isFileURL || !RUINIsSafeAccountComponent(account)) return nil;
+    if (!container.isFileURL || !RUINThemeAccountNamespaceIsValid(account)) return nil;
     NSURL *URL = [[[[[container URLByAppendingPathComponent:@"Library" isDirectory:YES]
         URLByAppendingPathComponent:@"Application Support" isDirectory:YES]
         URLByAppendingPathComponent:@"PrivateStore" isDirectory:YES]
@@ -496,6 +508,13 @@ void RUINNativeThemeRegistrationSetGroupContainerForTesting(NSURL *containerURL)
 {
     os_unfair_lock_lock(&gCaptureLock);
     gTestGroupContainerURL = containerURL;
+    os_unfair_lock_unlock(&gCaptureLock);
+}
+
+void RUINNativeThemeRegistrationSetApplicationSupportForTesting(NSURL *applicationSupportURL)
+{
+    os_unfair_lock_lock(&gCaptureLock);
+    gTestApplicationSupportURL = applicationSupportURL;
     os_unfair_lock_unlock(&gCaptureLock);
 }
 #endif

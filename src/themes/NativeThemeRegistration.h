@@ -3,10 +3,12 @@
 NS_ASSUME_NONNULL_BEGIN
 FOUNDATION_EXPORT BOOL RUINIsRegisteredNativeThemeID(NSString *productID);
 
-/// Installs the 26.16.0 / 2026.1006.1718 native context capture hook.
+/// Installs the native context capture hook after target and method ABI checks.
 FOUNDATION_EXPORT void RUINInstallNativeThemeRegistrationCapture(void);
 
-/// YES once a writable native OwnedThemeProduct context has been captured.
+/// YES once a writable native OwnedThemeProduct context in the current app's
+/// Application Support directory has been captured. Packages use a separate
+/// mapped app-group root.
 FOUNDATION_EXPORT BOOL RUINNativeThemeRegistrationAvailable(void);
 
 /// Opaque in-process account/store identity; contains no account identifier.
@@ -48,6 +50,9 @@ FOUNDATION_EXPORT BOOL RUINNativeThemeRegistrationCaptureContextForTesting(
     NSManagedObjectContext *context);
 FOUNDATION_EXPORT void RUINNativeThemeRegistrationSetGroupContainerForTesting(
     NSURL * _Nullable containerURL);
+/// The app's Application Support directory itself; nil simulates unavailability.
+FOUNDATION_EXPORT void RUINNativeThemeRegistrationSetApplicationSupportForTesting(
+    NSURL * _Nullable applicationSupportURL);
 #endif
 
 NS_ASSUME_NONNULL_END
