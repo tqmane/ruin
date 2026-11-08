@@ -41,7 +41,8 @@ RUIN/
 ### 対象バージョン・環境要件
 - **LINE**: `KnownHosts.def` および配列インデックス（`RUINKnownHosts`）による管理は廃止され、不変の `const RUINVersionMapping` 構造体が単一の (バージョン、ビルド番号、Mach-O UUID) の同一性を保持します。異なるビルド/UUIDバリアントは独立したレコードとして扱われ、同一バージョン文字列のバリアントも同一の `src/known/versions/LINE*.m` 内で個別のレジストリエントリとして共存可能です。バイナリマッピング値は `src/known/versions/LINE*.m` が所有し、`KnownMappings.h/m` が共有APIおよび中央レジストリを提供します。
   - 対象バージョン: LINE 26.16.0 (Build: `2026.1006.1718`、UUID: `292883E8-E011-3583-ADF5-F02241E3277B`) および 26.17.0 (Build: `2026.1103.1841`、UUID: `614CED59-07E5-372D-94B2-D4901870C7A0`)。
-  - 26.17.0対応状況: 起動・ログイン維持・Keychain・タブ非表示をiPhoneで実機確認済みですが、着せかえショップ適用（shop eligibility）および送信取消のlookupchain（unsend lookupStatus）は `Unsupported` であり、パース処理（parser status）は `Verified` です。バージョン固有マッピング機能のステータスは `RUINMappingStatus`（`Unsupported` / `Unverified` / `Verified`）で管理され、部分対応警告を表示し、全面検証済みとしては扱いません。
+  - 26.17.0のホスト全体は `Unverified` とし、部分対応警告を維持します。起動・ログイン維持・Keychain・タブ非表示はiPhoneで実機確認済みですが、iPad最新版とテーマ機能全体は未完了です。
+  - 26.17.0のバージョン固有機能status: shop eligibilityと旧getter投影のreadBoundaryは `Unsupported`、unsend lookup/parserと通常トークmanualReadのABI statusは `Verified` です。unsend lookupは6 frame/16 anchorで、受信本文保持・取消済表示・再起動後の保持を実機確認済みです。readBoundaryの旧数値/anchorsは持たず、送信前pending filterは構造的に独立して維持します。26.16.0の送信前投影は維持します。`RUINMappingStatus` は版別mapping featureに適用し、一般的なObjective-C runtime diagnosticsの統一statusとはしません。
 - **アーキテクチャ**: `arm64`
 - **下限OS**: iOS 18.0 以降 (※ビルド下限値であり、全機種・全環境での動作を保証するものではありません)
 - **ビルド依存**: macOSホスト、フルXcode (iOS SDK含む)、`make`、`perl` (Logos internal用)、`python3`、`node` (ホスト検査・JS構文検査用)。`Makefile` の `SOURCES` および `HOST_COMMON` に `src/known/versions/*.m` が含まれます。
@@ -50,11 +51,12 @@ RUIN/
 ### フック実装規約
 - **Logos構文とジェネレータ**: Objective-Cフックは Logos (`.x`, `%hook`, `%orig`, `%new(typeencoding)`, `%group`, `%init`) を使用し、リポジトリ同梱の internal generator を通じて生成します。
 - **外部依存の排除 (MSHookIvar禁止)**: 外部のSubstrateやlibhooker依存を追加しないでください。特に `MSHookIvar` を安易に追加して外部依存を増やすことは禁止します。Substrate非依存環境での手動ivarアクセス代替は最小限にとどめます。
-- **C/Swift連携とSwiftFieldsガード**: C関数のimport rebindにはfishhookを使用し、Swift witness tableやdata-pointerアダプターは型安全性を検証した上で保持します。オフセット56のSwiftFieldsランタイムABIガードは、クラスの完全一致、Mirror Bool、インスタンスサイズ、ivarが取得可能な場合はその実オフセットとの一致を要求し、格納バイトの一致および境界検証（stored-byte agreement and bounds checks）によって安全性を担保します。
+- **C/Swift連携とSwiftFieldsガード**: C関数のimport rebindにはfishhookを使用し、Swift witness tableやdata-pointerアダプターは型安全性を検証した上で保持します。`isEnabled` の書き込みは完全一致クラス、Mirror Bool、実ivar metadata offset、インスタンス境界、格納バイトとの一致を実行時に検証して行います。ホストfixtureでは異なるivar offsetのroot classも検証します。
 - **バージョンマッピングと共通API**:
   - テーマ、メッセージング、ネイティブタブの各マッピング値はバージョン別定義ファイル（`src/known/versions/LINE*.m`）内に保持されます。
   - `RUINMappingForInfo(info)` はLINEのバンドル識別子およびバージョン/ビルド番号のみから選択を行い、メタデータに曖昧さがある場合は `NULL` を返し、実行バイナリの真正性認証は行いません（明示的なフィクスチャやテストで使用）。
   - ランタイムの数値呼び出し元は共通API `RUINCurrentMapping()` を使用します。これは現在のメタデータと実際のメインMach-O UUIDを照合し、同一バージョン/ビルドの候補からUUIDによって一意に解決します。不一致または未知のバイナリでは `NULL` を返し、フォールバックは一切行わず、ミス（不一致）のキャッシュも行いません。
+  - `readUntilABIStatus` は版別mappingが所有し、共通manualRead helperにversion literalを置きません。`AnyCancelableTask` はSwiftObject rootのためNSObject継承を仮定せず、native-root hostfixtureで検証します。
 - **コンパイル済みマニフェスト検証**: `tools/export_version_mappings.m` はコンパイル済みレジストリ値から `tests/fixtures/version-mappings.json` を出力し、`make check-mapping-manifest` によってマニフェストの整合性を検証します。Python/Linuxツール群はこのマニフェストを消費する一方、Mach-Oのバイト列、制御フロー、UUID、SHAによる独立した検証・証明も維持されます。
 - **段階的フェイルセーフと独立機能の保護**:
   - 一般的なObjective-Cフックは、LINEプロセスの識別およびクラス・セレクタ・型・スキーマの実検証を経て安全に有効化し、未知のバージョン番号のみを理由にアプリ全体のフックを一律停止しないこと。未検証ビルド起動時はユーザーへ1度だけ警告を表示し、確認できた機能のみを有効化する。
@@ -112,6 +114,10 @@ RUIN/
   - 既読者一覧シートの長押しアイコンはTabler `eye` を使用。
   - 既読者一覧の完全性をテストしないという規則は禁止です。既知のテストデータによる欠落検査やパース検証、および後日の取得時刻による記録済み実イベント日時の上書き防止検証は必ず実施してください（※未観測の正確な日時や常に完全な一覧の提供を保証する宣伝を行わないという意味であり、テストを怠るものではありません）。
   - **独立スイッチの維持**: ローカルLYP（アプリアイコン等のローカルUI表示）と、『24h送信取消・ミュートメッセージ』は独立した別スイッチとして管理し、後者をローカルLYPにネストさせないこと。ローカルLYPが無効な状態でも独立スイッチが有効であれば機能が動作する仕様として整理する。
+  - **manualRead検証**: 26.17.0通常トークで未読I/Jを用意し、Iまでを選ぶと対向端末のレシートはIのみseen、peerReadUpToはI、後着Kは未読のまま、既読隠しの全体設定/例外は不変、受信端末のNative unread countは3から1へ変わることを確認します。グループトークでも未読A/BからAまでを選び、AのみreadCount 1、Bは0、カーソルはA、設定/例外は不変であることを実機確認済みです。iPad最新版は未検証です。メニューはTabler `checks` アイコンと「このメッセージまで既読」が狭いグリッドで2行程度に自然表示されることを確認します。
+  - **返信時自動既読**: prior KVO gateで返信成功・失敗・古い境界を区別し、通常トークでF未読→G返信成功後にF既読→後続H未読を確認します。
+  - **既読者一覧の複数ストア**: 26.17で複数の他者表示名と日時、および再取得時に記録済みイベント日時が上書きされないことを実機確認したのはPrimaryP_のみです。PrimaryP_/SecondaryS_双方の名前空間処理はホストfixtureで検証し、最新iPadでのSecondaryS_は未検証です。
+  - **ローカルカスタムフォント**: 実機ではTTFの取り込みとnativeBodyへの適用を確認します（OTFは拡張子受付のホスト検証のみ）。
   - **送信取消の対応範囲**: 送信取消の対応範囲は24時間までとし、24時間超の研究や7日保証などの追加拡張を今後の課題として強制・仮定しないこと。
   - **ミュート送信の操作仕様**: 本文入力確定後、送信ボタンを約2秒長押しすることでLINEネイティブのメニュー（ミュート／通常）が表示される仕様とする。NativeLINEラボへの別移動を必須操作として案内しないこと。
 - **スクリーンショット管理**:
