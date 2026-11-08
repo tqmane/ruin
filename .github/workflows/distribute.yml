@@ -29,15 +29,24 @@ jobs:
           python3 -c 'import sys; sys.path.insert(0, "tools"); from distribute import validate_version; validate_version(sys.argv[1])' "$ruin_version"
           echo "value=$ruin_version" >> "$GITHUB_OUTPUT"
 
-      - name: Build arm64 dylib
+      - name: Build arm64+arm64e universal dylib
         env:
           RUIN_VERSION: ${{ steps.version.outputs.value }}
         run: make -j4 all RUIN_BUILD_VERSION="$RUIN_VERSION"
 
+      - name: Verify real arm64+arm64e dylib
+        shell: bash
+        run: |
+          set -euo pipefail
+          arches="$(lipo build/RUIN.dylib -archs)"
+          python3 -c 'import sys; a=sys.argv[1].split(); e={"arm64", "arm64e"}; assert len(a)==2 and set(a)==e, a' "$arches"
+          lipo build/RUIN.dylib -verify_arch arm64 arm64e
+          codesign --verify --strict build/RUIN.dylib
+
       - name: Run existing macOS host fixtures
         run: make -j4 check-host
 
-      - name: Verify packaging tools
+      - name: Run actual and synthetic packaging verification
         run: make check-packaging
 
       - name: Package and verify system dependencies
