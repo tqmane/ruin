@@ -38,7 +38,10 @@ static const RUINVersionMapping *RUINResolveMapping(
     const RUINVersionMapping *const *versions,
     size_t count)
 {
-    if (!RUINInfoIsLINE(info) || (verifyImage && !header) || (!versions && count)) return NULL;
+    // A verified LINE executable may have a renamed sideload identifier.
+    // Metadata-only selection still requires LINE's explicit identity.
+    if (![info isKindOfClass:NSDictionary.class] || (!verifyImage && !RUINInfoIsLINE(info)) ||
+        (verifyImage && !header) || (!versions && count)) return NULL;
     const RUINVersionMapping *match = NULL;
     for (size_t i = 0; i < count; i++) {
         const RUINVersionMapping *candidate = versions[i];

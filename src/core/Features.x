@@ -91,6 +91,7 @@ static NSDictionary<NSString *, NSString *> *gLocalNames;
 static NSDictionary<NSString *, NSString *> *gLocalNamesByIdentity;
 static NSSet<NSString *> *gReadExceptions;
 static NSMutableDictionary<NSString *, NSNumber *> *gReplyBoundaries;
+static uint64_t gReadPolicyGeneration;
 static atomic_bool gTargetSupported = ATOMIC_VAR_INIT(false);
 static atomic_bool gReadControlEnabled = ATOMIC_VAR_INIT(false);
 static atomic_bool gMarkReadOnReply = ATOMIC_VAR_INIT(false);
@@ -317,6 +318,7 @@ static void RUINReloadSettings(BOOL supported)
     gLocalNamesByIdentity = identities;
     gReadExceptions = exceptionSnapshot;
     gReplyBoundaries = boundaries;
+    gReadPolicyGeneration++;
     atomic_store(&gTargetSupported, supported);
     atomic_store(&gReadControlEnabled, enabled);
     atomic_store(&gMarkReadOnReply, markOnReply);
@@ -375,16 +377,88 @@ BOOL RUINShouldSuppressReadForChat(id chat)
 
 BOOL RUINReadPolicyHasIdentity(id chat) { return RUINIdentityKeyForObject(chat, YES).length > 0; }
 
-void RUINAllowReadAfterUserReply(id chat)
+NSDictionary *RUINCaptureReadOnReplyToken(id chat)
 {
-    if (!atomic_load(&gReadControlEnabled) || !atomic_load(&gMarkReadOnReply)) return;
+    if (!atomic_load(&gReadControlEnabled) || !atomic_load(&gMarkReadOnReply)) return @{};
     NSString *identityKey = RUINIdentityKeyForObject(chat, YES);
     long long boundary = 0;
-    if (!identityKey || !RUINReceivedBoundary(chat, &boundary)) return;
+    if (!identityKey || !RUINReceivedBoundary(chat, &boundary)) return @{};
+    NSDictionary *token = @{};
     os_unfair_lock_lock(&gStateLock);
-    if (atomic_load(&gTargetSupported) && atomic_load(&gReadControlEnabled) && atomic_load(&gMarkReadOnReply))
-        gReplyBoundaries[identityKey] = @(boundary);
+    if (atomic_load(&gTargetSupported) && atomic_load(&gReadControlEnabled) && atomic_load(&gMarkReadOnReply) &&
+        ![gReadExceptions containsObject:identityKey])
+        token = @{@"identity":identityKey, @"boundary":@(boundary), @"generation":@(gReadPolicyGeneration)};
     os_unfair_lock_unlock(&gStateLock);
+    return token;
+}
+
+BOOL RUINAllowReadAfterUserReplyWithToken(id chat, NSDictionary *token)
+{
+    if (![token isKindOfClass:NSDictionary.class] || ![token[@"identity"] isKindOfClass:NSString.class] ||
+        ![token[@"boundary"] isKindOfClass:NSNumber.class] || ![token[@"generation"] isKindOfClass:NSNumber.class]) return NO;
+    NSString *identityKey = RUINIdentityKeyForObject(chat, YES);
+    long long boundary = 0;
+    if (!identityKey || ![identityKey isEqual:token[@"identity"]] || !RUINReceivedBoundary(chat, &boundary) ||
+        boundary != [token[@"boundary"] longLongValue]) return NO;
+    BOOL allowed = NO;
+    os_unfair_lock_lock(&gStateLock);
+    if (atomic_load(&gTargetSupported) && atomic_load(&gReadControlEnabled) && atomic_load(&gMarkReadOnReply) &&
+        ![gReadExceptions containsObject:identityKey] &&
+        [token[@"generation"] unsignedLongLongValue] == gReadPolicyGeneration) {
+        gReplyBoundaries[identityKey] = @(boundary);
+        allowed = YES;
+    }
+    os_unfair_lock_unlock(&gStateLock);
+    return allowed;
+}
+
+NSDictionary *RUINRevokeReadAfterUserReply(id chat)
+{
+    NSString *identityKey = RUINIdentityKeyForObject(chat, YES);
+    long long boundary = 0;
+    BOOL validBoundary = RUINReceivedBoundary(chat, &boundary);
+    if (!identityKey) return @{};
+    NSDictionary *token = @{};
+    os_unfair_lock_lock(&gStateLock);
+    NSNumber *allowed = gReplyBoundaries[identityKey];
+    if (allowed && validBoundary && allowed.longLongValue == boundary)
+        token = @{@"identity":identityKey, @"boundary":allowed, @"generation":@(gReadPolicyGeneration)};
+    [gReplyBoundaries removeObjectForKey:identityKey];
+    os_unfair_lock_unlock(&gStateLock);
+    return token;
+}
+
+BOOL RUINReadOnReplyTokenNeedsRearm(NSDictionary *token)
+{
+    if (![token isKindOfClass:NSDictionary.class] || ![token[@"identity"] isKindOfClass:NSString.class] || ![token[@"boundary"] isKindOfClass:NSNumber.class] ||
+        ![token[@"generation"] isKindOfClass:NSNumber.class]) return NO;
+    os_unfair_lock_lock(&gStateLock);
+    NSNumber *allowed = gReplyBoundaries[token[@"identity"]];
+    BOOL rearm = atomic_load(&gTargetSupported) && atomic_load(&gReadControlEnabled) &&
+        [token[@"generation"] unsignedLongLongValue] == gReadPolicyGeneration &&
+        ![gReadExceptions containsObject:token[@"identity"]] &&
+        (!allowed || allowed.longLongValue == [token[@"boundary"] longLongValue]);
+    os_unfair_lock_unlock(&gStateLock);
+    return rearm;
+}
+
+BOOL RUINReadOnReplyTokenIsAllowed(NSDictionary *token)
+{
+    if (![token isKindOfClass:NSDictionary.class] || ![token[@"identity"] isKindOfClass:NSString.class] ||
+        ![token[@"boundary"] isKindOfClass:NSNumber.class] || ![token[@"generation"] isKindOfClass:NSNumber.class]) return NO;
+    os_unfair_lock_lock(&gStateLock);
+    NSNumber *allowed = gReplyBoundaries[token[@"identity"]];
+    BOOL current = atomic_load(&gTargetSupported) && atomic_load(&gReadControlEnabled) && atomic_load(&gMarkReadOnReply) &&
+        [token[@"generation"] unsignedLongLongValue] == gReadPolicyGeneration &&
+        ![gReadExceptions containsObject:token[@"identity"]] && allowed &&
+        allowed.longLongValue == [token[@"boundary"] longLongValue];
+    os_unfair_lock_unlock(&gStateLock);
+    return current;
+}
+
+void RUINAllowReadAfterUserReply(id chat)
+{
+    (void)RUINAllowReadAfterUserReplyWithToken(chat, RUINCaptureReadOnReplyToken(chat));
 }
 
 // Each group owns one original IMP, including inherited Core Data methods.
@@ -657,7 +731,7 @@ NSDictionary *RUINFeatureDiagnostics(void)
                 @"boundaryProperty": @"lastReceivedMessageID (Int64)",
                 @"automaticEventHookInstalled": @(atomic_load(&gReplyObserverInstalled)),
                 @"reason": atomic_load(&gReplyObserverInstalled)
-                    ? @"Native send-entry observer. Completion/history notifications never extend the allowed received boundary; receipt delivery requires a peer-device test."
+                    ? @"Explicit send entry captures a boundary; its sent notification can allow only that unchanged boundary. Prior received-boundary observation rearms the UI gate before native change observers."
                     : @"No send-entry observer attached. Allows original predicate only when the parent supplies a committed reply on the chat owning queue."
             },
             @"hooks": @{

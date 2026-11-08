@@ -27,13 +27,15 @@ class VersionMappingManifestTests(unittest.TestCase):
             self.assertIn(mapping["messaging"]["readBoundary"]["status"], VALID_STATUSES)
             self.assertIn(mapping["messaging"]["unsendOperation"]["parserStatus"], VALID_STATUSES)
             self.assertIn(mapping["messaging"]["unsendOperation"]["lookupStatus"], VALID_STATUSES)
+            self.assertIn(mapping["messaging"]["readUntilABIStatus"], VALID_STATUSES)
             self.assertIn(mapping["nativeTabs"]["status"], VALID_STATUSES)
 
-    def test_26_17_keeps_unmapped_capabilities_unavailable(self):
+    def test_26_17_only_enables_proven_capabilities(self):
         mapping = next(row for row in self.mappings if row["host"]["version"] == "26.17.0")
         self.assertEqual(mapping["themes"]["shopEligibility"]["status"], "unsupported")
-        self.assertEqual(mapping["messaging"]["unsendOperation"]["lookupStatus"], "unsupported")
-        self.assertEqual(mapping["messaging"]["unsendOperation"]["orderedLookupReturnAddresses"], [])
+        self.assertEqual(mapping["messaging"]["unsendOperation"]["lookupStatus"], "verified")
+        self.assertEqual(len(mapping["messaging"]["unsendOperation"]["orderedLookupReturnAddresses"]), 6)
+        self.assertEqual(mapping["messaging"]["readUntilABIStatus"], "verified")
         self.assertEqual(mapping["themes"]["shopEligibility"]["anchors"], [])
 
 

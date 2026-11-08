@@ -39,7 +39,11 @@ int main(void) { @autoreleasepool {
     assert(old->themes.shopEligibility.status == RUINMappingStatusVerified &&
         current->themes.shopEligibility.status == RUINMappingStatusUnsupported);
     assert(current->messaging.unsendOperation.parserStatus == RUINMappingStatusVerified &&
-        current->messaging.unsendOperation.lookupStatus == RUINMappingStatusUnsupported);
+        current->messaging.unsendOperation.lookupStatus == RUINMappingStatusVerified &&
+        current->messaging.unsendOperation.orderedLookupReturnAddressCount == 6);
+    assert(current->messaging.readBoundary.status == RUINMappingStatusUnsupported &&
+        !current->messaging.readBoundary.callerReturnAddress);
+    assert(current->messaging.readUntilABIStatus == RUINMappingStatusVerified);
     assert(!RUINMappingForInfo(@{@"CFBundleIdentifier":@"jp.naver.line",
         @"CFBundleShortVersionString":@"26.17.0", @"CFBundleVersion":@"2026.1006.1718"}));
     assert(!RUINMappingForInfo(@{@"CFBundleIdentifier":@"jp.naver.line",
@@ -83,6 +87,10 @@ int main(void) { @autoreleasepool {
     intptr_t slide=(intptr_t)(uintptr_t)image.code-(intptr_t)image.segment.vmaddr;
     assert(RUINVerifyHostImage(&current->host,&image.header));
     assert(RUINMappingForImageInRegistryForTesting(info, &image.header, variants, 2) == &variantA);
+    NSMutableDictionary *genericSigned = [info mutableCopy];
+    genericSigned[@"CFBundleIdentifier"] = @"example.sideload.line";
+    assert(!RUINMappingForInfo(genericSigned));
+    assert(RUINMappingForImageInRegistryForTesting(genericSigned, &image.header, variants, 2) == &variantA);
     RUINHostIdentity sameImageOtherBuild = current->host;
     sameImageOtherBuild.build = "2026.1103.1842";
     assert(RUINVerifyHostImage(&sameImageOtherBuild, &image.header));
@@ -90,6 +98,7 @@ int main(void) { @autoreleasepool {
     image.uuid.uuid[0]^=1;
     assert(!RUINVerifyHostImage(&current->host,&image.header));
     assert(!RUINMappingForImageInRegistryForTesting(info, &image.header, variants, 2));
+    assert(!RUINMappingForImageInRegistryForTesting(genericSigned, &image.header, variants, 2));
     image.uuid.uuid[0]^=1;
     RUINInstructionAnchor anchor={0x100000000,2,{0xaa1603e0,0xd65f03c0}};
     assert(RUINVerifyInstructions(&image.header,slide,&anchor,1));

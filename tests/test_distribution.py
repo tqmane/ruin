@@ -32,7 +32,8 @@ class DistributionTests(unittest.TestCase):
         nested = self.resources / "icons"
         nested.mkdir()
         for icon in ("tabler-eye@2x.png", "tabler-eye@3x.png",
-                     "tabler-eye-off@2x.png", "tabler-eye-off@3x.png"):
+                     "tabler-eye-off@2x.png", "tabler-eye-off@3x.png",
+                     "tabler-checks@2x.png", "tabler-checks@3x.png"):
             (nested / icon).write_bytes(icon.encode("ascii"))
         self.output = self.root / "dist"
 

@@ -168,11 +168,13 @@ public func RUINWriteReadControllerEnabled(_ object: AnyObject?, _ enabled: Int3
     guard let object, enabled == 0 || enabled == 1,
           let cls = object_getClass(object),
           cls === NSClassFromString("_TtC15LineMessagingUI24ChatMarkAsReadController"),
-          class_getInstanceSize(cls) > 56,
+          let ivar = class_getInstanceVariable(cls, "isEnabled"),
           let value = ruinChild(named: "isEnabled", in: object),
           type(of: value) == Bool.self, let boolean = value as? Bool else { return -1 }
-    if let ivar = class_getInstanceVariable(cls, "isEnabled"), ivar_getOffset(ivar) != 56 { return -1 }
-    let location = Unmanaged.passUnretained(object).toOpaque().advanced(by: 56)
+    let offset = ivar_getOffset(ivar)
+    guard offset >= MemoryLayout<UnsafeRawPointer>.size,
+          offset < class_getInstanceSize(cls) else { return -1 }
+    let location = Unmanaged.passUnretained(object).toOpaque().advanced(by: offset)
     let previous = location.load(as: UInt8.self)
     guard previous < 2, (previous == 1) == boolean else { return -1 }
     location.storeBytes(of: UInt8(enabled), as: UInt8.self)
@@ -188,6 +190,7 @@ private final class RUINReadGateFixture: NSObject {
     var padding3: UInt64 = 0
     var padding4: UInt64 = 0
     var padding5: UInt64 = 0
+    var padding6: UInt64 = 0
     var isEnabled = true
     var sentinel: UInt64 = 0x76543210
 }
@@ -288,7 +291,8 @@ private struct RUINSwiftFieldsHostCheck {
 
         let gate = RUINReadGateFixture()
         let gateOffset = withUnsafePointer(to: &gate.isEnabled) { Int(bitPattern: $0) - Int(bitPattern: Unmanaged.passUnretained(gate).toOpaque()) }
-        precondition(gateOffset == 56)
+        precondition(gateOffset != 56)
+        precondition(class_getInstanceVariable(object_getClass(gate), "isEnabled").map(ivar_getOffset) == gateOffset)
         precondition(RUINWriteReadControllerEnabled(probe, 0) == -1)
         precondition(RUINWriteReadControllerEnabled(gate, 2) == -1)
         precondition(RUINWriteReadControllerEnabled(gate, 0) == 1 && !gate.isEnabled)

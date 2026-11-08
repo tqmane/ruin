@@ -78,6 +78,7 @@ HOST_FIXTURES := \
 	build/check_unsend_operation \
 	build/check_mid \
 	build/check_reply \
+	build/check_read_until \
 	build/check_marker_ui \
 	build/check_theme_shop \
 	build/check_readers_sheet \
@@ -132,6 +133,11 @@ check-host: check-portable check-mapping-manifest $(HOST_FIXTURES)
 	./build/check_mid
 	./build/check_mid mismatch
 	./build/check_reply
+	./build/check_read_until
+	./build/check_read_until chat-abi
+	./build/check_read_until service-abi
+	./build/check_read_until mid-abi
+	./build/check_read_until swift-root
 	./build/check_marker_ui
 	./build/check_theme_shop
 	./build/check_theme_shop mismatch
@@ -256,11 +262,18 @@ build/check_marker_ui: $(call source,src/core/Features.m) src/core/Features.h \
 
 build/check_reply: $(call source,src/core/Features.m) src/core/Features.h \
 	$(call source,src/messaging/ReadOnReply.m) src/messaging/ReadOnReply.h src/messaging/AutomaticReadGate.h \
+	$(call source,src/messaging/AutomaticReadGate.m) \
 	tests/check_reply.m
 	mkdir -p build
-	$(HOST_CC) -fobjc-arc -fblocks -std=gnu11 $(HOST_WARNINGS) $(CPPFLAGS) $(call source,src/core/Features.m) \
-		$(call source,src/messaging/ReadOnReply.m) tests/check_reply.m -framework Foundation -framework CoreData \
+	$(HOST_CC) -DRUIN_AUTOMATIC_READ_GATE_HOST_CHECK=1 -fobjc-arc -fblocks -std=gnu11 $(HOST_WARNINGS) $(CPPFLAGS) $(call source,src/core/Features.m) \
+		$(call source,src/messaging/ReadOnReply.m) $(call source,src/messaging/AutomaticReadGate.m) \
+		tests/check_reply.m -framework Foundation -framework CoreData \
 		-o $@
+
+build/check_read_until: src/messaging/ReadUntil.m src/messaging/ReadUntil.h tests/check_read_until.m
+	mkdir -p build
+	$(HOST_CC) -DRUIN_READ_UNTIL_HOST_CHECK=1 -fobjc-arc -fblocks $(HOST_WARNINGS) $(CPPFLAGS) \
+		src/messaging/ReadUntil.m tests/check_read_until.m -framework Foundation -framework CoreData -o $@
 
 build/check_mid: $(call source,src/interface/MIDLookup.m) src/interface/MIDLookup.h
 	mkdir -p build

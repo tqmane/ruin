@@ -66,9 +66,10 @@ static void CheckVersionMappings(void) {
     const RUINMessagingMapping *map17 = version17 ? &version17->messaging : NULL;
     Check(map16 && map16->unsendOperation.parserParam1ReturnAddress &&
         map16->unsendOperation.orderedLookupReturnAddressCount == 5, @"26.16 unsend mapping was not preserved");
-    Check(map17 && map17->readBoundary.callerReturnAddress && map17->readBoundary.anchorCount == 1 &&
+    Check(map17 && map17->readBoundary.status == RUINMappingStatusUnsupported &&
         map17->unsendOperation.parserParam1ReturnAddress && map17->unsendOperation.parserAnchorCount &&
-        map17->unsendOperation.orderedLookupReturnAddressCount == 0, @"26.17 mapping enabled an unproven unsend lookup");
+        map17->unsendOperation.lookupStatus == RUINMappingStatusVerified &&
+        map17->unsendOperation.orderedLookupReturnAddressCount == 6, @"26.17 verified lookup chain missing");
     Check(!RUINMappingForInfo(unknown), @"unknown host acquired a numeric messaging mapping");
 }
 static NSAttributeDescription *Attribute(NSString *name, NSAttributeType type) {
@@ -257,13 +258,22 @@ int main(void) {
             testImageMatches = YES; RUINInstallUnsendOperation();
             fixtureInfo = @{ @"RUINOriginalBundleIdentifier":@"jp.naver.line", @"CFBundleShortVersionString":@"26.17.0", @"CFBundleVersion":@"2026.1103.1841" };
             RUINInstallUnsendOperation();
-            Check(![RUINUnsendOperationDiagnostics()[@"nativeCodeVerified"] boolValue] &&
-                ![RUINUnsendOperationDiagnostics()[@"retentionMappingSupported"] boolValue],
-                @"26.17 retention enabled without a verified ordered lookup chain");
-            [a performBlockAndWait:^{ WithScope(fixtureScopePCs, fixtureScopePCCount, ^{
-                Check([a executeFetchRequest:Request(@"9007199254740993") error:NULL].count == 1,
-                    @"26.17 unproven lookup scope hid a message");
-            }); }];
+            Check([RUINUnsendOperationDiagnostics()[@"nativeCodeVerified"] boolValue] &&
+                [RUINUnsendOperationDiagnostics()[@"retentionMappingSupported"] boolValue],
+                @"26.17 verified lookup mapping did not activate");
+            [a performBlockAndWait:^{
+                ManagedMessage *current = Insert(a, @"1717", @"current-chat", @"RUIN TEST current host");
+                CaptureOperation(@"current-chat", @"1717", 65);
+                WithScope(fixtureScopePCs, fixtureScopePCCount, ^{
+                    Check([a executeFetchRequest:Request(@"1717") error:NULL].count == 1,
+                        @"26.17 accepted the old host's lookup chain");
+                });
+                CaptureOperation(@"current-chat", @"1717", 65);
+                WithScope(activeUnsendMapping->orderedLookupReturnAddresses,
+                    activeUnsendMapping->orderedLookupReturnAddressCount, ^{ Destroy(a, Request(@"1717")); });
+                Check(!current.isDeleted && [[current displayedText] hasSuffix:@"\n取消済"],
+                    @"26.17 native destroy fixture lost retained text");
+            }];
             fixtureInfo = @{ @"RUINOriginalBundleIdentifier":@"jp.naver.line", @"CFBundleShortVersionString":@"26.16.0", @"CFBundleVersion":@"2026.1006.1718" };
             RUINInstallUnsendOperation();
             Check([RUINUnsendOperationDiagnostics()[@"nativeCodeVerified"] boolValue], @"26.16 mapping did not recover after a gated host");

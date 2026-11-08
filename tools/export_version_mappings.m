@@ -150,7 +150,8 @@ static NSDictionary *MappingJSON(const RUINVersionMapping *mapping)
         },
         @"messaging": @{
             @"readBoundary": ReadBoundaryJSON(&mapping->messaging.readBoundary),
-            @"unsendOperation": UnsendJSON(&mapping->messaging.unsendOperation)
+            @"unsendOperation": UnsendJSON(&mapping->messaging.unsendOperation),
+            @"readUntilABIStatus": Status(mapping->messaging.readUntilABIStatus)
         },
         @"nativeTabs": @{
             @"status": Status(tabs->status),

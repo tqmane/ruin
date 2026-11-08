@@ -21,4 +21,5 @@ typedef struct {
 typedef struct {
     RUINReadBoundaryMapping readBoundary;
     RUINUnsendOperationMapping unsendOperation;
+    RUINMappingStatus readUntilABIStatus;
 } RUINMessagingMapping;

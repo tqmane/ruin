@@ -95,7 +95,8 @@ const RUINVersionMapping RUINLINE26160 = {
         .unsendOperation = {RUINMappingStatusVerified, kUnsendParser,
             sizeof(kUnsendParser) / sizeof(*kUnsendParser), 0x10461ef10,
             RUINMappingStatusVerified, kUnsendLookupReturnAddresses,
-            sizeof(kUnsendLookupReturnAddresses) / sizeof(*kUnsendLookupReturnAddresses)}
+            sizeof(kUnsendLookupReturnAddresses) / sizeof(*kUnsendLookupReturnAddresses)},
+        .readUntilABIStatus = RUINMappingStatusUnsupported
     },
     .nativeTabs = {
         .status = RUINMappingStatusVerified,
