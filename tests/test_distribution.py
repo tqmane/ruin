@@ -4,9 +4,11 @@ import hashlib
 import io
 from pathlib import Path
 import plistlib
+import subprocess
 import tempfile
 import tarfile
 import unittest
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location(
     "distribute", Path(__file__).resolve().parents[1] / "tools/distribute.py")
@@ -19,7 +21,7 @@ class DistributionTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
         self.dylib = self.root / "RUIN.dylib"
-        self.dylib.write_bytes(b"fixture dylib")
+        self.dylib.write_bytes(b"fat fixture dylib: arm64 + arm64e")
         self.resources = self.root / "RUINResources.bundle"
         self.resources.mkdir()
         (self.resources / "Info.plist").write_bytes(plistlib.dumps({
@@ -75,6 +77,7 @@ class DistributionTests(unittest.TestCase):
         self.assertTrue(all(not (self.output / name).exists() for name in obsolete))
         self.assertEqual(signed_ipa.read_bytes(), b"private signing output")
         first = [path.read_bytes() for path in artifacts]
+        dylib_payloads = []
         expected = [("rootful", "", "iphoneos-arm"),
                     ("rootless", "var/jb/", "iphoneos-arm64"),
                     ("jailed", "", "iphoneos-arm64")]
@@ -95,8 +98,9 @@ class DistributionTests(unittest.TestCase):
                 self.assertIn("Depends: firmware (>= 18.0), mobilesubstrate\n", control)
             install = "./" + prefix + "Library/MobileSubstrate/DynamicLibraries/"
             with tarfile.open(fileobj=io.BytesIO(members[2][1]), mode="r:gz") as archive:
-                self.assertEqual(archive.extractfile(install + "RUIN.dylib").read(),
-                                 self.dylib.read_bytes())
+                dylib_payload = archive.extractfile(install + "RUIN.dylib").read()
+                dylib_payloads.append(dylib_payload)
+                self.assertEqual(dylib_payload, self.dylib.read_bytes())
                 for path in self.resources.rglob("*"):
                     if path.is_file():
                         member = install + "RUINResources.bundle/" + path.relative_to(self.resources).as_posix()
@@ -110,6 +114,7 @@ class DistributionTests(unittest.TestCase):
                 self.assertTrue(all(member.name.startswith("./" + prefix)
                                     for member in archive.getmembers() if member.isfile()))
         checksum_text = artifacts[-1].read_text(encoding="ascii")
+        self.assertEqual(dylib_payloads, [self.dylib.read_bytes()] * 3)
         self.assertEqual(len(checksum_text.splitlines()), 3)
         for artifact in artifacts[:3]:
             self.assertIn(f"{hashlib.sha256(artifact.read_bytes()).hexdigest()}  {artifact.name}",
@@ -138,6 +143,88 @@ class DistributionTests(unittest.TestCase):
                           "/System/Library/Frameworks/Example.framework/Example"):
             with self.subTest(dependency=disguised), self.assertRaises(ValueError):
                 distribute.validate_dependencies([disguised])
+
+    @staticmethod
+    def otool_slices(second_slice_dependency=None):
+        foundation = "/System/Library/Frameworks/Foundation.framework/Foundation"
+        second_slice = f"\t{foundation} (compatibility version 1.0.0)\n"
+        if second_slice_dependency:
+            second_slice += f"\t{second_slice_dependency} (compatibility version 1.0.0)\n"
+        return (
+            "/tmp/RUIN.dylib (architecture arm64):\n"
+            "\t@rpath/RUIN.dylib (compatibility version 0.0.0)\n"
+            f"\t{foundation} (compatibility version 1.0.0)\n"
+            "/tmp/RUIN.dylib (architecture arm64e):\n"
+            "\t@rpath/RUIN.dylib (compatibility version 0.0.0)\n" + second_slice
+        )
+
+    def verify_dylib_with_tools(self, archs="arm64 arm64e", signature_status=0,
+                                otool_output=None, calls=None):
+        calls = calls if calls is not None else []
+
+        def run(args, check=False, capture_output=False, text=False):
+            args = [str(arg) for arg in args]
+            calls.append(args)
+            if args[0] == "lipo" and args[-1] == "-archs":
+                result = subprocess.CompletedProcess(args, 0, stdout=archs + "\n", stderr="")
+            elif args[0] == "lipo" and "-verify_arch" in args:
+                result = subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+            elif args[0] == "codesign":
+                result = subprocess.CompletedProcess(args, signature_status, stdout="", stderr="unsigned")
+            elif args[:2] == ["otool", "-L"]:
+                result = subprocess.CompletedProcess(args, 0,
+                    stdout=otool_output or self.otool_slices(), stderr="")
+            else:
+                raise AssertionError(f"Unexpected command: {args}")
+            if check and result.returncode:
+                raise subprocess.CalledProcessError(result.returncode, args,
+                    output=result.stdout, stderr=result.stderr)
+            return result
+
+        return patch.object(distribute.subprocess, "run", side_effect=run), calls
+
+    def test_fat_dylib_verifies_exact_slices_signature_and_dependencies(self):
+        calls = []
+        patcher, calls = self.verify_dylib_with_tools(calls=calls)
+        with patcher:
+            dependencies = distribute.verify_dylib(self.dylib)
+        self.assertEqual(dependencies, [
+            "/System/Library/Frameworks/Foundation.framework/Foundation"])
+        self.assertIn(["lipo", str(self.dylib), "-verify_arch", "arm64", "arm64e"], calls)
+        self.assertIn(["codesign", "--verify", "--strict", str(self.dylib)], calls)
+        self.assertIn(["otool", "-L", str(self.dylib)], calls)
+
+    def test_fat_dylib_rejects_missing_or_extra_architectures(self):
+        for archs in ("arm64", "arm64e", "arm64 arm64e x86_64"):
+            with self.subTest(architectures=archs):
+                calls = []
+                patcher, _ = self.verify_dylib_with_tools(archs=archs, calls=calls)
+                with patcher, self.assertRaisesRegex(ValueError, "exactly arm64 and arm64e"):
+                    distribute.verify_dylib(self.dylib)
+                self.assertFalse(any(call[0] == "codesign" for call in calls))
+
+    def test_fat_dylib_rejects_unsigned_and_missing_otool_slice(self):
+        patcher, calls = self.verify_dylib_with_tools(signature_status=1)
+        with patcher, self.assertRaises(subprocess.CalledProcessError):
+            distribute.verify_dylib(self.dylib)
+        self.assertFalse(any(call[0] == "otool" for call in calls))
+
+        output = self.otool_slices().split("/tmp/RUIN.dylib (architecture arm64e):")[0]
+        patcher, _ = self.verify_dylib_with_tools(otool_output=output)
+        with patcher, self.assertRaisesRegex(ValueError, "one dependency list for each"):
+            distribute.verify_dylib(self.dylib)
+
+    def test_fat_dylib_rejects_dependency_from_either_slice(self):
+        external = "/opt/homebrew/lib/libexample.dylib"
+        patcher, _ = self.verify_dylib_with_tools(
+            otool_output=self.otool_slices(second_slice_dependency=external))
+        with patcher, self.assertRaisesRegex(ValueError, "not an Apple system"):
+            distribute.verify_dylib(self.dylib)
+
+    def test_otool_install_name_is_ignored_once_per_architecture_and_deps_deduplicate(self):
+        output = self.otool_slices()
+        self.assertEqual(distribute.dependencies_from_otool(output), [
+            "/System/Library/Frameworks/Foundation.framework/Foundation"])
 
 
 if __name__ == "__main__":

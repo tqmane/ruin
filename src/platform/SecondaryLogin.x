@@ -8,6 +8,7 @@
 #import "../core/TargetMetadata.h"
 #import "LINEPrivateCalls.h"
 #import <UIKit/UIKit.h>
+#import <UIKit/UIGestureRecognizerSubclass.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
 #import <mach-o/dyld.h>
@@ -22,6 +23,14 @@ static BOOL autoQROpened;
 static atomic_ulong appIdiomRequests;
 static char gestureKey;
 static NSString *lastLoginScreen;
+static __weak UIViewController *loginProjectionOwner;
+static _Thread_local NSUInteger loginProjectionDepth;
+static atomic_ulong swiftUILoginBindings;
+
+static BOOL RUINHasLoginProjectionScope(void) {
+    if (!activeSecondaryMode || !NSThread.isMainThread) return NO;
+    return loginProjectionDepth || loginProjectionOwner.viewIfLoaded.window != nil;
+}
 
 static BOOL RUINMigrationPreflight(UIViewController *controller) {
     RUINInstallCompatibility();
@@ -46,7 +55,8 @@ static BOOL RUINSecondaryLoginTargetMatches(void) {
 %hook UIDevice
 - (UIUserInterfaceIdiom)userInterfaceIdiom
 {
-    if (activeSecondaryMode) {
+    UIUserInterfaceIdiom nativeIdiom = %orig;
+    if (RUINHasLoginProjectionScope()) {
         Dl_info info;
         // Capture LINE's caller here: a helper function's caller is this dylib.
         void *caller = __builtin_extract_return_addr(__builtin_return_address(0));
@@ -55,7 +65,7 @@ static BOOL RUINSecondaryLoginTargetMatches(void) {
             return UIUserInterfaceIdiomPad;
         }
     }
-    return %orig;
+    return nativeIdiom;
 }
 %end
 %end
@@ -104,16 +114,98 @@ static UIControl *RUINFindLoginControl(UIView *view, id owner) {
     return nil;
 }
 
+static void RUINFindLoginAccessibilityElement(id object, NSHashTable *visited,
+    NSUInteger depth, NSUInteger *budget, id *match, BOOL *ambiguous) {
+    if (!object || [visited containsObject:object]) return;
+    if (!*budget || depth > 16) { *ambiguous = YES; return; }
+    (*budget)--;
+    [visited addObject:object];
+    if ([object isKindOfClass:UIView.class] && ([(UIView *)object isHidden] || [(UIView *)object alpha] <= 0.01)) return;
+    // WelcomeView's native SwiftUI identifier, button trait and unique element.
+    if ([object isKindOfClass:NSObject.class]) {
+        NSObject *element = object;
+        if (element.accessibilityElementsHidden) return;
+        if ([element conformsToProtocol:@protocol(UIAccessibilityIdentification)] &&
+            [[(id<UIAccessibilityIdentification>)element accessibilityIdentifier] isEqualToString:@"login"] &&
+            (element.accessibilityTraits & UIAccessibilityTraitButton) &&
+            !(element.accessibilityTraits & UIAccessibilityTraitNotEnabled) &&
+            !CGRectIsEmpty(element.accessibilityFrame)) {
+            if (*match && *match != object) *ambiguous = YES;
+            *match = object;
+        }
+        NSInteger count = [element accessibilityElementCount];
+        if (count != NSNotFound && count > 128) *ambiguous = YES;
+        if (count != NSNotFound && count > 0 && count <= 128)
+            for (NSInteger index = 0; index < count && *budget; index++)
+                RUINFindLoginAccessibilityElement([element accessibilityElementAtIndex:index],
+                    visited, depth + 1, budget, match, ambiguous);
+    }
+    if ([object isKindOfClass:UIView.class])
+        for (UIView *child in [(UIView *)object subviews])
+            RUINFindLoginAccessibilityElement(child, visited, depth + 1, budget, match, ambiguous);
+}
+
+static BOOL RUINPointIsOnNativeLoginButton(UIViewController *owner, CGPoint point) {
+    UIView *root = owner.viewIfLoaded;
+    if (!root.window || owner.presentedViewController || loginProjectionOwner != owner) return NO;
+    NSUInteger budget = 256;
+    BOOL ambiguous = NO;
+    id match = nil;
+    RUINFindLoginAccessibilityElement(root,
+        [NSHashTable hashTableWithOptions:NSPointerFunctionsObjectPointerPersonality],
+        0, &budget, &match, &ambiguous);
+    if (!match || ambiguous || !budget) return NO;
+    CGRect screenPoint = UIAccessibilityConvertFrameToScreenCoordinates((CGRect){point, CGSizeZero}, root);
+    return CGRectContainsPoint([(NSObject *)match accessibilityFrame], screenPoint.origin);
+}
+
+@interface RUINLoginGestureDelegate : NSObject <UIGestureRecognizerDelegate>
+@property(nonatomic, weak) UIViewController *owner;
+@end
+@implementation RUINLoginGestureDelegate
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)recognizer shouldReceiveTouch:(UITouch *)touch {
+    return RUINPointIsOnNativeLoginButton(self.owner, [touch locationInView:recognizer.view]);
+}
+@end
+
+@interface RUINLoginTapGestureRecognizer : UITapGestureRecognizer
+@property(nonatomic, weak) UIGestureRecognizer *modeGesture;
+@end
+@implementation RUINLoginTapGestureRecognizer
+- (BOOL)canBePreventedByGestureRecognizer:(UIGestureRecognizer *)other {
+    BOOL native = [super canBePreventedByGestureRecognizer:other];
+    // The native SwiftUI tap must not bypass preflight or enqueue a second login.
+    // Our long press still wins; the delegate rejects every non-login touch.
+    return other == self.modeGesture ? native : NO;
+}
+@end
+
 static void RUINWelcomeDidAppear(UIViewController *controller) {
     lastLoginScreen = @"welcome";
+    loginProjectionOwner = controller;
     UIControl *control = RUINFindLoginControl(controller.view, controller);
-    if (control && !objc_getAssociatedObject(control, &gestureKey)) {
+    UIView *targetView = control ?: controller.view;
+    if (!objc_getAssociatedObject(targetView, &gestureKey)) {
         UILongPressGestureRecognizer *gesture = [[UILongPressGestureRecognizer alloc]
             initWithTarget:controller action:sel_registerName("ruin_chooseLoginMode:")];
         gesture.minimumPressDuration = 0.65;
         gesture.cancelsTouchesInView = YES;
-        [control addGestureRecognizer:gesture];
-        objc_setAssociatedObject(control, &gestureKey, gesture, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        if (!control) {
+            RUINLoginGestureDelegate *delegate = [RUINLoginGestureDelegate new];
+            delegate.owner = controller;
+            gesture.delegate = delegate;
+            RUINLoginTapGestureRecognizer *tap = [[RUINLoginTapGestureRecognizer alloc]
+                initWithTarget:controller action:sel_registerName("ruin_loginTap:")];
+            tap.modeGesture = gesture;
+            tap.delegate = delegate;
+            tap.cancelsTouchesInView = YES;
+            [tap requireGestureRecognizerToFail:gesture];
+            [targetView addGestureRecognizer:tap];
+            objc_setAssociatedObject(gesture, &gestureKey, delegate, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            atomic_fetch_add(&swiftUILoginBindings, 1);
+        }
+        [targetView addGestureRecognizer:gesture];
+        objc_setAssociatedObject(targetView, &gestureKey, gesture, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
     if (activeSecondaryMode && !autoLoginOpened &&
         [NSProcessInfo.processInfo.environment[@"RUIN_OPEN_SECONDARY_LOGIN"] isEqual:@"1"]) {
@@ -128,6 +220,7 @@ static void RUINWelcomeDidAppear(UIViewController *controller) {
 
 static void RUINSecondaryLoginDidAppear(UIViewController *controller) {
     lastLoginScreen = @"native_secondary_login";
+    loginProjectionOwner = controller;
     if (activeSecondaryMode && !autoQROpened &&
         [NSProcessInfo.processInfo.environment[@"RUIN_OPEN_SECONDARY_LOGIN"] isEqual:@"1"]) {
         autoQROpened = YES;
@@ -143,10 +236,21 @@ static void RUINSecondaryLoginDidAppear(UIViewController *controller) {
 
 %group RUINWelcomeLogin
 %hook RUINWelcomeController
+- (void)viewDidLoad
+{
+    loginProjectionDepth++;
+    @try { %orig; } @finally { loginProjectionDepth--; }
+}
 - (void)viewDidAppear:(BOOL)animated
 {
-    %orig(animated);
+    loginProjectionDepth++;
+    @try { %orig(animated); } @finally { loginProjectionDepth--; }
     RUINWelcomeDidAppear(self);
+}
+- (void)viewDidDisappear:(BOOL)animated
+{
+    %orig(animated);
+    if (loginProjectionOwner == self) loginProjectionOwner = nil;
 }
 - (void)loginButtonAction
 {
@@ -156,7 +260,16 @@ static void RUINSecondaryLoginDidAppear(UIViewController *controller) {
         RUINShowLoginRestartNotice(self);
         return;
     }
-    %orig;
+    loginProjectionDepth++;
+    @try { %orig; } @finally { loginProjectionDepth--; }
+}
+%new(v24@0:8@16)
+- (void)ruin_loginTap:(UITapGestureRecognizer *)gesture
+{
+    UIViewController *owner = (UIViewController *)self;
+    if (gesture.state == UIGestureRecognizerStateRecognized &&
+        RUINPointIsOnNativeLoginButton(owner, [gesture locationInView:owner.view]))
+        [(id<RUINLINEWelcomeCalls>)self loginButtonAction];
 }
 %new(v24@0:8@16)
 - (void)ruin_chooseLoginMode:(UILongPressGestureRecognizer *)gesture
@@ -168,14 +281,26 @@ static void RUINSecondaryLoginDidAppear(UIViewController *controller) {
 
 %group RUINSecondaryLoginScreen
 %hook RUINSecondaryController
+- (void)viewDidLoad
+{
+    loginProjectionDepth++;
+    @try { %orig; } @finally { loginProjectionDepth--; }
+}
 - (void)viewDidAppear:(BOOL)animated
 {
-    %orig(animated);
+    loginProjectionDepth++;
+    @try { %orig(animated); } @finally { loginProjectionDepth--; }
     RUINSecondaryLoginDidAppear(self);
+}
+- (void)viewDidDisappear:(BOOL)animated
+{
+    %orig(animated);
+    if (loginProjectionOwner == self) loginProjectionOwner = nil;
 }
 - (void)showQRCodeLoginButtonPressed {
     if (!RUINMigrationPreflight(self)) return;
-    %orig;
+    loginProjectionDepth++;
+    @try { %orig; } @finally { loginProjectionDepth--; }
 }
 %end
 %end
@@ -203,16 +328,23 @@ void RUINInstallSecondaryLogin(void) {
     if (!welcomeHookInstalled) {
         Class welcome = objc_getClass("_TtC18LineRegistrationUI21WelcomeViewController");
         // Validate the complete group before adding the action or any hook.
-        if (RUINSecondaryMethodMatches(welcome, "viewDidAppear:", "v20@0:8B16") &&
+        if ([welcome isSubclassOfClass:UIViewController.class] &&
+            RUINSecondaryMethodMatches(welcome, "viewDidLoad", "v16@0:8") &&
+            RUINSecondaryMethodMatches(welcome, "viewDidAppear:", "v20@0:8B16") &&
+            RUINSecondaryMethodMatches(welcome, "viewDidDisappear:", "v20@0:8B16") &&
             RUINSecondaryMethodMatches(welcome, "loginButtonAction", "v16@0:8") &&
-            !class_getInstanceMethod(welcome, sel_registerName("ruin_chooseLoginMode:"))) {
+            !class_getInstanceMethod(welcome, sel_registerName("ruin_chooseLoginMode:")) &&
+            !class_getInstanceMethod(welcome, sel_registerName("ruin_loginTap:"))) {
             %init(RUINWelcomeLogin, RUINWelcomeController = welcome);
             welcomeHookInstalled = YES;
         }
     }
     if (!secondaryScreenHookInstalled) {
         Class secondary = objc_getClass("_TtC20LineSecondaryLoginUI28SecondaryLoginViewController");
-        if (RUINSecondaryMethodMatches(secondary, "viewDidAppear:", "v20@0:8B16") &&
+        if ([secondary isSubclassOfClass:UIViewController.class] &&
+            RUINSecondaryMethodMatches(secondary, "viewDidLoad", "v16@0:8") &&
+            RUINSecondaryMethodMatches(secondary, "viewDidAppear:", "v20@0:8B16") &&
+            RUINSecondaryMethodMatches(secondary, "viewDidDisappear:", "v20@0:8B16") &&
             RUINSecondaryMethodMatches(secondary, "showQRCodeLoginButtonPressed", "v16@0:8")) {
             %init(RUINSecondaryLoginScreen, RUINSecondaryController = secondary);
             secondaryScreenHookInstalled = YES;
@@ -228,6 +360,8 @@ NSDictionary *RUINSecondaryLoginDiagnostics(void) {
         @"welcomeHooksInstalled": @(welcomeHookInstalled),
         @"secondaryScreenHookInstalled": @(secondaryScreenHookInstalled),
         @"tabletQueriesFromLINE": @(atomic_load(&appIdiomRequests)),
+        @"loginProjectionActive": @(RUINHasLoginProjectionScope()),
+        @"swiftUILoginBindings": @(atomic_load(&swiftUILoginBindings)),
         @"lastLoginScreen": lastLoginScreen ?: @"not_observed",
         @"accountCoexistenceVerified": @NO
     };

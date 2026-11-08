@@ -33,6 +33,27 @@ static NSArray *AddressArray(RUINMappingStatus status, const uintptr_t *values, 
     return result;
 }
 
+static NSArray *ShopChainArray(RUINMappingStatus status, const uintptr_t *values, size_t count)
+{
+    if (status != RUINMappingStatusVerified || !values || !count) return @[];
+    for (size_t i = 0; i < count; i++) if (!values[i]) return @[];
+    return AddressArray(status, values, count);
+}
+
+static NSArray *ShopChainAlternativesArray(RUINMappingStatus status,
+    const RUINThemeShopReturnChain *chains, size_t count)
+{
+    if (status != RUINMappingStatusVerified || !chains || !count) return @[];
+    NSMutableArray *result = [NSMutableArray arrayWithCapacity:count];
+    for (size_t i = 0; i < count; i++) {
+        const RUINThemeShopReturnChain *chain = &chains[i];
+        NSArray *returnPCs = ShopChainArray(status, chain->returnPCs, chain->returnPCCount);
+        if (returnPCs.count != chain->returnPCCount) return @[];
+        [result addObject:@{@"count": @(chain->returnPCCount), @"returnPCs": returnPCs}];
+    }
+    return result;
+}
+
 static NSArray *WordArray(const uint32_t *values, size_t count)
 {
     NSMutableArray *result = [NSMutableArray arrayWithCapacity:count];
@@ -111,18 +132,22 @@ static NSDictionary *MappingJSON(const RUINVersionMapping *mapping)
             },
             @"shopEligibility": @{
                 @"status": Status(eligibility->status),
-                @"modeReturnPC": Address(eligibility->status, eligibility->modeReturnPC),
-                @"accountReturnPC": Address(eligibility->status, eligibility->accountReturnPC),
-                @"modeCopyReturnPC": Address(eligibility->status, eligibility->modeCopyReturnPC),
-                @"preflightAccountReturnPC": Address(eligibility->status, eligibility->preflightAccountReturnPC),
-                @"accountChain": AddressArray(eligibility->status, eligibility->accountChain, 3),
-                @"stylesheetEligibilityReturnPC": Address(eligibility->status, eligibility->stylesheetEligibilityReturnPC),
-                @"stylesheetSaveReturnPC": Address(eligibility->status, eligibility->stylesheetSaveReturnPC),
-                @"capabilityReturnPC": Address(eligibility->status, eligibility->capabilityReturnPC),
-                @"themeActionReturnPC": Address(eligibility->status, eligibility->themeActionReturnPC),
-                @"shopSchemeReturnPCs": AddressArray(eligibility->status, eligibility->shopSchemeReturnPCs, 2),
-                @"shopSchemeHandlerReturnPCs": AddressArray(eligibility->status, eligibility->shopSchemeHandlerReturnPCs, 2),
-                @"plainModeStackOffset": Address(eligibility->status, eligibility->plainModeStackOffset),
+                @"nativeReadAdapterStatus": Status(eligibility->nativeReadAdapterStatus),
+                @"shopSchemeScopeStatus": Status(eligibility->shopSchemeScopeStatus),
+                @"modeReturnPC": Address(eligibility->nativeReadAdapterStatus, eligibility->modeReturnPC),
+                @"accountReturnPC": Address(eligibility->nativeReadAdapterStatus, eligibility->accountReturnPC),
+                @"modeCopyReturnPC": Address(eligibility->nativeReadAdapterStatus, eligibility->modeCopyReturnPC),
+                @"preflightAccountReturnPC": Address(eligibility->nativeReadAdapterStatus, eligibility->preflightAccountReturnPC),
+                @"accountChain": ShopChainArray(eligibility->nativeReadAdapterStatus, eligibility->accountChain, 3),
+                @"accountChainAlternatives": ShopChainAlternativesArray(eligibility->nativeReadAdapterStatus,
+                    eligibility->accountChainAlternatives, eligibility->accountChainAlternativeCount),
+                @"stylesheetEligibilityReturnPC": Address(eligibility->nativeReadAdapterStatus, eligibility->stylesheetEligibilityReturnPC),
+                @"stylesheetSaveReturnPC": Address(eligibility->nativeReadAdapterStatus, eligibility->stylesheetSaveReturnPC),
+                @"capabilityReturnPC": Address(eligibility->nativeReadAdapterStatus, eligibility->capabilityReturnPC),
+                @"themeActionReturnPC": Address(eligibility->nativeReadAdapterStatus, eligibility->themeActionReturnPC),
+                @"shopSchemeReturnPCs": AddressArray(eligibility->nativeReadAdapterStatus, eligibility->shopSchemeReturnPCs, 2),
+                @"shopSchemeHandlerReturnPCs": AddressArray(eligibility->nativeReadAdapterStatus, eligibility->shopSchemeHandlerReturnPCs, 2),
+                @"plainModeStackOffset": Address(eligibility->nativeReadAdapterStatus, eligibility->plainModeStackOffset),
                 @"anchors": AnchorArray(eligibility->anchors, eligibility->anchorCount)
             },
             @"validation": @{

@@ -20,6 +20,8 @@ VARIANTS = {
     "jailed": ("", "iphoneos-arm64"),
 }
 DYLIB_INSTALL_NAME = "@rpath/RUIN.dylib"
+DYLIB_ARCHITECTURES = ("arm64", "arm64e")
+OTOOL_ARCHITECTURE_RE = re.compile(r"\(architecture ([^)]+)\):$")
 # Direct links reviewed for this build; new SDK dependencies require review.
 APPLE_DEPENDENCIES = {
     f"/System/Library/Frameworks/{name}.framework/{name}"
@@ -65,16 +67,35 @@ def validate_version(value):
     return value
 
 
-def dependencies_from_otool(output):
-    dependencies = []
+def dependency_blocks_from_otool(output):
+    blocks = []
+    current = None
     for line in output.splitlines():
         line = line.strip()
-        if not line or line.endswith(":"):
+        if not line:
             continue
-        dependencies.append(re.split(r"\s+\(", line, maxsplit=1)[0])
-    if dependencies and dependencies[0] == DYLIB_INSTALL_NAME:
-        dependencies.pop(0)
-    return dependencies
+        if line.endswith(":"):
+            if current is not None:
+                blocks.append(current)
+            match = OTOOL_ARCHITECTURE_RE.search(line)
+            current = {"architecture": match.group(1) if match else None, "dependencies": []}
+            continue
+        if current is None:
+            current = {"architecture": None, "dependencies": []}
+        current["dependencies"].append(re.split(r"\s+\(", line, maxsplit=1)[0])
+    if current is not None:
+        blocks.append(current)
+    return blocks
+
+
+def dependencies_from_otool(output):
+    dependencies = set()
+    for block in dependency_blocks_from_otool(output):
+        entries = block["dependencies"]
+        if entries and entries[0] == DYLIB_INSTALL_NAME:
+            entries = entries[1:]
+        dependencies.update(entries)
+    return sorted(dependencies)
 
 
 def validate_dependencies(dependencies):
@@ -87,10 +108,22 @@ def verify_dylib(path):
     path = Path(path)
     if not path.is_file():
         raise ValueError(f"Dylib not found: {path}")
-    subprocess.run(["lipo", str(path), "-verify_arch", "arm64"], check=True)
+    result = subprocess.run(["lipo", str(path), "-archs"], check=True,
+                            capture_output=True, text=True)
+    architectures = result.stdout.split()
+    if len(architectures) != len(DYLIB_ARCHITECTURES) or set(architectures) != set(DYLIB_ARCHITECTURES):
+        found = " ".join(architectures) or "none"
+        raise ValueError(f"Dylib must contain exactly arm64 and arm64e slices; found: {found}")
+    subprocess.run(["lipo", str(path), "-verify_arch", *DYLIB_ARCHITECTURES], check=True)
     subprocess.run(["codesign", "--verify", "--strict", str(path)], check=True)
     result = subprocess.run(["otool", "-L", str(path)], check=True,
                             capture_output=True, text=True)
+    blocks = dependency_blocks_from_otool(result.stdout)
+    slice_architectures = [block["architecture"] for block in blocks]
+    if (len(slice_architectures) != len(DYLIB_ARCHITECTURES) or
+            set(slice_architectures) != set(DYLIB_ARCHITECTURES)):
+        found = " ".join(str(architecture) for architecture in slice_architectures) or "none"
+        raise ValueError(f"otool must report one dependency list for each arm64/arm64e slice; found: {found}")
     dependencies = dependencies_from_otool(result.stdout)
     validate_dependencies(dependencies)
     return dependencies

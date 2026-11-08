@@ -53,8 +53,8 @@ static BOOL Enabled(void) {
         [NSUserDefaults.standardUserDefaults boolForKey:RUINKeepUnsentMessagesKey];
 }
 static BOOL VerifyCode(void) {
-    NSDictionary *info = NSBundle.mainBundle.infoDictionary;
 #if defined(RUIN_UNSEND_OPERATION_HOST_CHECK) && RUIN_UNSEND_OPERATION_HOST_CHECK
+    NSDictionary *info = NSBundle.mainBundle.infoDictionary;
     const RUINVersionMapping *versionMapping = RUINMappingForInfo(info);
 #else
     const RUINVersionMapping *versionMapping = RUINCurrentMapping();
@@ -357,8 +357,8 @@ BOOL RUINUnsendOperationHasRetainedMarker(NSDictionary *messageKey) {
 }
 NSDictionary *RUINUnsendOperationDiagnostics(void) {
     long long count = 0;
-    NSDictionary *info = NSBundle.mainBundle.infoDictionary;
 #if defined(RUIN_UNSEND_OPERATION_HOST_CHECK) && RUIN_UNSEND_OPERATION_HOST_CHECK
+    NSDictionary *info = NSBundle.mainBundle.infoDictionary;
     const RUINVersionMapping *versionMapping = RUINMappingForInfo(info);
 #else
     const RUINVersionMapping *versionMapping = RUINCurrentMapping();

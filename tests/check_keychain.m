@@ -50,11 +50,16 @@ static NSDictionary *RUINPermissions(NSArray<NSString *> *allowed, NSArray<NSStr
     return permissions;
 }
 
-static NSDictionary *RUINMapWithPermissions(NSString *defaultGroup, NSDictionary *metadata,
-                                             NSDictionary *permissions) {
+static NSDictionary *RUINMapWithPermissionsAndProof(NSString *defaultGroup, NSDictionary *metadata,
+                                                    NSDictionary *permissions, BOOL *originalGroupsAllowed) {
     gFakePermissions = permissions;
     return RUINBuildAccessGroupMap(defaultGroup, metadata,
-        ^RUINGroupPermission(NSString *group) { return RUINFakePermission(group); });
+        ^RUINGroupPermission(NSString *group) { return RUINFakePermission(group); }, originalGroupsAllowed);
+}
+
+static NSDictionary *RUINMapWithPermissions(NSString *defaultGroup, NSDictionary *metadata,
+                                             NSDictionary *permissions) {
+    return RUINMapWithPermissionsAndProof(defaultGroup, metadata, permissions, NULL);
 }
 
 int main(void) {
@@ -80,8 +85,23 @@ int main(void) {
 
         NSDictionary *allowedOriginalGroups = RUINPermissions(
             @[RUINOldAppAccessGroup, RUINOldSharedAccessGroup], @[]);
-        NSDictionary *unchanged = RUINMapWithPermissions(@"HOSTPREFIX.jp.naver.line", nil, allowedOriginalGroups);
+        BOOL originalGroupsAllowed = NO;
+        NSDictionary *unchanged = RUINMapWithPermissionsAndProof(
+            @"HOSTPREFIX.jp.naver.line", logicalLINE, allowedOriginalGroups, &originalGroupsAllowed);
         assert(unchanged && unchanged.count == 0);
+        assert(originalGroupsAllowed);
+        assert(RUINKeychainBindingActionForMap(unchanged, originalGroupsAllowed, YES) ==
+               RUINKeychainBindingActionNativePassthrough);
+        assert(RUINKeychainBindingActionCanReadyWithoutRebind(
+            RUINKeychainBindingActionForMap(unchanged, originalGroupsAllowed, YES)));
+        assert(RUINKeychainBindingActionForMap(unchanged, originalGroupsAllowed, NO) ==
+               RUINKeychainBindingActionNativePassthrough);
+        assert(RUINKeychainBindingActionCanReadyWithoutRebind(
+            RUINKeychainBindingActionForMap(unchanged, originalGroupsAllowed, NO)));
+        assert(RUINKeychainBindingActionForMap(@{}, NO, YES) ==
+               RUINKeychainBindingActionPermissionUnproven);
+        assert(!RUINKeychainBindingActionCanReadyWithoutRebind(
+            RUINKeychainBindingActionForMap(@{}, NO, YES)));
         accessGroupMap = unchanged;
         NSDictionary *originalAttributes = @{
             (__bridge id)kSecAttrAccessGroup: RUINOldAppAccessGroup,
@@ -93,10 +113,23 @@ int main(void) {
 
         NSString *defaultGroup = @"HOSTPREFIX.jp.naver.line.generic";
         NSString *defaultShared = @"HOSTPREFIX.com.linecorp.trident.shared";
-        NSDictionary *genericMissingMetadata = RUINMapWithPermissions(defaultGroup, @{}, RUINPermissions(
-            @[defaultShared], @[RUINOldAppAccessGroup, RUINOldSharedAccessGroup]));
+        originalGroupsAllowed = YES;
+        NSDictionary *genericMissingMetadata = RUINMapWithPermissionsAndProof(defaultGroup, logicalLINE,
+            RUINPermissions(@[defaultShared], @[RUINOldAppAccessGroup, RUINOldSharedAccessGroup]),
+            &originalGroupsAllowed);
         assert([genericMissingMetadata[RUINOldAppAccessGroup] isEqualToString:defaultGroup]);
         assert([genericMissingMetadata[RUINOldSharedAccessGroup] isEqualToString:defaultShared]);
+        // The same jp.naver.line metadata still needs a map when either original ACL is denied.
+        assert(!originalGroupsAllowed);
+        RUINKeychainBindingAction arm64eMappedAction = RUINKeychainBindingActionForMap(
+            genericMissingMetadata, originalGroupsAllowed, YES);
+        assert(arm64eMappedAction == RUINKeychainBindingActionUnsupportedAuthenticatedImports);
+        assert(!RUINKeychainBindingActionNeedsRebind(arm64eMappedAction));
+        assert(!RUINKeychainBindingActionCanReadyWithoutRebind(arm64eMappedAction));
+        assert(RUINKeychainBindingActionForMap(genericMissingMetadata, originalGroupsAllowed, NO) ==
+               RUINKeychainBindingActionRebind);
+        assert(RUINKeychainBindingActionNeedsRebind(
+            RUINKeychainBindingActionForMap(genericMissingMetadata, originalGroupsAllowed, NO)));
         accessGroupMap = genericMissingMetadata;
         NSDictionary *mappedApp = RUINMappedAttributes((__bridge CFDictionaryRef)originalAttributes);
         assert([mappedApp[(__bridge id)kSecAttrAccessGroup] isEqualToString:defaultGroup]);
@@ -152,14 +185,57 @@ int main(void) {
             RUINOldAppAccessGroup:@"HOSTPREFIX.previous.signed.app",
             RUINOldSharedAccessGroup:defaultShared}};
         gFakePermissions = RUINPermissions(@[@"HOSTPREFIX.previous.signed.app",defaultShared],@[]);
-        NSDictionary *reused = RUINReuseAccessGroupBinding(genericMissingMetadata,savedBinding,
-            defaultGroup,^RUINGroupPermission(NSString *group){return RUINFakePermission(group);});
+        __block NSUInteger persistCalls = 0;
+        accessGroupMap = genericMissingMetadata;
+        NSDictionary *reused = RUINApplyAccessGroupBinding(genericMissingMetadata,savedBinding,
+            defaultGroup,^RUINGroupPermission(NSString *group){return RUINFakePermission(group);},
+            ^BOOL(NSDictionary *reconciled) {
+                persistCalls++;
+                assert(accessGroupMap == genericMissingMetadata);
+                assert([reconciled[RUINOldAppAccessGroup] isEqual:@"HOSTPREFIX.previous.signed.app"]);
+                return YES;
+            });
         assert([reused[RUINOldAppAccessGroup] isEqual:@"HOSTPREFIX.previous.signed.app"]);
+        assert(persistCalls == 1 && accessGroupMap == reused);
+        assert([RUINMappedAttributes((__bridge CFDictionaryRef)originalAttributes)[(__bridge id)kSecAttrAccessGroup]
+            isEqual:@"HOSTPREFIX.previous.signed.app"]);
+
+        accessGroupMap = genericMissingMetadata;
+        assert(!RUINApplyAccessGroupBinding(genericMissingMetadata,savedBinding,defaultGroup,
+            ^RUINGroupPermission(NSString *group){return RUINFakePermission(group);},
+            ^BOOL(__unused NSDictionary *reconciled) { persistCalls++; return NO; }));
+        assert(persistCalls == 2 && accessGroupMap == genericMissingMetadata);
         gFakePermissions = RUINPermissions(@[defaultShared],@[@"HOSTPREFIX.previous.signed.app"]);
-        assert(!RUINReuseAccessGroupBinding(genericMissingMetadata,savedBinding,defaultGroup,
-            ^RUINGroupPermission(NSString *group){return RUINFakePermission(group);}));
+        assert(!RUINApplyAccessGroupBinding(genericMissingMetadata,savedBinding,defaultGroup,
+            ^RUINGroupPermission(NSString *group){return RUINFakePermission(group);},
+            ^BOOL(__unused NSDictionary *reconciled) { persistCalls++; return YES; }));
+        assert(persistCalls == 2 && accessGroupMap == genericMissingMetadata);
         assert(!RUINReuseAccessGroupBinding(genericMissingMetadata,@{@"version":@2},defaultGroup,
             ^RUINGroupPermission(NSString *group){return RUINFakePermission(group);}));
+
+        // Native entitlement access has always taken priority over saved overrides.
+        NSString *changedDefaultGroup = @"OTHERPREFIX.changed.native.app";
+        BOOL nativePermissionProof = NO;
+        NSDictionary *nativeMap = RUINMapWithPermissionsAndProof(changedDefaultGroup, logicalLINE,
+            allowedOriginalGroups, &nativePermissionProof);
+        gFakePermissions = RUINPermissions(@[RUINOldAppAccessGroup,RUINOldSharedAccessGroup],
+            @[@"HOSTPREFIX.previous.signed.app",defaultShared]);
+        NSDictionary *nativeReused = RUINReuseAccessGroupBinding(nativeMap,savedBinding,changedDefaultGroup,
+            ^RUINGroupPermission(NSString *group){return RUINFakePermission(group);});
+        assert(nativeReused && nativeReused.count == 0 && nativePermissionProof);
+        assert(RUINKeychainBindingActionCanReadyWithoutRebind(
+            RUINKeychainBindingActionForMap(nativeReused,nativePermissionProof,YES)));
+        assert(RUINKeychainBindingActionCanReadyWithoutRebind(
+            RUINKeychainBindingActionForMap(nativeReused,nativePermissionProof,NO)));
+        assert(!RUINKeychainBindingActionNeedsRebind(
+            RUINKeychainBindingActionForMap(nativeReused,nativePermissionProof,YES)));
+
+        gFakePermissions = RUINPermissions(@[RUINOldAppAccessGroup,defaultShared],
+            @[@"HOSTPREFIX.previous.signed.app"]);
+        NSDictionary *sharedOnly = RUINReuseAccessGroupBinding(@{RUINOldSharedAccessGroup:defaultShared},
+            savedBinding,defaultGroup,^RUINGroupPermission(NSString *group){return RUINFakePermission(group);});
+        assert(sharedOnly && !sharedOnly[RUINOldAppAccessGroup]);
+        assert([sharedOnly[RUINOldSharedAccessGroup] isEqual:defaultShared]);
 
         NSString *detectedGroup = RUINFakeDefaultGroup(
             @{(__bridge id)kSecAttrAccessGroup: @"PROBEPREFIX.default.app"}, errSecSuccess, errSecSuccess);

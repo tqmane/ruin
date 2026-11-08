@@ -32,7 +32,9 @@ def mapping_anchors(mapping):
     for feature in ('shopNavigation', 'shopEligibility', 'validation', 'localPolicy'):
         record = features[feature]
         anchors = record['anchors']
-        if record['status'] == 'verified' and anchors:
+        active_partial_adapter = (feature == 'shopEligibility' and
+                                  record.get('nativeReadAdapterStatus') == 'verified')
+        if (record['status'] == 'verified' or active_partial_adapter) and anchors:
             arrays[feature] = [
                 {'address': int(row['address'], 16), 'wordCount': row['wordCount'],
                  'words': [int(word, 16) for word in row['words']]}
@@ -220,6 +222,7 @@ def check(source, proof_path):
     else:
         assert len(arrays['validation']) == 2
         assert len(arrays['localPolicy']) == 4
+        assert len(arrays['shopEligibility']) == 21
         assert at(0x10a647430, len(b'line://shop/theme\0')) == b'line://shop/theme\0'
         assert at(0x10a93cbf0, len(b'validateTheme result:\0')) == b'validateTheme result:\0'
         assert adrp_add_target(0x1057a5c94) == 0x10a93cbf0
@@ -234,6 +237,27 @@ def check(source, proof_path):
         assert branch_target(0x105955ea4) == 0x105951120
         assert branch_target(0x1059556d8) == 0x105951120
         assert branch_target(0x1059582a0) == 0x105951120
+
+        eligibility = mapping['themes']['shopEligibility']
+        assert eligibility['nativeReadAdapterStatus'] == 'verified'
+        assert eligibility['shopSchemeScopeStatus'] == 'unverified'
+        assert eligibility['modeReturnPC'] == '0x106af1c60'
+        assert eligibility['modeCopyReturnPC'] == '0x106ad9b30'
+        assert eligibility['accountReturnPC'] == '0x106ad9cd4'
+        assert eligibility['plainModeStackOffset'] == '0xb4'
+        assert eligibility['preflightAccountReturnPC'] is None
+        assert eligibility['themeActionReturnPC'] is None
+        assert eligibility['accountChain'] == []
+        assert eligibility['accountChainAlternatives'] == [
+            {'count': 4, 'returnPCs': ['0x1028b6154', '0x1028b5abc', '0x1028b5a68', '0x1028b5cf4']},
+            {'count': 3, 'returnPCs': ['0x1028b6154', '0x1028b5a74', '0x1028b5cf4']}
+        ]
+        assert branch_target(0x106ad9b2c) == 0x106af1c20
+        assert word(0x106ad9b30) == 0xb814c3a0  # stur w0, [x29, #-0xb4]
+        assert branch_target(0x106ad9b68) == 0x100008a34
+        assert branch_target(0x106ad9cd0) == 0x109630960
+        assert eligibility['shopSchemeReturnPCs'] == ['0x1003ac4ac', '0x1003ac4b8']
+        assert eligibility['shopSchemeHandlerReturnPCs'] == ['0x1003acd98', '0x1003acf20']
 
     proof = None
     if proof_path.is_file():
@@ -251,6 +275,7 @@ def check(source, proof_path):
                         'validation': 'kThemeValidation2616',
                         'localPolicy': 'kThemeLocalPolicy2616'},
             '26.17.0': {'shopNavigation': 'kShopNavigation2617',
+                        'shopEligibility': 'kShopEligibilityPartialRead2617',
                         'validation': 'kThemeValidation2617',
                         'localPolicy': 'kThemeLocalPolicy2617'}
         }[version]
@@ -260,6 +285,11 @@ def check(source, proof_path):
             assert record['shopNavigation']['status'] == 'ported'
             assert record['themeValidation']['status'] == 'ported'
             assert record['shopEligibility']['status'] == 'unported'
+            partial = record['shopEligibility']['partialReadArray']
+            assert partial['nativeReadAdapterStatus'] == 'verified'
+            assert partial['shopSchemeScopeStatus'] == 'unverified'
+            assert partial['accountReturnPC'] == '0x106ad9cd4'
+            assert partial['routerEnabled'] is False
             assert record['localPolicy']['status'] == 'ported'
             assert record['shopNavigation']['implementation'] == '0x100043524'
             assert record['themeValidation']['resultReturnPC'] == '0x1057a5cec'
