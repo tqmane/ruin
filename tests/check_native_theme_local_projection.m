@@ -8,6 +8,65 @@ static BOOL Matches(const RUINThemeLocalPolicyMapping *mapping, const uintptr_t 
  assert(mapping);
  return RUINThemeLocalPolicyCallersMatch(mapping,PCs,count);
 }
+
+static void CheckRoleScopedProjection(NSManagedObjectModel *model, NSURL *root, NSString *primaryID)
+{
+ NSString *mid=@"u00000000000000000000000000000000";
+ NSArray *accounts=@[[@"P_" stringByAppendingString:mid],[@"S_" stringByAppendingString:mid]];
+ NSArray *productIDs=@[primaryID,@"a0768339-c2d3-4189-9653-2909e9bb6f58"];
+ NSURL *privateRoot=[root URLByAppendingPathComponent:@"Library/Application Support/PrivateStore" isDirectory:YES];
+ NSMutableArray<NSURL *> *packageRoots=[NSMutableArray array];
+ for (NSUInteger i=0;i<accounts.count;i++) {
+  NSURL *accountRoot=[privateRoot URLByAppendingPathComponent:accounts[i] isDirectory:YES];
+  NSURL *packageRoot=[accountRoot URLByAppendingPathComponent:@"Theme Packages" isDirectory:YES];
+  NSURL *package=[packageRoot URLByAppendingPathComponent:productIDs[i] isDirectory:YES];
+  assert([NSFileManager.defaultManager createDirectoryAtURL:package withIntermediateDirectories:YES attributes:nil error:nil]);
+  assert([[@"{\"manifest\":{\"platform\":\"iOS\",\"revision\":1}}" dataUsingEncoding:NSUTF8StringEncoding]
+      writeToURL:[package URLByAppendingPathComponent:@"theme.json"] atomically:YES]);
+  assert(RUINWriteNativeLocalThemeMarker(package,@{@"productID":productIDs[i],@"rawVersion":@1},NULL));
+  [packageRoots addObject:packageRoot];
+ }
+ assert(![packageRoots[0] isEqual:packageRoots[1]]);
+ for (NSUInteger i=0;i<accounts.count;i++) {
+  NSSet *localIDs=RUINNativeLocalThemeIDs(packageRoots[i]);
+  assert([localIDs isEqualToSet:[NSSet setWithObject:productIDs[i]]]);
+  NSURL *accountRoot=[privateRoot URLByAppendingPathComponent:accounts[i] isDirectory:YES];
+  NSURL *storeRoot=[accountRoot URLByAppendingPathComponent:@"Owned Themes" isDirectory:YES];
+  assert([NSFileManager.defaultManager createDirectoryAtURL:storeRoot withIntermediateDirectories:YES attributes:nil error:nil]);
+  NSPersistentStoreCoordinator *psc=[[NSPersistentStoreCoordinator alloc] initWithManagedObjectModel:model];
+  assert([psc addPersistentStoreWithType:NSSQLiteStoreType configuration:nil
+      URL:[storeRoot URLByAppendingPathComponent:@"OwnedThemeProduct.sqlite"] options:nil error:nil]);
+  NSManagedObjectContext *context=[[NSManagedObjectContext alloc] initWithConcurrencyType:NSMainQueueConcurrencyType];
+  context.persistentStoreCoordinator=psc;
+  for (NSString *productID in productIDs) {
+   NSManagedObject *record=[NSEntityDescription insertNewObjectForEntityForName:@"OwnedThemeProduct" inManagedObjectContext:context];
+   [record setValuesForKeysWithDictionary:@{@"productID":productID,@"name":@"scoped",@"owned":@NO,
+       @"grantedByDefault":@YES,@"defaultOrder":@(-1)}];
+  }
+  assert([context save:nil]);
+  NSFetchRequest *request=[NSFetchRequest fetchRequestWithEntityName:@"OwnedThemeProduct"];
+  NSArray *records=[context executeFetchRequest:request error:nil];
+  assert(records.count==2);
+  RUINProjectNativeLocalThemeObjects(records,context,localIDs);
+  for (NSManagedObject *record in records) {
+   BOOL local=[localIDs containsObject:[record valueForKey:@"productID"]];
+   assert([[record valueForKey:@"owned"] boolValue]==local);
+   assert([[record valueForKey:@"grantedByDefault"] boolValue]!=local);
+   assert(!record.hasChanges);
+  }
+  assert(!context.hasChanges);
+  NSManagedObjectContext *fresh=[[NSManagedObjectContext alloc] initWithConcurrencyType:NSMainQueueConcurrencyType];
+  fresh.persistentStoreCoordinator=psc;
+  NSArray *stored=[fresh executeFetchRequest:request error:nil];
+  assert(stored.count==2);
+  for (NSManagedObject *record in stored)
+   assert(![[record valueForKey:@"owned"] boolValue]&&[[record valueForKey:@"grantedByDefault"] boolValue]);
+ }
+ NSURL *otherAccount=[privateRoot URLByAppendingPathComponent:@"P_u11111111111111111111111111111111/Theme Packages" isDirectory:YES];
+ assert(!RUINNativeLocalThemeIDs(otherAccount).count);
+ assert(!RUINNativeLocalThemeIDs([root URLByAppendingPathComponent:@"OtherGroup/Library/Application Support/PrivateStore/P_u00000000000000000000000000000000/Theme Packages"]).count);
+}
+
 int main(void) { @autoreleasepool {
  const RUINVersionMapping *version16=RUINMappingForInfo(@{@"CFBundleIdentifier":@"jp.naver.line",@"CFBundleShortVersionString":@"26.16.0",@"CFBundleVersion":@"2026.1006.1718"});
  const RUINVersionMapping *version17=RUINMappingForInfo(@{@"CFBundleIdentifier":@"jp.naver.line",@"CFBundleShortVersionString":@"26.17.0",@"CFBundleVersion":@"2026.1103.1841"});
@@ -85,6 +144,7 @@ int main(void) { @autoreleasepool {
  assert(candidates.count==1 && [[candidates.firstObject objectID] isEqual:foreign.objectID]);
  sync.predicate=RUINNativeLocalThemePredicate([NSPredicate predicateWithFormat:@"owned == YES"],ids);
  assert([c executeFetchRequest:sync error:&error].count==2);
+ CheckRoleScopedProjection(m,root,pid);
  assert([NSFileManager.defaultManager removeItemAtURL:root error:nil]);
- puts("PASS SQLite owned-filter projection, compound and negative isolation, no dirty/save, read-only store projection, real marker/manifest eligibility");
+ puts("PASS SQLite owned-filter projection, P_/S_ account isolation, no dirty/save, read-only projection, real marker/manifest eligibility");
 } return 0;}

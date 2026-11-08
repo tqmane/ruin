@@ -35,6 +35,24 @@ static NSManagedObjectModel *Theme2Model(NSURL *URL)
     return model;
 }
 
+static NSString *Account(NSString *role, NSString *hexDigit)
+{
+    return [NSString stringWithFormat:@"%@_u%@", role,
+        [@"" stringByPaddingToLength:32 withString:hexDigit startingAtIndex:0]];
+}
+
+static NSURL *ExpectedPackageURL(NSURL *root, NSString *account, NSString *productID)
+{
+    NSString *path = [NSString pathWithComponents:@[@"Library", @"Application Support",
+        @"PrivateStore", account, @"Theme Packages", productID]];
+    return [root URLByAppendingPathComponent:path isDirectory:YES].standardizedURL;
+}
+
+static NSURL *ApplicationSupportURL(NSURL *root)
+{
+    return [root URLByAppendingPathComponent:@"Library/Application Support" isDirectory:YES];
+}
+
 static NSURL *StoreURL(NSURL *root, NSString *account, NSString *folder)
 {
     NSURL *directory = [[[root URLByAppendingPathComponent:@"Library" isDirectory:YES]
@@ -157,20 +175,60 @@ static void CheckWrongEntityAndNamespace(NSManagedObjectModel *model, NSURL *roo
     other.managedObjectClassName = NSStringFromClass(NSManagedObject.class);
     wrong.entities = @[other];
     RUINRegistrationFixture *wrongEntity = Fixture(wrong,
-        StoreURL(root, @"S_wrongentity", @"Owned Themes"), NO);
+        StoreURL(root, Account(@"P", @"b"), @"Owned Themes"), NO);
     assert(!RUINNativeThemeRegistrationCaptureContextForTesting(wrongEntity.context));
 
     RUINRegistrationFixture *wrongNamespace = Fixture(model,
-        StoreURL(root, @"S_wrongnamespace", @"Other Themes"), NO);
+        StoreURL(root, Account(@"S", @"b"), @"Other Themes"), NO);
     assert(!RUINNativeThemeRegistrationCaptureContextForTesting(wrongNamespace.context));
 }
 
 static void CheckReadOnly(NSManagedObjectModel *model, NSURL *root)
 {
-    NSURL *URL = StoreURL(root, @"S_readonly", @"Owned Themes");
-    @autoreleasepool { (void)Fixture(model, URL, NO); }
-    RUINRegistrationFixture *fixture = Fixture(model, URL, YES);
-    assert(!RUINNativeThemeRegistrationCaptureContextForTesting(fixture.context));
+    for (NSString *role in @[@"P", @"S"]) {
+        NSURL *URL = StoreURL(root, Account(role, @"c"), @"Owned Themes");
+        @autoreleasepool { (void)Fixture(model, URL, NO); }
+        RUINRegistrationFixture *fixture = Fixture(model, URL, YES);
+        assert(!RUINNativeThemeRegistrationCaptureContextForTesting(fixture.context));
+    }
+}
+
+static void CheckInvalidAccountsAndStores(NSManagedObjectModel *model, NSURL *root, NSURL *groupURL)
+{
+    NSString *primary = Account(@"P", @"a"), *secondary = Account(@"S", @"a");
+    NSArray *invalid = @[@"P_fixture", @"S_fixture", [primary substringToIndex:34],
+        [secondary stringByAppendingString:@"0"], Account(@"Q", @"a"), Account(@"S", @"A"),
+        Account(@"P", @"g"), Account(@"S", @"-"),
+        [primary stringByReplacingOccurrencesOfString:@"_u" withString:@"_U"]];
+    NSUInteger index = 0;
+    for (NSString *account in invalid) {
+        // Case variants must not alias a valid account on a case-insensitive host.
+        NSURL *invalidRoot = [root URLByAppendingPathComponent:
+            [NSString stringWithFormat:@"InvalidAccount-%lu", (unsigned long)index++] isDirectory:YES];
+        RUINNativeThemeRegistrationSetApplicationSupportForTesting(ApplicationSupportURL(invalidRoot));
+        RUINRegistrationFixture *fixture = Fixture(model, StoreURL(invalidRoot, account, @"Owned Themes"), NO);
+        assert(!RUINNativeThemeRegistrationCaptureContextForTesting(fixture.context));
+    }
+    RUINNativeThemeRegistrationSetApplicationSupportForTesting(ApplicationSupportURL(root));
+
+    RUINRegistrationFixture *ambiguous = Fixture(model,
+        StoreURL(root, Account(@"P", @"f"), @"Owned Themes"), NO);
+    NSError *error = nil;
+    assert([ambiguous.coordinator addPersistentStoreWithType:NSSQLiteStoreType configuration:nil
+        URL:StoreURL(root, Account(@"S", @"f"), @"Owned Themes") options:nil error:&error]);
+    assert(error == nil && ambiguous.coordinator.persistentStores.count == 2);
+    assert(!RUINNativeThemeRegistrationCaptureContextForTesting(ambiguous.context));
+
+    RUINRegistrationFixture *foreignApp = Fixture(model,
+        StoreURL([root URLByAppendingPathComponent:@"ForeignApp"], primary, @"Owned Themes"), NO);
+    assert(!RUINNativeThemeRegistrationCaptureContextForTesting(foreignApp.context));
+    RUINRegistrationFixture *groupStore = Fixture(model, StoreURL(groupURL, primary, @"Owned Themes"), NO);
+    assert(!RUINNativeThemeRegistrationCaptureContextForTesting(groupStore.context));
+    RUINRegistrationFixture *validRoot = Fixture(model,
+        StoreURL(root, Account(@"P", @"9"), @"Owned Themes"), NO);
+    RUINNativeThemeRegistrationSetApplicationSupportForTesting(nil);
+    assert(!RUINNativeThemeRegistrationCaptureContextForTesting(validRoot.context));
+    RUINNativeThemeRegistrationSetApplicationSupportForTesting(ApplicationSupportURL(root));
 }
 
 static void CheckPendingChanges(NSManagedObjectContext *context)
@@ -241,7 +299,7 @@ static void CheckUpdatePreservesServerFlags(RUINRegistrationFixture *fixture)
 static void CheckCommittedWriteSurvivesMergeFailure(NSManagedObjectModel *model, NSURL *root)
 {
     RUINRegistrationFixture *fixture = Fixture(model,
-        StoreURL(root, @"S_mergefailure", @"Owned Themes"), NO);
+        StoreURL(root, Account(@"P", @"d"), @"Owned Themes"), NO);
     RUINMergeFailingContext *context = [[RUINMergeFailingContext alloc]
         initWithConcurrencyType:NSPrivateQueueConcurrencyType];
     context.persistentStoreCoordinator = fixture.coordinator;
@@ -280,16 +338,79 @@ static NSURL *CheckPackageURL(NSURL *containerURL)
     NSString *productID = @"a0768339-c2d3-4189-9653-2909e9bb6f58";
     NSURL *URL = PackageURL(productID, &error);
     assert(URL != nil && error == nil);
-    NSURL *expected = [[[[[containerURL URLByAppendingPathComponent:@"Library" isDirectory:YES]
-        URLByAppendingPathComponent:@"Application Support" isDirectory:YES]
-        URLByAppendingPathComponent:@"PrivateStore" isDirectory:YES]
-        URLByAppendingPathComponent:@"S_fixture" isDirectory:YES]
-        URLByAppendingPathComponent:@"Theme Packages" isDirectory:YES];
-    expected = [expected URLByAppendingPathComponent:productID isDirectory:YES].standardizedURL;
+    NSURL *expected = ExpectedPackageURL(containerURL, Account(@"P", @"a"), productID);
     assert([URL isEqual:expected]);
     assert(![[NSFileManager defaultManager] fileExistsAtPath:URL.path]);
     assert(PackageURL(@"../../bad", &error) == nil && error != nil);
     return URL;
+}
+
+static void CheckRoleAndPackageScopes(NSManagedObjectModel *model, NSURL *root, NSURL *groupURL,
+    RUINRegistrationFixture *primary)
+{
+    NSString *productID = @"e0768339-c2d3-4189-9653-2909e9bb6f58";
+    NSError *error = nil;
+    NSURL *primaryURL = PackageURL(productID, &error);
+    assert(primaryURL != nil && error == nil);
+    id primaryScope = RUINNativeThemeRegistrationScopeToken();
+    RUINRegistrationFixture *secondary = Fixture(model,
+        StoreURL(root, Account(@"S", @"a"), @"Owned Themes"), NO);
+    assert(RUINNativeThemeRegistrationCaptureContextForTesting(secondary.context));
+    assert(RUINNativeThemeRegistrationScopeToken() != primaryScope);
+    NSURL *secondaryURL = PackageURL(productID, &error);
+    assert(secondaryURL != nil && error == nil && ![primaryURL isEqual:secondaryURL]);
+    assert([secondaryURL isEqual:ExpectedPackageURL(groupURL, Account(@"S", @"a"), productID)]);
+    NSManagedObjectID *objectID = nil;
+    Register(Metadata(productID, @"Wrong Role", 1, @"V1"), YES, primaryURL, &objectID, NULL, &error);
+    assert(objectID == nil && error != nil);
+    assert(Fetch(primary.context, productID) == nil && Fetch(secondary.context, productID) == nil);
+    Register(Metadata(productID, @"Secondary", 1, @"V1"), YES, secondaryURL, &objectID, NULL, &error);
+    assert(objectID != nil && error == nil && Fetch(primary.context, productID) == nil);
+
+    id secondaryScope = RUINNativeThemeRegistrationScopeToken();
+    assert(RUINNativeThemeRegistrationCaptureContextForTesting(primary.context));
+    assert(RUINNativeThemeRegistrationScopeToken() != secondaryScope);
+    NSURL *otherGroup = [root URLByAppendingPathComponent:@"OtherGroup"];
+    NSArray *wrongURLs = @[secondaryURL,
+        ExpectedPackageURL(groupURL, Account(@"P", @"b"), productID),
+        ExpectedPackageURL(root, Account(@"P", @"a"), productID),
+        ExpectedPackageURL(otherGroup, Account(@"P", @"a"), productID),
+        [primaryURL.URLByDeletingLastPathComponent URLByAppendingPathComponent:NSUUID.UUID.UUIDString]];
+    for (NSURL *URL in wrongURLs) {
+        Register(Metadata(productID, @"Wrong Scope", 1, @"V1"), YES, URL, &objectID, NULL, &error);
+        assert(objectID == nil && error != nil && Fetch(primary.context, productID) == nil);
+    }
+    RUINNativeThemeRegistrationSetGroupContainerForTesting(otherGroup);
+    assert([PackageURL(productID, &error) isEqual:
+        ExpectedPackageURL(otherGroup, Account(@"P", @"a"), productID)] && error == nil);
+    Register(Metadata(productID, @"Changed Group", 1, @"V1"), YES, primaryURL, &objectID, NULL, &error);
+    assert(objectID == nil && error != nil && Fetch(primary.context, productID) == nil);
+    RUINNativeThemeRegistrationSetGroupContainerForTesting(nil);
+    assert(RUINNativeThemeRegistrationCaptureContextForTesting(primary.context));
+    assert(RUINNativeThemeRegistrationAvailable());
+    assert(PackageURL(productID, &error) == nil && error != nil);
+    Register(Metadata(productID, @"Missing Group", 1, @"V1"), YES, primaryURL, &objectID, NULL, &error);
+    assert(objectID == nil && error != nil && Fetch(primary.context, productID) == nil);
+    RUINNativeThemeRegistrationSetGroupContainerForTesting(groupURL);
+    RUINNativeThemeRegistrationSetApplicationSupportForTesting(
+        ApplicationSupportURL([root URLByAppendingPathComponent:@"ForeignApp"]));
+    assert(!RUINNativeThemeRegistrationCaptureContextForTesting(primary.context));
+    assert(PackageURL(productID, &error) == nil && error != nil);
+    Register(Metadata(productID, @"Changed App", 1, @"V1"), YES, primaryURL, &objectID, NULL, &error);
+    assert(objectID == nil && error != nil && Fetch(primary.context, productID) == nil);
+    RUINNativeThemeRegistrationSetApplicationSupportForTesting(ApplicationSupportURL(root));
+
+    assert([PackageURL(productID, &error) isEqual:primaryURL] && error == nil);
+    Register(Metadata(productID, @"Primary", 2, @"V2"), YES, primaryURL, &objectID, NULL, &error);
+    assert(objectID != nil && error == nil);
+    NSManagedObject *primaryRecord = Fetch(primary.context, productID);
+    NSManagedObject *secondaryRecord = Fetch(secondary.context, productID);
+    [primary.context performBlockAndWait:^{
+        assert([[primaryRecord valueForKey:@"name"] isEqual:@"Primary"]);
+    }];
+    [secondary.context performBlockAndWait:^{
+        assert([[secondaryRecord valueForKey:@"name"] isEqual:@"Secondary"]);
+    }];
 }
 
 static void CheckInvalidMetadata(void)
@@ -314,7 +435,7 @@ static void CheckObservedAccountChange(NSManagedObjectModel *model, NSURL *root,
     RUINRegistrationFixture *previous, NSURL *oldAccountURL)
 {
     RUINRegistrationFixture *next = Fixture(model,
-        StoreURL(root, @"S_nextaccount", @"Owned Themes"), NO);
+        StoreURL(root, Account(@"S", @"e"), @"Owned Themes"), NO);
     assert(RUINNativeThemeRegistrationCaptureContextForTesting(next.context));
     NSManagedObjectID *objectID = nil;
     NSError *error = nil;
@@ -344,13 +465,24 @@ int main(int argc, const char *argv[])
         assert([[NSFileManager defaultManager] createDirectoryAtURL:root
             withIntermediateDirectories:YES attributes:nil error:&error] && error == nil);
 
+        NSURL *groupURL = [ApplicationSupportURL(root)
+            URLByAppendingPathComponent:@"RUIN/AppGroups/group.com.linecorp.line" isDirectory:YES];
+        assert([NSFileManager.defaultManager createDirectoryAtURL:groupURL
+            withIntermediateDirectories:YES attributes:nil error:nil]);
+        RUINNativeThemeRegistrationSetApplicationSupportForTesting(ApplicationSupportURL(root));
+        RUINNativeThemeRegistrationSetGroupContainerForTesting(groupURL);
+        assert(!RUINNativeThemeRegistrationAvailable());
+        assert(PackageURL(@"a0768339-c2d3-4189-9653-2909e9bb6f58", &error) == nil && error != nil);
         CheckWrongEntityAndNamespace(model, root);
         CheckReadOnly(model, root);
+        CheckInvalidAccountsAndStores(model, root, groupURL);
+        assert(!RUINNativeThemeRegistrationAvailable());
         RUINRegistrationFixture *fixture = Fixture(model,
-            StoreURL(root, @"S_fixture", @"Owned Themes"), NO);
+            StoreURL(root, Account(@"P", @"a"), @"Owned Themes"), NO);
         assert(RUINNativeThemeRegistrationCaptureContextForTesting(fixture.context));
         assert(RUINNativeThemeRegistrationAvailable());
-        CheckPackageURL([root URLByAppendingPathComponent:@"MappedGroup"]);
+        CheckPackageURL(groupURL);
+        CheckRoleAndPackageScopes(model, root, groupURL, fixture);
         NSError *scopeError = nil;
         NSURL *oldAccountURL = PackageURL(@"c0768339-c2d3-4189-9653-2909e9bb6f58", &scopeError);
         assert(oldAccountURL != nil && scopeError == nil);

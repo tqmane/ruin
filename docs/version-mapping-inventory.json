@@ -30,7 +30,15 @@
         "src/messaging/UnsendOperation.x"
       ],
       "destination": "RUINVersionMapping.messaging",
-      "reason": "Read-boundary and unsend anchors/statuses are owned by the matching immutable identity."
+      "reason": "26.16 pre-send read projection remains verified. The 26.17 old-getter readBoundary projection is Unsupported and carries no numeric values/anchors; its structurally scoped pre-send pending filter remains independent. The 26.17 unsend lookup is Verified with a six-frame chain and sixteen anchors."
+    },
+    {
+      "paths": [
+        "src/messaging/ReadUntil.h",
+        "src/messaging/ReadUntil.m"
+      ],
+      "destination": "RUINVersionMapping.messaging.readUntilABIStatus",
+      "reason": "The version-specific ABI status is owned by the version record; the shared manualRead helper contains no version literal. 26.17 normal-talk and group-chat verification is device-verified; the latest iPad build remains unverified."
     },
     {
       "paths": [
@@ -77,8 +85,8 @@
         "src/core/SwiftFields.swift",
         "src/core/SwiftFields.h"
       ],
-      "value": "ChatMarkAsReadController / isEnabled / offset 56",
-      "reason": "This branch retains a 26.16 runtime ABI guard: exact class and Mirror Bool, class size greater than 56, any reported isEnabled ivar offset equal to 56, and a bounded stored byte agreeing with reflection before writing. It is not a Mach-O address or instruction anchor."
+      "value": "ChatMarkAsReadController / isEnabled runtime ivar layout",
+      "reason": "The write uses the exact class, Mirror Bool, actual runtime ivar metadata offset, instance bounds and stored-byte agreement. A host fixture with a different ivar offset exercises the runtime-derived layout; no fixed field offset is a version mapping value."
     },
     {
       "paths": [
@@ -152,6 +160,7 @@
       "tests/check_keychain.m",
       "tests/check_native_theme_registration.m",
       "tests/check_native_theme_local_projection.m",
+      "tests/check_read_until.m",
       "tests/check_native_tabs.py",
       "tests/check_theme_persistence.py",
       "tests/test_distribution.py",
@@ -166,6 +175,15 @@
       "src/interface/MIDLookup.m"
     ],
     "reason": "Literal identities and expected binary values remain independent test oracles. Source mapping checks consume the compiled manifest; binary byte/control-flow checks remain independent."
+  },
+  "verified_feature_evidence": {
+    "26.17.0_manualRead": "Normal-talk device flow: selecting unread I marks I seen but not J, peerReadUpTo is I, later K remains unread, global read-hide settings/exceptions remain unchanged, and native unread count changes from 3 to 1. Group device flow: selecting unread A marks only A readCount 1, leaves B at 0 and cursor exactly A, and keeps settings/exceptions unchanged. Latest iPad build remains unverified.",
+    "26.17.0_unsendRetention": "Six-frame lookup chain and sixteen anchors verified; device checks confirm received body retention, cancelled marker display, and retention after restart in normal talk, and received body retention plus cancelled marker display after sender cancellation in group chat.",
+    "26.17.0_replyReadGate": "Prior KVO gate distinguishes success, failure, and stale boundary; normal-talk flow F unread, successful reply G marks F read, following H remains unread.",
+    "26.17.0_manualReadTaskClass": "The task class uses a SwiftObject root; the native-root host fixture does not assume NSObject inheritance.",
+    "26.17.0_readerSheet": "Device checks on PrimaryP_ show multiple other-sender names and dates, and re-fetch does not overwrite recorded event times; namespace handling for both PrimaryP_ and SecondaryS_ is covered by host fixtures, while Secondary on latest iPad remains unverified.",
+    "localFonts": "TTF import and nativeBody application device-verified; OTF has extension-acceptance host validation only.",
+    "themeSupport": "Full 26.17.0 theme support remains incomplete; host warning remains."
   },
   "documentation": {
     "paths": [

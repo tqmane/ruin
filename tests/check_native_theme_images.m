@@ -340,46 +340,67 @@ static void CheckCacheRepair(void)
     NSURL *root = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:rootName]
         isDirectory:YES];
     NSURL *privateStore = MakeDirectory(root, @"PrivateStore");
-    NSURL *image = MakeDirectory(MakeDirectory(MakeDirectory(privateStore, @"S_fixture"),
-        @"Theme Shop Data"), @"image");
     NSData *notFound = [@"404 Not Found" dataUsingEncoding:NSUTF8StringEncoding];
     NSData *png = [NSData dataWithBytes:(const unsigned char[]){0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a}
         length:8];
-    NSURL *bad = [image URLByAppendingPathComponent:@"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@2x.png"];
-    NSURL *valid = [image URLByAppendingPathComponent:@"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb@2x.png"];
-    NSURL *otherBody = [image URLByAppendingPathComponent:@"cccccccccccccccccccccccccccccccccccccccc@2x.png"];
-    NSURL *unrelated = [image URLByAppendingPathComponent:@"unrelated@2x.png"];
-    NSURL *shortBody = [image URLByAppendingPathComponent:@"dddddddddddddddddddddddddddddddddddddddd@2x.png"];
     NSURL *target = [root URLByAppendingPathComponent:@"symlink-target"];
-    NSURL *link = [image URLByAppendingPathComponent:@"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee@2x.png"];
-    Write(bad, notFound);
-    Write(valid, png);
-    Write(otherBody, [@"not a 404 body" dataUsingEncoding:NSUTF8StringEncoding]);
-    Write(unrelated, notFound);
-    Write(shortBody, [@"404 NotFound" dataUsingEncoding:NSUTF8StringEncoding]);
     Write(target, notFound);
-    assert(symlink(target.fileSystemRepresentation, link.fileSystemRepresentation) == 0);
-
-    NSURL *wrongNamespace = MakeDirectory(privateStore, @"Other");
-    NSURL *wrongPath = MakeDirectory(MakeDirectory(wrongNamespace, @"Theme Shop Data"), @"image");
-    NSURL *wrongNamespaceFile = [wrongPath URLByAppendingPathComponent:
-        @"ffffffffffffffffffffffffffffffffffffffff@2x.png"];
-    Write(wrongNamespaceFile, notFound);
+    NSMutableArray<NSURL *> *badFiles = [NSMutableArray array];
+    NSMutableArray<NSURL *> *preserved = [NSMutableArray arrayWithObject:target];
+    NSMutableArray<NSURL *> *pngFiles = [NSMutableArray array];
+    NSMutableArray<NSURL *> *links = [NSMutableArray array];
+    NSString *mid = @"u00000000000000000000000000000000";
+    for (NSString *role in @[@"P", @"S"]) {
+        NSString *account = [NSString stringWithFormat:@"%@_%@", role, mid];
+        NSURL *image = MakeDirectory(MakeDirectory(MakeDirectory(privateStore, account), @"Theme Shop Data"), @"image");
+        NSURL *bad = [image URLByAppendingPathComponent:@"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@2x.png"];
+        NSURL *valid = [image URLByAppendingPathComponent:@"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb@2x.png"];
+        NSURL *otherBody = [image URLByAppendingPathComponent:@"cccccccccccccccccccccccccccccccccccccccc@2x.png"];
+        NSURL *unrelated = [image URLByAppendingPathComponent:@"unrelated@2x.png"];
+        NSURL *shortBody = [image URLByAppendingPathComponent:@"dddddddddddddddddddddddddddddddddddddddd@2x.png"];
+        NSURL *link = [image URLByAppendingPathComponent:@"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee@2x.png"];
+        Write(bad, notFound);
+        Write(valid, png);
+        Write(otherBody, [@"not a 404 body" dataUsingEncoding:NSUTF8StringEncoding]);
+        Write(unrelated, notFound);
+        Write(shortBody, [@"404 NotFound" dataUsingEncoding:NSUTF8StringEncoding]);
+        assert(symlink(target.fileSystemRepresentation, link.fileSystemRepresentation) == 0);
+        [badFiles addObject:bad];
+        [preserved addObjectsFromArray:@[valid, otherBody, unrelated, shortBody]];
+        [pngFiles addObject:valid];
+        [links addObject:link];
+    }
+    NSArray *invalid = @[@"Other", @"S_fixture", [@"Q_" stringByAppendingString:mid],
+        @"S_ugggggggggggggggggggggggggggggggg", @"P_uAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"];
+    for (NSString *account in invalid) {
+        NSURL *image = MakeDirectory(MakeDirectory(MakeDirectory(privateStore, account), @"Theme Shop Data"), @"image");
+        NSURL *file = [image URLByAppendingPathComponent:@"ffffffffffffffffffffffffffffffffffffffff@2x.png"];
+        Write(file, notFound);
+        [preserved addObject:file];
+    }
+    NSURL *outside = MakeDirectory(root, @"outside-namespace");
+    NSURL *outsideImage = MakeDirectory(MakeDirectory(outside, @"Theme Shop Data"), @"image");
+    NSURL *outsideFile = [outsideImage URLByAppendingPathComponent:@"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@2x.png"];
+    Write(outsideFile, notFound);
+    NSURL *namespaceLink = [privateStore URLByAppendingPathComponent:@"S_u11111111111111111111111111111111"];
+    assert(symlink(outside.fileSystemRepresentation, namespaceLink.fileSystemRepresentation) == 0);
+    [preserved addObject:outsideFile];
+    [links addObject:namespaceLink];
 
     NSDictionary *before = RUINNativeThemeImagesDiagnostics();
     NSUInteger removed = RUINNativeThemeImageRepairCacheAtURL(root);
-    assert(removed == 1);
-    assert(![NSFileManager.defaultManager fileExistsAtPath:bad.path]);
-    assert([NSFileManager.defaultManager fileExistsAtPath:valid.path]);
-    assert([NSFileManager.defaultManager fileExistsAtPath:otherBody.path]);
-    assert([NSFileManager.defaultManager fileExistsAtPath:unrelated.path]);
-    assert([NSFileManager.defaultManager fileExistsAtPath:shortBody.path]);
-    assert([NSFileManager.defaultManager fileExistsAtPath:wrongNamespaceFile.path]);
-    struct stat linkInfo;
-    assert(lstat(link.fileSystemRepresentation, &linkInfo) == 0 && S_ISLNK(linkInfo.st_mode));
-    assert([NSFileManager.defaultManager fileExistsAtPath:target.path]);
+    assert(removed == 2);
+    for (NSURL *file in badFiles) assert(![NSFileManager.defaultManager fileExistsAtPath:file.path]);
+    for (NSURL *file in preserved) assert([NSFileManager.defaultManager fileExistsAtPath:file.path]);
+    for (NSURL *file in pngFiles) assert([[NSData dataWithContentsOfURL:file] isEqual:png]);
+    for (NSURL *link in links) {
+        struct stat linkInfo;
+        assert(lstat(link.fileSystemRepresentation, &linkInfo) == 0 && S_ISLNK(linkInfo.st_mode));
+    }
     assert([RUINNativeThemeImagesDiagnostics()[@"cacheEntriesRemoved"] unsignedLongLongValue] ==
-        [before[@"cacheEntriesRemoved"] unsignedLongLongValue] + 1);
+        [before[@"cacheEntriesRemoved"] unsignedLongLongValue] + 2);
+    assert([RUINNativeThemeImagesDiagnostics()[@"cacheNamespacesScanned"] unsignedLongLongValue] ==
+        [before[@"cacheNamespacesScanned"] unsignedLongLongValue] + 2);
     NSError *error = nil;
     assert([NSFileManager.defaultManager removeItemAtURL:root error:&error]);
 }

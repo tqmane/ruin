@@ -1,5 +1,6 @@
 #import <Foundation/Foundation.h>
 #import "NativeThemeReceipt.h"
+#import "ThemeAccountNamespace.h"
 
 #include <assert.h>
 #include <errno.h>
@@ -8,6 +9,12 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
+static NSString *Account(NSString *role, NSString *hexDigit)
+{
+    return [NSString stringWithFormat:@"%@_u%@", role,
+        [@"" stringByPaddingToLength:32 withString:hexDigit startingAtIndex:0]];
+}
 
 static NSURL *PackagesRoot(NSURL *base, NSString *account)
 {
@@ -42,10 +49,10 @@ static BOOL Write(NSURL *root, NSDictionary *metadata, NSString *archive)
     return result;
 }
 
-static void CheckRoundTrip(NSURL *base)
+static void CheckRoundTrip(NSURL *base, NSString *role)
 {
     NSString *productID = NSUUID.UUID.UUIDString.lowercaseString;
-    NSURL *root = PackagesRoot(base, @"S_receipt-alpha");
+    NSURL *root = PackagesRoot(base, Account(role, @"a"));
     NSURL *account = root.URLByDeletingLastPathComponent;
     NSURL *directory = [account URLByAppendingPathComponent:@"RUIN Theme Receipts" isDirectory:YES];
     NSURL *file = [directory URLByAppendingPathComponent:[productID stringByAppendingString:@".plist"]];
@@ -78,19 +85,53 @@ static void CheckRoundTrip(NSURL *base)
 static void CheckAccountIsolation(NSURL *base)
 {
     NSString *productID = NSUUID.UUID.UUIDString.lowercaseString;
-    NSURL *first = PackagesRoot(base, @"S_receipt-first");
-    NSURL *second = PackagesRoot(base, @"S_receipt-second");
-    assert(Write(first, Metadata(productID, @"First account"), ArchiveName()));
-    assert(!RUINReadThemeReceipt(second, productID));
-    assert(RUINReadThemeReceipts(second).count == 0);
-    assert(Write(second, Metadata(productID, @"Second account"), ArchiveName()));
-    assert([RUINReadThemeReceipt(first, productID)[@"name"] isEqual:@"First account"]);
-    assert([RUINReadThemeReceipt(second, productID)[@"name"] isEqual:@"Second account"]);
+    NSArray *roots = @[PackagesRoot(base, Account(@"P", @"b")), PackagesRoot(base, Account(@"S", @"b")),
+        PackagesRoot(base, Account(@"P", @"c")),
+        PackagesRoot([base URLByAppendingPathComponent:@"OtherGroup"], Account(@"P", @"b"))];
+    NSArray *names = @[@"Primary", @"Secondary", @"Other MID", @"Other group"];
+    assert(Write(roots[0], Metadata(productID, names[0]), ArchiveName()));
+    for (NSUInteger i = 1; i < roots.count; i++) {
+        assert(!RUINReadThemeReceipt(roots[i], productID));
+        assert(RUINReadThemeReceipts(roots[i]).count == 0);
+        assert(Write(roots[i], Metadata(productID, names[i]), ArchiveName()));
+    }
+    for (NSUInteger i = 0; i < roots.count; i++)
+        assert([RUINReadThemeReceipt(roots[i], productID)[@"name"] isEqual:names[i]]);
 }
 
-static void CheckBadMetadata(NSURL *base)
+static void CheckAccountShape(NSURL *base)
 {
-    NSURL *root = PackagesRoot(base, @"S_receipt-invalid");
+    NSString *primary = Account(@"P", @"a"), *secondary = Account(@"S", @"a");
+    assert(RUINThemeAccountNamespaceIsValid(primary) && RUINThemeAccountNamespaceIsValid(secondary));
+    assert(RUINThemeAccountNamespaceIsValidCString(primary.UTF8String));
+    assert(RUINThemeAccountNamespaceIsValidCString(secondary.UTF8String));
+    assert(!RUINThemeAccountNamespaceIsValid(nil) && !RUINThemeAccountNamespaceIsValid(@35));
+    assert(!RUINThemeAccountNamespaceIsValid(NSNull.null));
+    assert(!RUINThemeAccountNamespaceIsValidCString(NULL));
+    assert(!RUINThemeAccountNamespaceIsValid([NSString stringWithFormat:@"%@%Csuffix", primary, (unichar)0]));
+    assert(!RUINThemeAccountNamespaceIsValid([primary stringByReplacingCharactersInRange:NSMakeRange(3, 1) withString:@"é"]));
+    NSArray *invalid = @[@"P_fixture", @"S_fixture", @"S_..", [primary substringToIndex:34],
+        [secondary stringByAppendingString:@"0"], Account(@"Q", @"a"), Account(@"p", @"a"),
+        Account(@"P", @"A"), Account(@"S", @"g"), Account(@"S", @"-"),
+        [primary stringByReplacingOccurrencesOfString:@"_u" withString:@"_U"]];
+    NSString *productID = NSUUID.UUID.UUIDString.lowercaseString;
+    NSUInteger index = 0;
+    for (NSString *account in invalid) {
+        assert(!RUINThemeAccountNamespaceIsValid(account));
+        assert(!RUINThemeAccountNamespaceIsValidCString(account.UTF8String));
+        NSURL *caseRoot = [base URLByAppendingPathComponent:
+            [NSString stringWithFormat:@"InvalidAccount-%lu", (unsigned long)index++]];
+        NSURL *root = PackagesRoot(caseRoot, account);
+        assert(!Write(root, Metadata(productID, @"Invalid account"), ArchiveName()));
+        assert(!RUINReadThemeReceipt(root, productID) && RUINReadThemeReceipts(root).count == 0);
+        assert(![NSFileManager.defaultManager fileExistsAtPath:
+            [root.URLByDeletingLastPathComponent URLByAppendingPathComponent:@"RUIN Theme Receipts"].path]);
+    }
+}
+
+static void CheckBadMetadata(NSURL *base, NSString *role)
+{
+    NSURL *root = PackagesRoot(base, Account(role, @"d"));
     NSString *productID = NSUUID.UUID.UUIDString.lowercaseString;
     NSDictionary *valid = Metadata(productID, @"Valid");
     NSMutableArray *invalid = [NSMutableArray array];
@@ -112,9 +153,9 @@ static void CheckBadMetadata(NSURL *base)
     assert(!Write(wrongAccount, valid, ArchiveName()));
 }
 
-static void CheckReadDoesNotCreate(NSURL *base)
+static void CheckReadDoesNotCreate(NSURL *base, NSString *role)
 {
-    NSURL *root = PackagesRoot(base, @"S_receipt-empty");
+    NSURL *root = PackagesRoot(base, Account(role, @"e"));
     NSURL *directory = [root.URLByDeletingLastPathComponent
         URLByAppendingPathComponent:@"RUIN Theme Receipts" isDirectory:YES];
     assert(RUINReadThemeReceipts(root).count == 0);
@@ -123,10 +164,10 @@ static void CheckReadDoesNotCreate(NSURL *base)
     assert(lstat(directory.path.fileSystemRepresentation, &status) < 0 && errno == ENOENT);
 }
 
-static void CheckMissingPackageRoot(NSURL *base)
+static void CheckMissingPackageRoot(NSURL *base, NSString *role)
 {
     NSString *productID = NSUUID.UUID.UUIDString.lowercaseString;
-    NSURL *root = PackagesRoot(base, @"S_receipt-assets-removed");
+    NSURL *root = PackagesRoot(base, Account(role, @"f"));
     assert(Write(root, Metadata(productID, @"Preserved"), ArchiveName()));
     assert(rmdir(root.path.fileSystemRepresentation) == 0);
     assert(RUINReadThemeReceipts(root).count == 1);
@@ -135,11 +176,11 @@ static void CheckMissingPackageRoot(NSURL *base)
     assert(lstat(root.path.fileSystemRepresentation, &status) < 0 && errno == ENOENT);
 }
 
-static void CheckSymlinks(NSURL *base)
+static void CheckSymlinks(NSURL *base, NSString *role)
 {
     NSString *productID = NSUUID.UUID.UUIDString.lowercaseString;
     NSDictionary *metadata = Metadata(productID, @"Symlink");
-    NSURL *folderRoot = PackagesRoot(base, @"S_receipt-folder-link");
+    NSURL *folderRoot = PackagesRoot(base, Account(role, @"0"));
     NSURL *folderAccount = folderRoot.URLByDeletingLastPathComponent;
     NSURL *folderLink = [folderAccount URLByAppendingPathComponent:@"RUIN Theme Receipts"];
     NSURL *outsideDirectory = [base URLByAppendingPathComponent:@"outside-receipts" isDirectory:YES];
@@ -149,7 +190,7 @@ static void CheckSymlinks(NSURL *base)
     assert(!Write(folderRoot, metadata, ArchiveName()));
     assert(RUINReadThemeReceipts(folderRoot).count == 0);
 
-    NSURL *fileRoot = PackagesRoot(base, @"S_receipt-file-link");
+    NSURL *fileRoot = PackagesRoot(base, Account(role, @"1"));
     NSURL *fileAccount = fileRoot.URLByDeletingLastPathComponent;
     NSURL *receiptDirectory = [fileAccount URLByAppendingPathComponent:@"RUIN Theme Receipts" isDirectory:YES];
     assert(mkdir(receiptDirectory.path.fileSystemRepresentation, 0700) == 0);
@@ -161,12 +202,24 @@ static void CheckSymlinks(NSURL *base)
     assert(!RUINReadThemeReceipt(fileRoot, productID));
     assert(RUINReadThemeReceipts(fileRoot).count == 0);
     assert(!Write(fileRoot, metadata, ArchiveName()));
+
+    NSString *otherRole = [role isEqual:@"P"] ? @"S" : @"P";
+    NSURL *otherRoot = PackagesRoot(base, Account(otherRole, @"3"));
+    assert(Write(otherRoot, metadata, ArchiveName()));
+    NSURL *accountLink = [[base URLByAppendingPathComponent:@"PrivateStore"]
+        URLByAppendingPathComponent:Account(role, @"4")];
+    assert(symlink(otherRoot.URLByDeletingLastPathComponent.path.fileSystemRepresentation,
+        accountLink.path.fileSystemRepresentation) == 0);
+    NSURL *linkedRoot = [accountLink URLByAppendingPathComponent:@"Theme Packages"];
+    assert(!Write(linkedRoot, Metadata(productID, @"Wrong role"), ArchiveName()));
+    assert(!RUINReadThemeReceipt(linkedRoot, productID) && RUINReadThemeReceipts(linkedRoot).count == 0);
+    assert([RUINReadThemeReceipt(otherRoot, productID)[@"name"] isEqual:@"Symlink"]);
 }
 
-static void CheckBounds(NSURL *base)
+static void CheckBounds(NSURL *base, NSString *role)
 {
     NSString *productID = NSUUID.UUID.UUIDString.lowercaseString;
-    NSURL *root = PackagesRoot(base, @"S_receipt-bounds");
+    NSURL *root = PackagesRoot(base, Account(role, @"2"));
     NSURL *directory = [root.URLByDeletingLastPathComponent
         URLByAppendingPathComponent:@"RUIN Theme Receipts" isDirectory:YES];
     assert(mkdir(directory.path.fileSystemRepresentation, 0700) == 0);
@@ -194,20 +247,23 @@ int main(void)
         char *created = mkdtemp(path);
         assert(created);
         NSURL *base = [NSURL fileURLWithPath:[NSString stringWithUTF8String:created] isDirectory:YES];
-        CheckRoundTrip(base);
         // The actual iOS group URL uses /private/var, whose standardized
         // NSString spelling removes /private. Both aliases address one store.
         NSURL *aliasBase = [[NSURL fileURLWithPath:[@"/private" stringByAppendingString:base.path] isDirectory:YES]
             URLByAppendingPathComponent:@"alias-case" isDirectory:YES];
-        CheckRoundTrip(aliasBase);
+        for (NSString *role in @[@"P", @"S"]) {
+            CheckRoundTrip(base, role);
+            CheckRoundTrip(aliasBase, role);
+            CheckBadMetadata(base, role);
+            CheckReadDoesNotCreate(base, role);
+            CheckMissingPackageRoot(base, role);
+            CheckSymlinks(base, role);
+            CheckBounds(base, role);
+        }
         CheckAccountIsolation(base);
-        CheckBadMetadata(base);
-        CheckReadDoesNotCreate(base);
-        CheckMissingPackageRoot(base);
-        CheckSymlinks(base);
-        CheckBounds(base);
+        CheckAccountShape(base);
         assert([NSFileManager.defaultManager removeItemAtURL:base error:nil]);
-        puts("PASS native theme receipt round trip, account isolation, input and path guards, no-create reads, symlink rejection, atomic permissions, and bounds");
+        puts("PASS P_/S_ native theme receipts, strict account shape, role/MID/group isolation, no-create reads, symlink rejection, atomic permissions, and bounds");
     }
     return 0;
 }

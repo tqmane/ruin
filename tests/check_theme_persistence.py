@@ -196,9 +196,6 @@ def check(source, proof_path):
     assert mapping['host']['supportStatus'] in ('verified', 'unverified')
     assert mapping['themes']['shopEligibility']['status'] == (
         'verified' if version == '26.16.0' else 'unsupported')
-    assert mapping['messaging']['unsendOperation']['lookupStatus'] == (
-        'verified' if version == '26.16.0' else 'unsupported')
-
     if version == '26.16.0':
         assert len(arrays['shopEligibility']) == 23
         assert len(arrays['localPolicy']) == 3
