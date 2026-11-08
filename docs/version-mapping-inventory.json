@@ -1,97 +1,178 @@
 {
   "formatVersion": 1,
-  "identityKey": ["version", "build", "uuid"],
+  "identityKey": [
+    "version",
+    "build",
+    "uuid"
+  ],
   "migrated": [
     {
-      "paths": ["src/core/Features.x", "src/core/TargetMetadata.h", "src/platform/BundleIdentity.x"],
+      "paths": [
+        "src/core/Features.x",
+        "src/core/TargetMetadata.h",
+        "src/platform/BundleIdentity.x"
+      ],
       "destination": "RUINMappingForInfo / RUINCurrentMapping and RUINVersionMapping.host",
       "reason": "Known identity selection now reads the immutable registry; BundleIdentity checks the selected identity against the actual Mach-O UUID."
     },
     {
-      "paths": ["src/themes/ThemeShop.x", "src/themes/NativeThemeValidation.x", "src/themes/NativeThemeLocalPolicy.m"],
+      "paths": [
+        "src/themes/ThemeShop.x",
+        "src/themes/NativeThemeValidation.x",
+        "src/themes/NativeThemeLocalPolicy.m"
+      ],
       "destination": "RUINVersionMapping.themes",
       "reason": "Theme callers select typed feature values from the composite mapping; runtime hooks use UUID-verified RUINCurrentMapping."
     },
     {
-      "paths": ["src/messaging/ReadBoundary.x", "src/messaging/UnsendOperation.x"],
+      "paths": [
+        "src/messaging/ReadBoundary.x",
+        "src/messaging/UnsendOperation.x"
+      ],
       "destination": "RUINVersionMapping.messaging",
       "reason": "Read-boundary and unsend anchors/statuses are owned by the matching immutable identity."
     },
     {
-      "paths": ["src/interface/NativeTabAvailability.m"],
+      "paths": [
+        "src/interface/NativeTabAvailability.m"
+      ],
       "destination": "RUINVersionMapping.nativeTabs",
       "reason": "The frozen Apps-tab addresses and refresh-reader proofs are selected through RUINCurrentMapping."
     },
     {
-      "paths": ["src/themes/ThemeFeatures.x"],
+      "paths": [
+        "src/themes/ThemeFeatures.x"
+      ],
       "destination": "RUINVersionMapping.themes.featureAddresses and RUINVersionMapping.host",
       "reason": "Diagnostic identity and five build-specific VAs now come from the selected typed mapping."
     },
     {
-      "paths": ["src/core/Features.x", "src/core/Features.h"],
+      "paths": [
+        "src/core/Features.x",
+        "src/core/Features.h"
+      ],
       "destination": "RUINEnumerateVersionMappings / RUINMappingForInfo",
       "reason": "Removed the latest-build constants and KnownHosts.def expansion; diagnostics enumerate the registry and exact build selection uses RUINMappingForInfo."
     }
   ],
   "retained": [
     {
-      "paths": ["src/themes/NativeThemeRegistration.x", "src/themes/NativeThemeLocalPolicy.m"],
+      "paths": [
+        "src/themes/NativeThemeRegistration.x",
+        "src/themes/NativeThemeLocalPolicy.m"
+      ],
       "value": "applicationVersionRange compatibility floor",
       "reason": "LINE product/server compatibility policy, independent of the running executable identity."
     },
     {
-      "paths": ["src/platform/ClientVersionAdvertisement.x", "src/messaging/LegacyMessagingConfiguration.x"],
+      "paths": [
+        "src/platform/ClientVersionAdvertisement.x",
+        "src/messaging/LegacyMessagingConfiguration.x"
+      ],
       "value": "legacy protocol version/build values and host-check fixture identities",
       "reason": "Protocol compatibility and test fixtures; they do not select private executable addresses."
     },
     {
-      "paths": ["src/core/SwiftFields.swift", "src/core/SwiftFields.h"],
+      "paths": [
+        "src/core/SwiftFields.swift",
+        "src/core/SwiftFields.h"
+      ],
       "value": "ChatMarkAsReadController / isEnabled / offset 56",
       "reason": "This branch retains a 26.16 runtime ABI guard: exact class and Mirror Bool, class size greater than 56, any reported isEnabled ivar offset equal to 56, and a bounded stored byte agreeing with reflection before writing. It is not a Mach-O address or instruction anchor."
     },
     {
-      "paths": ["src/messaging/MenuExtras.x"],
+      "paths": [
+        "src/messaging/MenuExtras.x"
+      ],
       "value": "sourceFileURLs.animation Swift field path and reflected type",
       "reason": "Runtime reflection validates the field/type before the read; no static Mach-O offset is used."
     },
     {
-      "paths": ["src/core/LINEPrivateCalls.h", "src/messaging/MessagingPrivateAPI.h", "src/themes/ThemePrivateAPI.h", "src/themes/NativeThemeRegistration.h", "src/messaging/UnsendOperation.h", "src/interface/MIDLookup.m", "src/interface/NativeChatControls.x", "src/interface/InterfaceFeatures.x", "src/messaging/ReadUsersEvents.x", "src/messaging/UnsendMarkerUI.x", "src/messaging/UnsendRetention.x"],
+      "paths": [
+        "src/core/LINEPrivateCalls.h",
+        "src/messaging/MessagingPrivateAPI.h",
+        "src/themes/ThemePrivateAPI.h",
+        "src/themes/NativeThemeRegistration.h",
+        "src/messaging/UnsendOperation.h",
+        "src/interface/MIDLookup.m",
+        "src/interface/NativeChatControls.x",
+        "src/interface/InterfaceFeatures.x",
+        "src/messaging/ReadUsersEvents.x",
+        "src/messaging/UnsendMarkerUI.x",
+        "src/messaging/UnsendRetention.x"
+      ],
       "value": "Version provenance comments and runtime class/selector/ABI/field evidence",
       "reason": "Structural runtime checks remain feature-local; these references do not define an alternate numeric mapping table."
     },
     {
-      "paths": ["src/themes/ThemeFeatures.x"],
+      "paths": [
+        "src/themes/ThemeFeatures.x"
+      ],
       "value": "Existing human-readable 26.16 theme diagnostic/error copy",
       "reason": "Copy text is not a selector or address source; any prose edits are reserved for Gemini 3.8 Flash High."
     },
     {
-      "paths": ["src/messaging/UnsendRetention.x"],
+      "paths": [
+        "src/messaging/UnsendRetention.x"
+      ],
       "value": "resolverGap diagnostic string containing an unresolved runtime offset",
       "reason": "The value is explanatory diagnostic text; it is not treated as a verified target or used for runtime selection."
     },
     {
-      "paths": ["src/platform/ClientVersionAdvertisement.x", "src/messaging/NativeMuteSend.m", "src/messaging/MenuExtras.x"],
+      "paths": [
+        "src/platform/ClientVersionAdvertisement.x",
+        "src/messaging/NativeMuteSend.m",
+        "src/messaging/MenuExtras.x"
+      ],
       "value": "Version-labelled diagnostic field names",
       "reason": "Stable diagnostic payload keys, not mapping selectors."
     },
     {
-      "paths": ["docs/theme-persistence.md"],
+      "paths": [
+        "docs/theme-persistence.md"
+      ],
       "value": "26.16 historical binary proof and measurements",
       "reason": "Historical evidence snapshot, not a live mapping source."
     },
     {
-      "paths": ["resources/RUINResources.bundle"],
+      "paths": [
+        "resources/RUINResources.bundle"
+      ],
       "value": "No version-specific localization entries found",
       "reason": "No localization update is needed."
     }
   ],
   "test_oracles": {
-    "paths": ["tests/check_known_mappings.m", "tests/check_features.m", "tests/check_boundary.m", "tests/check_reply.m", "tests/check_unsend_operation.m", "tests/check_keychain.m", "tests/check_native_theme_registration.m", "tests/check_native_theme_local_projection.m", "tests/check_native_tabs.py", "tests/check_theme_persistence.py", "tests/test_distribution.py", "src/platform/BundleIdentity.x", "src/themes/ThemeShop.x", "src/themes/NativeThemeValidation.x", "src/messaging/ReadBoundary.x", "src/messaging/UnsendOperation.x", "src/messaging/ReadUsersEvents.x", "src/messaging/UnsendRetention.x", "src/messaging/UnsendMarkerUI.x", "src/interface/MIDLookup.m"],
+    "paths": [
+      "tests/check_known_mappings.m",
+      "tests/check_features.m",
+      "tests/check_boundary.m",
+      "tests/check_reply.m",
+      "tests/check_unsend_operation.m",
+      "tests/check_keychain.m",
+      "tests/check_native_theme_registration.m",
+      "tests/check_native_theme_local_projection.m",
+      "tests/check_native_tabs.py",
+      "tests/check_theme_persistence.py",
+      "tests/test_distribution.py",
+      "src/platform/BundleIdentity.x",
+      "src/themes/ThemeShop.x",
+      "src/themes/NativeThemeValidation.x",
+      "src/messaging/ReadBoundary.x",
+      "src/messaging/UnsendOperation.x",
+      "src/messaging/ReadUsersEvents.x",
+      "src/messaging/UnsendRetention.x",
+      "src/messaging/UnsendMarkerUI.x",
+      "src/interface/MIDLookup.m"
+    ],
     "reason": "Literal identities and expected binary values remain independent test oracles. Source mapping checks consume the compiled manifest; binary byte/control-flow checks remain independent."
   },
   "documentation": {
-    "paths": ["AGENTS.md", "README.md"],
-    "decision": "Pending Gemini 3.8 Flash High prose update."
+    "paths": [
+      "AGENTS.md",
+      "README.md"
+    ],
+    "decision": "README.md and AGENTS.md updated using Gemini 3.8 Flash High output."
   },
   "privacy": "Repository-relative source paths only; no local fixture paths or environment-specific values."
 }
