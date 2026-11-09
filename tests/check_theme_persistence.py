@@ -222,7 +222,7 @@ def check(source, proof_path):
     else:
         assert len(arrays['validation']) == 2
         assert len(arrays['localPolicy']) == 4
-        assert len(arrays['shopEligibility']) == 21
+        assert len(arrays['shopEligibility']) == 22
         assert at(0x10a647430, len(b'line://shop/theme\0')) == b'line://shop/theme\0'
         assert at(0x10a93cbf0, len(b'validateTheme result:\0')) == b'validateTheme result:\0'
         assert adrp_add_target(0x1057a5c94) == 0x10a93cbf0
@@ -258,6 +258,8 @@ def check(source, proof_path):
         assert branch_target(0x106ad9cd0) == 0x109630960
         assert eligibility['shopSchemeReturnPCs'] == ['0x1003ac4ac', '0x1003ac4b8']
         assert eligibility['shopSchemeHandlerReturnPCs'] == ['0x1003acd98', '0x1003acf20']
+        assert eligibility['nvSchemeReturnPC'] == '0x1003e9a8c'
+        assert branch_target(0x1003e9a88) == 0x100764258
 
     proof = None
     if proof_path.is_file():

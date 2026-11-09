@@ -32,6 +32,7 @@ typedef struct {
     uintptr_t themeActionReturnPC;
     uintptr_t shopSchemeReturnPCs[2];
     uintptr_t shopSchemeHandlerReturnPCs[2];
+    uintptr_t nvSchemeReturnPC;
     uintptr_t plainModeStackOffset;
     const RUINInstructionAnchor *anchors;
     size_t anchorCount;

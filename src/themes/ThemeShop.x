@@ -6,10 +6,14 @@
 #import "../core/Localization.h"
 #import "../core/TargetMetadata.h"
 #import "../known/VersionMapping.h"
+#if !defined(RUIN_THEMESHOP_HOST_CHECK)
+#import "ThemeRouteScope.h"
+#endif
 
 #import <objc/runtime.h>
 #import <stdatomic.h>
 #import <string.h>
+#import <os/lock.h>
 
 #if !defined(RUIN_THEMESHOP_HOST_CHECK)
 #import <UIKit/UIKit.h>
@@ -57,9 +61,44 @@ static _Thread_local unsigned gThemeShopGateDepth;
 static NSString *const RUINThemeShopAccountKey = @"LineAccountType";
 static NSString *const RUINThemeShopModeKey = @"LineUtilUserDefaults.userDefaultEncryptionMode";
 
+typedef struct { uint64_t identifier; int32_t kind; double expires; unsigned remaining; } RUINThemeRequest;
+#if !defined(RUIN_THEMESHOP_HOST_CHECK)
+static RUINThemeRequest gThemeRequest;
+static uint64_t gThemeRequestGeneration;
+static os_unfair_lock gThemeRequestLock = OS_UNFAIR_LOCK_INIT;
+#endif
+
+static BOOL RUINThemeRequestMatches(const RUINThemeRequest *request, int32_t kind, uint64_t identifier, double now) {
+    return request && identifier && identifier == request->identifier && kind >= 1 && kind <= 3 &&
+        kind == request->kind && now <= request->expires && request->remaining;
+}
+
+BOOL RUINDispatchOwnedThemeRoute(int32_t kind, BOOL (^dispatch)(void)) {
+#if !defined(RUIN_THEMESHOP_HOST_CHECK)
+    if (kind >= 1 && kind <= 3) {
+        os_unfair_lock_lock(&gThemeRequestLock);
+        double now = NSProcessInfo.processInfo.systemUptime;
+        uint64_t identifier = ++gThemeRequestGeneration;
+        if (!identifier) identifier = ++gThemeRequestGeneration;
+        gThemeRequest = (RUINThemeRequest){identifier, kind, now + 12, 32};
+        os_unfair_lock_unlock(&gThemeRequestLock);
+        __block NSException *exception;
+        int32_t accepted = RUINThemeTaskScopeWithRequest(kind, identifier, ^int32_t {
+            @try { return dispatch(); }
+            @catch (NSException *caught) { exception = caught; return 0; }
+        });
+        if (exception) @throw exception;
+        return accepted != 0;
+    }
+#else
+    (void)kind;
+#endif
+    return dispatch();
+}
+
 // Return PCs stay in the exact ordered chain around ONE typed default read.
-static RUINThemeShopScope RUINThemeShopClassifyFrames(const RUINThemeShopEligibilityMapping *mapping,
-    const RUINThemeShopFrame *frames, size_t count, BOOL mode)
+static RUINThemeShopScope RUINThemeShopClassifyFramesImpl(const RUINThemeShopEligibilityMapping *mapping,
+    const RUINThemeShopFrame *frames, size_t count, BOOL mode, int32_t ownedKind)
 {
     RUINThemeShopScope none = {0};
     uintptr_t leafPC = mapping ? (mode ? mapping->modeReturnPC : mapping->accountReturnPC) : 0;
@@ -118,9 +157,13 @@ static RUINThemeShopScope RUINThemeShopClassifyFrames(const RUINThemeShopEligibi
         return none;
     if (mapping->themeActionReturnPC && frames[i].returnPC == mapping->themeActionReturnPC)
         return (RUINThemeShopScope){valueFrame, RUINThemeShopGateThemeAction};
-    // Exact stack PCs do not prove the URL's feature. Enable this route only
-    // when the version mapping separately proves Theme/Sticker ownership.
-    if (mapping->shopSchemeScopeStatus != RUINMappingStatusVerified) return none;
+    // The generic router PCs alone do not identify a feature. An owned request
+    // also needs its inherited TaskLocal ID, expiry and read budget below.
+    if (ownedKind == 3)
+        return mapping->nvSchemeReturnPC && frames[i].returnPC == mapping->nvSchemeReturnPC
+            ? (RUINThemeShopScope){valueFrame, RUINThemeShopGateRouter} : none;
+    if (ownedKind != 0 && ownedKind != 1 && ownedKind != 2) return none;
+    if (!ownedKind && mapping->shopSchemeScopeStatus != RUINMappingStatusVerified) return none;
     if (i + 1 < count) {
         for (size_t scheme = 0; scheme < 2; scheme++) {
             if (!mapping->shopSchemeReturnPCs[scheme] || frames[i].returnPC != mapping->shopSchemeReturnPCs[scheme])
@@ -133,6 +176,12 @@ static RUINThemeShopScope RUINThemeShopClassifyFrames(const RUINThemeShopEligibi
         }
     }
     return none;
+}
+
+static RUINThemeShopScope RUINThemeShopClassifyFrames(const RUINThemeShopEligibilityMapping *mapping,
+    const RUINThemeShopFrame *frames, size_t count, BOOL mode)
+{
+    return RUINThemeShopClassifyFramesImpl(mapping, frames, count, mode, 0);
 }
 
 #if defined(RUIN_THEMESHOP_HOST_CHECK)
@@ -152,6 +201,10 @@ static BOOL RUINThemeShopFrameUsesPlainMode(uintptr_t frame)
 }
 #else
 static intptr_t gThemeShopSlide;
+static NSMutableArray *gThemeRouteObservations;
+static BOOL RUINThemeRouteObserverEnabled(void) {
+    return [NSProcessInfo.processInfo.environment[@"RUIN_ENABLE_THEME_ROUTE_OBSERVER"] isEqual:@"1"];
+}
 static RUINThemeShopScope RUINThemeShopCaptureScope(void *frame, BOOL mode)
 {
     RUINThemeShopFrame rows[24];
@@ -175,8 +228,37 @@ static RUINThemeShopScope RUINThemeShopCaptureScope(void *frame, BOOL mode)
         if (previous <= current) break;
         current = previous;
     }
-    return RUINThemeShopClassifyFrames(gThemeShopMappings ? &gThemeShopMappings->shopEligibility : NULL,
-        rows, count, mode);
+    const RUINThemeShopEligibilityMapping *mapping = gThemeShopMappings ? &gThemeShopMappings->shopEligibility : NULL;
+    if (RUINThemeRouteObserverEnabled()) {
+        int32_t kind = RUINThemeTaskScopeCurrentKind();
+        RUINThemeShopScope candidate = RUINThemeShopClassifyFramesImpl(mapping, rows, count, mode, kind);
+        if (kind || candidate.kind == RUINThemeShopGateRouter) {
+            @synchronized (NSUserDefaults.class) {
+                if (!gThemeRouteObservations) gThemeRouteObservations = [NSMutableArray array];
+                if (gThemeRouteObservations.count == 32) [gThemeRouteObservations removeObjectAtIndex:0];
+                NSMutableArray *PCs = [NSMutableArray array];
+                for (size_t i = 0; i < count; i++)
+                    [PCs addObject:[NSString stringWithFormat:@"0x%llx", (unsigned long long)rows[i].returnPC]];
+                [gThemeRouteObservations addObject:@{@"kind":@(kind), @"mode":@(mode),
+                    @"requestID":@(RUINThemeTaskScopeCurrentRequestID()),
+                    @"routerCandidate":@(candidate.kind == RUINThemeShopGateRouter), @"PCs":PCs}];
+            }
+        }
+    }
+    RUINThemeShopScope scope = RUINThemeShopClassifyFrames(mapping, rows, count, mode);
+    if (!scope.kind) {
+        int32_t kind = RUINThemeTaskScopeCurrentKind();
+        uint64_t identifier = RUINThemeTaskScopeCurrentRequestID();
+        RUINThemeShopScope candidate = RUINThemeShopClassifyFramesImpl(mapping, rows, count, mode, kind);
+        os_unfair_lock_lock(&gThemeRequestLock);
+        double now = NSProcessInfo.processInfo.systemUptime;
+        if (candidate.kind == RUINThemeShopGateRouter && RUINThemeRequestMatches(&gThemeRequest, kind, identifier, now)) {
+            gThemeRequest.remaining--;
+            scope = candidate;
+        }
+        os_unfair_lock_unlock(&gThemeRequestLock);
+    }
+    return scope;
 }
 static BOOL RUINThemeShopFrameUsesPlainMode(uintptr_t frame)
 {
@@ -430,8 +512,10 @@ static RUINThemeShopStatus RUINThemeShopDispatchURL(id delegate, NSDictionary *i
 #endif
     atomic_fetch_add(&gThemeShopRequests, 1);
     @try {
-        BOOL accepted = [(id<RUINThemeURLRouting>)delegate
-            openURLForObjC:[NSURL URLWithString:URLString]];
+        BOOL (^dispatch)(void) = ^BOOL {
+            return [(id<RUINThemeURLRouting>)delegate openURLForObjC:[NSURL URLWithString:URLString]];
+        };
+        BOOL accepted = RUINDispatchOwnedThemeRoute([URLString isEqual:RUINThemeShopURLString] ? 1 : 2, dispatch);
         atomic_fetch_add(accepted ? &gThemeShopAccepted : &gThemeShopRejected, 1);
         return RUINThemeShopRecord(accepted ? RUINThemeShopRouteAccepted : RUINThemeShopRouteRejected);
     } @catch (__unused NSException *exception) {
@@ -475,7 +559,7 @@ NSDictionary<NSString *, id> *RUINThemeShopDiagnostics(void)
         @"gateScope": mapping && mapping->shopEligibility.nativeReadAdapterStatus == RUINMappingStatusVerified
             ? mapping->shopEligibility.shopSchemeScopeStatus == RUINMappingStatusVerified
                 ? @"verified theme capability, Theme/Sticker router and StylesheetManager settings-save caller chains"
-                : @"verified native-read mapping; StylesheetManager save scope enabled; ShopScheme route scope unverified"
+                : @"verified native reads and StylesheetManager save; owned TaskLocal shop requests only; unowned generic routes disabled"
             : mapping ? @"Shop navigation binary verified; numeric eligibility adapter unavailable for this host"
             : @"Shop navigation uses structural Objective-C ABI guard; numeric eligibility scope unavailable",
         @"shopNavigationMappingVerified": @(mapping && mapping->shopNavigation.status == RUINMappingStatusVerified),
@@ -490,6 +574,9 @@ NSDictionary<NSString *, id> *RUINThemeShopDiagnostics(void)
         @"storedRoleModifiedByAdapter": @NO
     } mutableCopy];
 #if !defined(RUIN_THEMESHOP_HOST_CHECK)
+    @synchronized (NSUserDefaults.class) {
+        result[@"taskScopeObservations"] = [gThemeRouteObservations copy] ?: @[];
+    }
     if (NSThread.isMainThread) {
         BOOL routerAvailable = RUINThemeShopRouterAvailable(UIApplication.sharedApplication.delegate, mapping);
         result[@"nativeRouterAvailable"] = @(routerAvailable);
@@ -671,6 +758,28 @@ static void RUINThemeShopCheck26170(const RUINVersionMapping *version17)
                 assert(!RUINThemeShopCaptureScope(NULL, YES).kind);
                 RUINThemeShopTestStackFor(NO, RUINThemeShopGateRouter, chain, scheme, handler);
                 assert(!RUINThemeShopCaptureScope(NULL, NO).kind);
+            }
+        }
+        for (unsigned mode = 0; mode < 2; mode++) {
+            RUINThemeShopTestStackFor(mode, RUINThemeShopGateRouter, chain, 0, 0);
+            for (int32_t kind = 1; kind <= 2; kind++)
+                assert(RUINThemeShopClassifyFramesImpl(mapping, gThemeShopTestFrames,
+                    gThemeShopTestFrameCount, mode, kind).kind == RUINThemeShopGateRouter);
+            assert(!RUINThemeShopClassifyFramesImpl(mapping, gThemeShopTestFrames,
+                gThemeShopTestFrameCount, mode, 3).kind);
+            gThemeShopTestFrames[gThemeShopTestFrameCount - 2].returnPC = mapping->nvSchemeReturnPC;
+            gThemeShopTestFrameCount--;
+            assert(mapping->nvSchemeReturnPC &&
+                RUINThemeShopClassifyFramesImpl(mapping, gThemeShopTestFrames,
+                    gThemeShopTestFrameCount, mode, 3).kind == RUINThemeShopGateRouter);
+            for (int32_t kind = 0; kind <= 2; kind++)
+                assert(!RUINThemeShopClassifyFramesImpl(mapping, gThemeShopTestFrames,
+                    gThemeShopTestFrameCount, mode, kind).kind);
+            for (size_t i = 0; i < gThemeShopTestFrameCount; i++) {
+                gThemeShopTestFrames[i].returnPC ^= 4;
+                assert(!RUINThemeShopClassifyFramesImpl(mapping, gThemeShopTestFrames,
+                    gThemeShopTestFrameCount, mode, 3).kind);
+                gThemeShopTestFrames[i].returnPC ^= 4;
             }
         }
         RUINThemeShopTestStackFor(YES, RUINThemeShopGateStylesheetPersistence, chain, 0, 0);
@@ -894,6 +1003,14 @@ static BOOL RUINThemeShopTestRouter(id receiver, SEL selector, NSURL *url)
 
 int main(int argc, const char *argv[])
 {
+    RUINThemeRequest request = {11, 1, 20, 2};
+    assert(RUINThemeRequestMatches(&request, 1, 11, 19));
+    assert(!RUINThemeRequestMatches(&request, 2, 11, 19));
+    assert(!RUINThemeRequestMatches(&request, 1, 12, 19));
+    assert(!RUINThemeRequestMatches(&request, 1, 0, 19));
+    assert(!RUINThemeRequestMatches(&request, 1, 11, 21));
+    request.remaining = 0;
+    assert(!RUINThemeRequestMatches(&request, 1, 11, 19));
     @autoreleasepool {
         RUINThemeShopCheckGate();
         BOOL mismatch = argc == 2 && strcmp(argv[1], "mismatch") == 0;

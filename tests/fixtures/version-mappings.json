@@ -519,6 +519,7 @@
           "modeCopyReturnPC" : "0x10692e638",
           "modeReturnPC" : "0x10694677c",
           "nativeReadAdapterStatus" : "verified",
+          "nvSchemeReturnPC" : null,
           "plainModeStackOffset" : "0xb4",
           "preflightAccountReturnPC" : "0x10285e208",
           "shopSchemeHandlerReturnPCs" : [
@@ -1089,12 +1090,23 @@
                 "0xd63f02a0",
                 "0xaa0003f5"
               ]
+            },
+            {
+              "address" : "0x1003e9a84",
+              "wordCount" : 4,
+              "words" : [
+                "0x52800020",
+                "0x940de9f4",
+                "0xf94006c1",
+                "0x12000000"
+              ]
             }
           ],
           "capabilityReturnPC" : "0x1007642a4",
           "modeCopyReturnPC" : "0x106ad9b30",
           "modeReturnPC" : "0x106af1c60",
           "nativeReadAdapterStatus" : "verified",
+          "nvSchemeReturnPC" : "0x1003e9a8c",
           "plainModeStackOffset" : "0xb4",
           "preflightAccountReturnPC" : null,
           "shopSchemeHandlerReturnPCs" : [
