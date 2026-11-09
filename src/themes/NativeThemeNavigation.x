@@ -3,6 +3,7 @@
 #import "TargetMetadata.h"
 #import "ThemePrivateAPI.h"
 #import "NativeThemeNavigation.h"
+#import "ThemeShop.h"
 
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
@@ -292,8 +293,10 @@ static BOOL RUINDispatchNativeThemeSettingsRoute(NSError **error)
         return NO;
     }
     @try {
-        BOOL accepted = [(id<RUINThemeURLRouting>)delegate
-            openURLForObjC:[NSURL URLWithString:RUINNativeMyThemesURL]];
+        BOOL (^dispatch)(void) = ^BOOL {
+            return [(id<RUINThemeURLRouting>)delegate openURLForObjC:[NSURL URLWithString:RUINNativeMyThemesURL]];
+        };
+        BOOL accepted = RUINDispatchOwnedThemeRoute(3, dispatch);
         if (!accepted && error) *error = RUINNativeThemeNavigationError(
             RUINNativeThemeNavigationUnavailable, @"LINE rejected the native theme route.");
         return accepted;

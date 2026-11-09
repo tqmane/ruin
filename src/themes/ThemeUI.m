@@ -238,7 +238,7 @@ static NSString *RUINThemeUITrim(NSString *value)
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
     if (section == 0) return 3 + (self.hasDownloadStatus ? 1 : 0) + (self.catalogError ? 1 : 0);
-    if (section == 3) return 1;
+    if (section == 3) return 2;
     return MAX((NSInteger)(section == 1 ? self.archives.count : self.nativeRecords.count), 1);
 }
 
@@ -329,7 +329,8 @@ static NSString *RUINThemeUITrim(NSString *value)
             cell.detailTextLabel.text = gThemeUIDownloadName;
         }
     } else if (path.section == 3) {
-        cell.textLabel.text = RUINLocalizedString(@"LINEの着せかえショップを開く");
+        cell.textLabel.text = RUINLocalizedString(path.row == 0
+            ? @"LINEの着せかえショップを開く" : @"マイ着せかえを開く");
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         cell.selectionStyle = UITableViewCellSelectionStyleDefault;
     } else {
@@ -396,7 +397,11 @@ static NSString *RUINThemeUITrim(NSString *value)
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)path
 {
     [tableView deselectRowAtIndexPath:path animated:YES];
-    if (path.section == 3) { RUINOpenThemeShop(self); return; }
+    if (path.section == 3) {
+        if (path.row == 0) RUINOpenThemeShop(self);
+        else RUINOpenDownloadedThemes(self);
+        return;
+    }
     if (path.section == 0) {
         if (path.row == 1) [self showStoreURLPrompt];
         else if (path.row == 2) [self showDownloadPrompt];

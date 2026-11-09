@@ -147,6 +147,7 @@ static NSDictionary *MappingJSON(const RUINVersionMapping *mapping)
                 @"themeActionReturnPC": Address(eligibility->nativeReadAdapterStatus, eligibility->themeActionReturnPC),
                 @"shopSchemeReturnPCs": AddressArray(eligibility->nativeReadAdapterStatus, eligibility->shopSchemeReturnPCs, 2),
                 @"shopSchemeHandlerReturnPCs": AddressArray(eligibility->nativeReadAdapterStatus, eligibility->shopSchemeHandlerReturnPCs, 2),
+                @"nvSchemeReturnPC": Address(eligibility->nativeReadAdapterStatus, eligibility->nvSchemeReturnPC),
                 @"plainModeStackOffset": Address(eligibility->nativeReadAdapterStatus, eligibility->plainModeStackOffset),
                 @"anchors": AnchorArray(eligibility->anchors, eligibility->anchorCount)
             },

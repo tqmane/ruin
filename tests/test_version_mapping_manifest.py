@@ -50,6 +50,7 @@ class VersionMappingManifestTests(unittest.TestCase):
         ])
         self.assertEqual(eligibility["shopSchemeReturnPCs"], ["0x1003ac4ac", "0x1003ac4b8"])
         self.assertEqual(eligibility["shopSchemeHandlerReturnPCs"], ["0x1003acd98", "0x1003acf20"])
+        self.assertEqual(eligibility["nvSchemeReturnPC"], "0x1003e9a8c")
         self.assertGreater(len(eligibility["anchors"]), 0)
         self.assertEqual(mapping["messaging"]["unsendOperation"]["lookupStatus"], "verified")
         self.assertEqual(len(mapping["messaging"]["unsendOperation"]["orderedLookupReturnAddresses"]), 6)
@@ -62,6 +63,7 @@ class VersionMappingManifestTests(unittest.TestCase):
         self.assertEqual(eligibility["accountChainAlternatives"], [])
         self.assertEqual(eligibility["nativeReadAdapterStatus"], "verified")
         self.assertEqual(eligibility["shopSchemeScopeStatus"], "verified")
+        self.assertIsNone(eligibility["nvSchemeReturnPC"])
 
 
 if __name__ == "__main__":

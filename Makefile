@@ -23,6 +23,7 @@ source = $(if $(filter $(1:.m=.x),$(LOGOS_SOURCES)),build/logos/$(1),$(1))
 CFLAGS = -isysroot $(SDK) -miphoneos-version-min=18.0 -fobjc-arc -fblocks -Wall -Wextra -O2 \
 	-DRUIN_BUILD_VERSION='@"$(RUIN_BUILD_VERSION)"'
 SOURCES := $(sort $(wildcard src/*/*.m) $(VERSION_MAPPING_SOURCES))
+SWIFT_SOURCES := $(sort $(wildcard src/*/*.swift))
 RUIN_ARCHS := arm64 arm64e
 arch_objects = $(patsubst %.m,build/$(1)/%.o,$(SOURCES)) $(patsubst %.x,build/$(1)/%.o,$(LOGOS_SOURCES)) build/$(1)/fishhook.o build/$(1)/SwiftFields.o
 
@@ -142,6 +143,7 @@ check-host: check-portable check-mapping-manifest $(HOST_FIXTURES)
 	./build/check_marker_ui
 	./build/check_theme_shop
 	./build/check_theme_shop mismatch
+	tests/check_theme_route_scope.sh
 	./build/check_readers_sheet
 	./build/check_native_title
 	./build/check_gif
@@ -364,9 +366,9 @@ build/$(1)/fishhook.o: vendor/fishhook/fishhook.c vendor/fishhook/fishhook.h
 	mkdir -p $$(@D)
 	$$(CC) -arch $(1) -isysroot $$(SDK) -miphoneos-version-min=18.0 -O2 -c $$< -o $$@
 
-build/$(1)/SwiftFields.o: src/core/SwiftFields.swift src/core/SwiftFields.h
+build/$(1)/SwiftFields.o: $$(SWIFT_SOURCES) src/core/SwiftFields.h
 	mkdir -p $$(@D)
-	xcrun --sdk iphoneos swiftc -sdk $$(SDK) -target $(1)-apple-ios18.0 -parse-as-library -O -module-name RUINRuntime -emit-object $$< -o $$@
+	xcrun --sdk iphoneos swiftc -sdk $$(SDK) -target $(1)-apple-ios18.0 -parse-as-library -whole-module-optimization -O -module-name RUINRuntime -emit-object $$(SWIFT_SOURCES) -o $$@
 
 build/$(1)/RUIN.dylib: $(call arch_objects,$(1))
 	xcrun --sdk iphoneos swiftc -sdk $$(SDK) -target $(1)-apple-ios18.0 -emit-library $$^ -framework Foundation -framework UIKit -framework CoreText -framework WebKit -framework CoreGraphics -framework Security -framework CoreData -framework ImageIO -framework UniformTypeIdentifiers -framework UserNotifications -lsqlite3 -lz -Xlinker -install_name -Xlinker @rpath/RUIN.dylib -o $$@

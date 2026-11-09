@@ -16,6 +16,7 @@ NS_ASSUME_NONNULL_BEGIN
  */
 FOUNDATION_EXPORT void RUINOpenThemeShop(UIViewController *source);
 FOUNDATION_EXPORT void RUINOpenStickerShop(UIViewController *source);
+FOUNDATION_EXPORT BOOL RUINDispatchOwnedThemeRoute(int32_t kind, BOOL (^dispatch)(void));
 
 /** Install the exact-build stylesheet persistence adapter at dylib startup. */
 FOUNDATION_EXPORT void RUINInstallThemePersistenceAdapter(void);

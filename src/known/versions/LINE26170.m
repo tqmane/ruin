@@ -47,7 +47,8 @@ static const RUINInstructionAnchor kShopEligibility[] = {
     {0x1003ac4a8, 2, {0x940edf6c, 0x360000a0}},
     {0x1003ac4b4, 2, {0x940edf69, 0x12000000}},
     {0x1003acd94, 2, {0xd63f02c0, 0xaa0003f6}},
-    {0x1003acf1c, 2, {0xd63f02a0, 0xaa0003f5}}
+    {0x1003acf1c, 2, {0xd63f02a0, 0xaa0003f5}},
+    {0x1003e9a84, 4, {0x52800020, 0x940de9f4, 0xf94006c1, 0x12000000}}
 };
 
 static const RUINInstructionAnchor kUnsendParser[] = {
@@ -94,6 +95,7 @@ const RUINVersionMapping RUINLINE26170 = {
             .capabilityReturnPC = 0x1007642a4,
             .shopSchemeReturnPCs = {0x1003ac4ac, 0x1003ac4b8},
             .shopSchemeHandlerReturnPCs = {0x1003acd98, 0x1003acf20},
+            .nvSchemeReturnPC = 0x1003e9a8c,
             .plainModeStackOffset = 0xb4,
             .anchors = kShopEligibility,
             .anchorCount = sizeof(kShopEligibility) / sizeof(*kShopEligibility)
