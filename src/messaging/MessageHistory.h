@@ -43,9 +43,9 @@ FOUNDATION_EXPORT NSArray<NSDictionary *> *RUINReadUsersForMessageKey(NSDictiona
 FOUNDATION_EXPORT BOOL RUINHistoryValidateReadChatKey(NSDictionary *key, id chat);
 FOUNDATION_EXPORT void RUINHistoryRecordServerReadRanges(NSDictionary *key, NSDictionary *readers,
     void (^completion)(BOOL success));
-// Read-only snapshot of native chat/member cursors for this exact copied
-// store/chat key. Queued before the reader query; cached positions carry only
-// a first-observation time, never an invented historical read timestamp.
+// Validates the live active-account chat, binds this exact store/chat scope,
+// then snapshots native cursors before the reader query. Cached positions carry
+// only a first-observation time, never an invented historical read timestamp.
 FOUNDATION_EXPORT void RUINObserveNativeReadPositionsForMessageKey(NSDictionary *key, id chat);
 // Retention adapter bridge only: caller must already have recognized a native
 // unsend flag and copied a verified key. Serializes behind prior captures and
@@ -56,7 +56,8 @@ FOUNDATION_EXPORT NSDictionary *RUINHistoryRetainUnsentSnapshotForKey(NSDictiona
 // Parent calls after a complete LineOperation.read: with type==55. Original
 // replacement 0x1277d8 maps param1 -> per-chat table, param2 -> MID, incoming
 // param3 -> MESSAGEID. This bridge stores observed read-up-to [0,param3] with
-// time=0 (unknown), pending unique store attribution. No operation is altered.
+// time=0 (unknown), pending a validated selected-chat store binding. No
+// operation is altered.
 FOUNDATION_EXPORT BOOL RUINHistoryRecordType55ReadUpTo(NSString *param1, NSString *param2, NSString *param3);
 // Known server event time and local observation time remain separate. Zero is unknown.
 FOUNDATION_EXPORT BOOL RUINHistoryRecordType55ReadUpToWithTime(NSString *param1, NSString *param2, NSString *param3,

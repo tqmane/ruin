@@ -280,6 +280,82 @@ static void CheckNativePositions(NSURL *directory, RUINHistoryStore *store, NSSt
     CHECK([ReaderIDs(RUINReadUsersForMessageKey(query)) isEqual:[NSSet setWithObject:peer]], @"restored account did not consume its native cache");
     RUINHistoryHostCheckSetProfileMID(nil); RUINHistoryHostCheckConfigure(nil,NO);
 }
+static NSDictionary *CheckOldMessageCallbackBinding(NSURL *directory, RUINHistoryStore *store,
+                                                       NSString *rolePrefix, NSString *chatID,
+                                                       BOOL recordCallback) {
+    NSString *own = @"udddddddddddddddddddddddddddddddd";
+    NSEntityDescription *chatEntity = [NSEntityDescription new];
+    chatEntity.name = @"Chat"; chatEntity.managedObjectClassName = @"ManagedChat";
+    chatEntity.properties = @[Attribute(@"mid", NSStringAttributeType)];
+    NSEntityDescription *messageEntity = [NSEntityDescription new];
+    messageEntity.name = @"Message"; messageEntity.managedObjectClassName = @"ManagedMessage";
+    messageEntity.properties = @[Attribute(@"id", NSStringAttributeType), Relationship(@"chat", chatEntity)];
+    NSManagedObjectModel *model = [NSManagedObjectModel new]; model.entities = @[chatEntity, messageEntity];
+    NSPersistentStoreCoordinator *psc = [[NSPersistentStoreCoordinator alloc] initWithManagedObjectModel:model];
+    NSURL *folder = [[[[[directory URLByAppendingPathComponent:@"Library/Application Support" isDirectory:YES]
+        URLByAppendingPathComponent:@"PrivateStore" isDirectory:YES]
+        URLByAppendingPathComponent:[rolePrefix stringByAppendingString:own] isDirectory:YES]
+        URLByAppendingPathComponent:@"Messages" isDirectory:YES] standardizedURL];
+    CHECK([NSFileManager.defaultManager createDirectoryAtURL:folder withIntermediateDirectories:YES attributes:nil error:nil],
+          @"old-message root creation failed");
+    CHECK([psc addPersistentStoreWithType:NSSQLiteStoreType configuration:nil
+        URL:[folder URLByAppendingPathComponent:@"Line.sqlite"] options:nil error:nil] != nil,
+        @"old-message native store failed");
+    NSManagedObjectContext *context = [[NSManagedObjectContext alloc] initWithConcurrencyType:NSPrivateQueueConcurrencyType];
+    context.persistentStoreCoordinator = psc;
+    __block NSManagedObject *chat, *message;
+    [context performBlockAndWait:^{
+        chat = [NSEntityDescription insertNewObjectForEntityForName:@"Chat" inManagedObjectContext:context];
+        message = [NSEntityDescription insertNewObjectForEntityForName:@"Message" inManagedObjectContext:context];
+        [chat setValue:chatID forKey:@"mid"];
+        [message setValue:@"9" forKey:@"id"]; [message setValue:chat forKey:@"chat"];
+        CHECK([context save:nil], @"old-message fixture save failed");
+    }];
+
+    RUINHistoryHostCheckConfigure(store, YES); RUINHistoryHostCheckSetProfileMID(own);
+    NSDictionary *key = RUINHistoryMessageKey(message);
+    CHECK(RUINHistoryValidateReadChatKey(key, chat), @"selected S/P live scope was rejected");
+    if (recordCallback) {
+        long long pendingBefore = [store.counts[@"pendingReadRanges"] longLongValue];
+        NSString *callbackReader = @"ucccccccccccccccccccccccccccccccc";
+        CHECK(RUINHistoryRecordType55ReadUpToWithTime(chatID, callbackReader, @"9", 0, 1700000000000),
+              @"old-message callback was not recorded");
+        CHECK(RUINReadUsersForMessageKey(key).count == 0 &&
+              [store.counts[@"pendingReadRanges"] longLongValue] == pendingBefore + 1,
+              @"old callback was attributed before selected-chat resolution");
+    }
+
+    // Mirrors MenuExtras' validated selection observer before its local query.
+    RUINObserveNativeReadPositionsForMessageKey(key, chat);
+    if (recordCallback)
+        CHECK([ReaderIDs(RUINReadUsersForMessageKey(key)) containsObject:@"ucccccccccccccccccccccccccccccccc"],
+              @"selected S_ scope did not resolve the old callback without a new message save");
+    return key;
+}
+static void CheckOldSecondaryCallbackAndDualScope(NSURL *directory, RUINHistoryStore *store) {
+    NSString *chatID = @"cffffffffffffffffffffffffffffffff";
+    NSDictionary *secondary = CheckOldMessageCallbackBinding(directory, store, @"S_", chatID, YES);
+    CHECK([ReaderIDs(RUINReadUsersForMessageKey(secondary)) containsObject:@"ucccccccccccccccccccccccccccccccc"],
+          @"S_ callback was not visible after the selected-message binding");
+    NSDictionary *primary = CheckOldMessageCallbackBinding(directory, store, @"P_", chatID, NO);
+    CHECK(![secondary[@"store"] isEqual:primary[@"store"]], @"P_/S_ fixture scopes unexpectedly matched");
+
+    NSSet *secondaryRows = ReaderIDs(RUINReadUsersForMessageKey(secondary));
+    NSSet *primaryRows = ReaderIDs(RUINReadUsersForMessageKey(primary));
+    CHECK(![secondaryRows containsObject:@"ucccccccccccccccccccccccccccccccc"] &&
+          ![primaryRows containsObject:@"ucccccccccccccccccccccccccccccccc"],
+          @"ambiguous P_/S_ callback was attributed to either scope");
+    CHECK([store recordRanges:@[Range(@"0", @"9", 0, 0)] inStore:secondary[@"store"]
+        kind:@"talk" chat:chatID reader:@"secondary-only"] &&
+          [store recordRanges:@[Range(@"0", @"9", 0, 0)] inStore:primary[@"store"]
+        kind:@"talk" chat:chatID reader:@"primary-only"], @"explicit dual-scope rows failed");
+    secondaryRows = ReaderIDs(RUINReadUsersForMessageKey(secondary));
+    primaryRows = ReaderIDs(RUINReadUsersForMessageKey(primary));
+    CHECK([secondaryRows containsObject:@"secondary-only"] && ![secondaryRows containsObject:@"primary-only"] &&
+          [primaryRows containsObject:@"primary-only"] && ![primaryRows containsObject:@"secondary-only"],
+          @"explicit P_/S_ rows crossed the selected store scope");
+    RUINHistoryHostCheckSetProfileMID(nil); RUINHistoryHostCheckConfigure(nil, NO);
+}
 static void CheckManagedKeys(NSURL *directory) {
     NSEntityDescription *chatEntity = [NSEntityDescription new];
     chatEntity.name = @"Chat"; chatEntity.managedObjectClassName = @"NSManagedObject";
@@ -668,6 +744,7 @@ int main(void) {
             store = [[RUINHistoryStore alloc] initWithURL:url error:&error];
             CHECK(store && [store.counts[@"ambiguousReadRanges"] integerValue] == 1 &&
                   [ReaderIDs([store readersInStore:@"s1" chat:@"pending" message:@"5"]) isEqual:[NSSet setWithObject:@"explicit"]], @"reopen forgot ambiguity");
+            CheckOldSecondaryCallbackAndDualScope(directory, store);
 
             long long snapshotsBeforeClear = [store.counts[@"snapshots"] longLongValue];
             SQL(url, "CREATE TRIGGER fail_clear BEFORE DELETE ON read_ranges WHEN OLD.chat='tx' BEGIN SELECT RAISE(ABORT,'fixture'); END;");

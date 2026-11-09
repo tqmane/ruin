@@ -574,6 +574,16 @@ void RUINObserveNativeReadPositionsForMessageKey(NSDictionary *key, id value) {
             ![ManagedValue(chat, @"mid") isEqual:copiedKey[@"chat"]]) {
             atomic_fetch_add(&nativePositionRejected, 1); return;
         }
+        RUINHistoryStore *store; dispatch_queue_t queue;
+        @synchronized (RUINHistoryStore.class) { store = historyStore; queue = historyQueue; }
+        if (!store || !queue) return;
+        // This is the selected-message pre-query path. Bind the exact scope
+        // after validating the live chat, even when it has no native cursors.
+        dispatch_async(queue, ^{
+            if (!atomic_load(&readersEnabled)) return;
+            if (![store bindStore:copiedKey[@"store"] kind:copiedKey[@"kind"] chat:copiedKey[@"chat"]])
+                atomic_fetch_add(&archiveWriteFailures, 1);
+        });
         long long observed = (long long)(NSDate.date.timeIntervalSince1970 * 1000.0);
         NSMutableDictionary<NSString *, NSMutableArray *> *positions = [NSMutableDictionary dictionary];
         NSManagedObject *metadata = ManagedValue(chat, @"metadata");
@@ -615,9 +625,6 @@ void RUINObserveNativeReadPositionsForMessageKey(NSDictionary *key, id value) {
         if (!positions.count) return;
         NSMutableDictionary *snapshot = [NSMutableDictionary dictionary];
         for (NSString *reader in positions) snapshot[reader] = [positions[reader] copy];
-        RUINHistoryStore *store; dispatch_queue_t queue;
-        @synchronized (RUINHistoryStore.class) { store = historyStore; queue = historyQueue; }
-        if (!store || !queue) return;
         dispatch_async(queue, ^{
             if (!atomic_load(&readersEnabled)) return;
             if ([store writeRangesByReader:snapshot store:copiedKey[@"store"] kind:@"talk" chat:copiedKey[@"chat"]]) {
@@ -987,7 +994,9 @@ BOOL RUINHistoryRecordType55ReadUpToWithTime(NSString *param1, NSString *param2,
     NSString *message = MessageNumber(param3, NO, NULL);
     if (!Token(param1) || !Token(param2) || !message) return NO;
     NSString *chat = [param1 copy], *reader = [param2 copy];
+#if !defined(RUIN_MESSAGE_HISTORY_HOST_CHECK)
     RUINInstallMessageHistory();
+#endif
     if (!atomic_load(&readersEnabled)) return NO;
     RUINHistoryStore *store;
     dispatch_queue_t queue;
