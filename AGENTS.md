@@ -41,7 +41,7 @@ RUIN/
 ### 対象バージョン・環境要件
 - **LINE**: `KnownHosts.def` および配列インデックス（`RUINKnownHosts`）による管理は廃止され、不変の `const RUINVersionMapping` 構造体が単一の (バージョン、ビルド番号、Mach-O UUID) の同一性を保持します。異なるビルド/UUIDバリアントは独立したレコードとして扱われ、同一バージョン文字列のバリアントも同一の `src/known/versions/LINE*.m` 内で個別のレジストリエントリとして共存可能です。バイナリマッピング値は `src/known/versions/LINE*.m` が所有し、`KnownMappings.h/m` が共有APIおよび中央レジストリを提供します。
   - 対象バージョン: LINE 26.16.0 (Build: `2026.1006.1718`、UUID: `292883E8-E011-3583-ADF5-F02241E3277B`) および 26.17.0 (Build: `2026.1103.1841`、UUID: `614CED59-07E5-372D-94B2-D4901870C7A0`)。
-  - 26.17.0のホスト全体は `Unverified` とし、部分対応警告を維持します。起動・ログイン維持・Keychain・タブ非表示、およびiPhone（LINE 26.17.0）でのネイティブ着せかえダウンロード・プレビュー・適用・再ダウンロード復元フローは実機確認済みです。また、Rootless iPad（サブ端末）でもRUINからのThemeShop/StickerShop表示、ダウンロード、マイ着せかえ登録・適用、再起動後保持を確認済みです（ログイン・履歴は未変更、再ダウンロード復元の実機QAはiPhoneのみ）。一方、RUIN設定のPage Sheet展開や未検証の直接ルートが残り、全体ステータスは留保として全テーマ・全環境の検証完了とはしません。
+  - 26.17.0のホスト全体は `Unverified` とし、部分対応警告を維持します。起動・ログイン維持・Keychain・タブ非表示、およびiPhone（LINE 26.17.0）でのネイティブ着せかえダウンロード・プレビュー・適用・再ダウンロード復元フローは実機確認済みです。また、Rootless iPad（サブ端末）でもRUINからのThemeShop/StickerShop表示、ダウンロード、マイ着せかえ登録・適用、再起動後保持を確認済みです（ログイン・履歴は未変更、再ダウンロード復元の実機QAはiPhoneのみ）。一方、RUIN設定のPage Sheet展開は実機確認されたものの未検証の直接ルートが残り、全体ステータスは留保として全テーマ・全環境の検証完了とはしません。
   - 26.17.0の機能status: RUINThemeShopEligibilityMappingの総括shopEligibilityは未検証直接ルートを留保するため `Unsupported`、nativeReadAdapterStatusは22アンカー検証済みの `Verified`（StylesheetManager保存補正および所有固定URL判定）、所有権未証明ルート（shopSchemeScopeStatus）は `Unverified`（無効化）です。unsend lookup（6 frame/16 anchor、実機で本文保持・取消表示・再起動後保持を確認）および通常トークmanualReadのABI statusは `Verified` です。旧getter投影のreadBoundaryは `Unsupported`（旧アンカー不保持、送信前pending filterは構造的に独立維持、26.16.0送信前投影は維持）とし、`RUINMappingStatus` は版別mapping featureに適用します。
 - **アーキテクチャ**: `arm64` および `arm64e`。アーキテクチャ別のオブジェクトディレクトリで個別ビルドし、双方のスライスのSwiftコンパイル・リンク対象をiOS 18.0として `lipo -create` で単一のFatバイナリを生成します。なお、両スライスの内包は実機での完全動作を保証するものではなく、既知の原バイナリおよび実機QA対象のLINE本体実行ファイルはarm64であり、実行時のLINE本体メインプロセスでもARM64が観測され、試行ごとのRUIN自身のarm64/arm64eスライス読み込みは確認済みですが、arm64eメインプロセスの機能QAは未検証です。
 - **下限OS**: iOS 18.0 以降 (※ビルド下限値であり、全機種・全環境での動作を保証するものではありません)
@@ -70,7 +70,7 @@ RUIN/
 - **UI設計原則**:
   - UIKit標準コンポーネントおよびLINE本来のネイティブタブ生成・インデックスを尊重し、自前UIへの差し替えや配列インデックス改変、Mach-O直接パッチは行わないこと。
   - タブ非表示はメニュー生成および標準のタブ更新処理の確認済み呼び出しスコープに限定してフィルタリングを行い、内部ファクトリ等の他呼び出し元へは元の値を返します。旧実装の制約（one-service制約）は解除され、ショッピングとアプリの同時非表示に対応（再起動後に反映。実機ではウォレット単体の非表示がネイティブ設定往復後も維持されることを確認済み。トラブルシューティング用として `RUIN_DISABLE_TAB_HIDING=1` で一時解除可能）。
-  - iPadの設定画面表示はサブ端末モードフラグに依存せず、可視の親コントローラからNavigation Pushで展開する動作を実機確認済みです。Rootless iPad（LINE 26.17.0サブ端末）ではRUIN 0.5.2インストール、厳格署名検証、dylib SHA一致、RUIN入口および設定UI表示、再起動後の通常起動復帰に加え、RUINからのThemeShop/StickerShop表示、ダウンロード、マイ着せかえ登録・適用（再起動後保持を確認、ログイン・履歴は未変更）を確認済みです。一方、未検証の直接ルートやRUIN設定のPage Sheet展開が未試験のため最新iPadの全機能完了とは断言しません（再ダウンロード復元の実機QAはiPhoneのみ）。
+  - iPadの設定画面表示はサブ端末モードフラグに依存せず、可視の親コントローラからNavigation Pushで展開する動作を実機確認済みです。Rootless iPad（LINE 26.17.0サブ端末）ではRUIN 0.5.2インストール、厳格署名検証、dylib SHA一致、RUIN入口および設定UI表示、再起動後の通常起動復帰に加え、RUINからのThemeShop/StickerShop表示、ダウンロード、マイ着せかえ登録・適用（再起動後保持を確認、ログイン・履歴は未変更）を確認済みです。一方、iPadにおけるRUIN設定のPushおよびPage Sheet開閉（展開・破棄）は確認済みであるものの、未検証の直接ショップルートが残存するため最新iPadの全機能完了とは断言しません（再ダウンロード復元の実機QAはiPhoneのみ）。
 
 ---
 
