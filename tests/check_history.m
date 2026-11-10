@@ -445,6 +445,83 @@ static void CheckManagedKeys(NSURL *directory) {
     }
 }
 
+static void CheckRangeAndPointDates(RUINHistoryStore *store) {
+    for (NSUInteger mode = 0; mode < 2; mode++) {
+        NSString *chat = mode ? @"range-point-observed" : @"range-point-scoped";
+        BOOL (^record)(NSDictionary *) = ^BOOL(NSDictionary *range) {
+            return mode ? [store recordObservedRangesByReader:@{@"reader17":@[range]} kind:@"talk" chat:chat] :
+                [store recordRanges:@[range] inStore:@"s17" kind:@"talk" chat:chat reader:@"reader17"];
+        };
+        CHECK([store bindStore:@"s17" kind:@"talk" chat:chat], @"mixed-source fixture binding failed");
+        CHECK(record(@{@"start":@"0", @"end":@"100", @"startTime":@10000, @"endTime":@10000,
+            @"timeSource":@"range"}), @"first mixed-source range failed");
+        NSDictionary *before = [store readersInStore:@"s17" kind:@"talk" chat:chat message:@"50"].firstObject;
+        CHECK([before[@"readAtMilliseconds"] longLongValue] == 10000, @"first interior date missing");
+        CHECK(record(@{@"start":@"0", @"end":@"100", @"startTime":@10000, @"endTime":@10000,
+            @"observedAt":@12000, @"timeSource":@"server_event"}), @"same-endpoint event failed");
+        CHECK(record(@{@"start":@"0", @"end":@"200", @"startTime":@11000, @"endTime":@11000,
+            @"observedAt":@13000, @"timeSource":@"range"}), @"expanded mixed-source range failed");
+        NSDictionary *old = [store readersInStore:@"s17" kind:@"talk" chat:chat message:@"50"].firstObject;
+        NSDictionary *unopened = [store readersInStore:@"s17" kind:@"talk" chat:chat message:@"75"].firstObject;
+        NSDictionary *endpoint = [store readersInStore:@"s17" kind:@"talk" chat:chat message:@"100"].firstObject;
+        NSDictionary *fresh = [store readersInStore:@"s17" kind:@"talk" chat:chat message:@"150"].firstObject;
+        CHECK([old[@"readAtMilliseconds"] longLongValue] == 10000 &&
+            [unopened[@"readAtMilliseconds"] longLongValue] == 10000 &&
+            [old[@"timeSource"] isEqual:@"range"] &&
+            [endpoint[@"readAtMilliseconds"] longLongValue] == 10000 &&
+            [endpoint[@"timeSource"] isEqual:@"server_event"] &&
+            [fresh[@"readAtMilliseconds"] longLongValue] == 11000,
+            @"same-endpoint point evidence erased the old range date before cursor growth");
+        RUINHistoryHostCheckConfigure(store, YES);
+        for (NSString *sender in @[@"outgoing-author", @"incoming-author"]) {
+            NSDictionary *key = @{@"store":@"s17", @"kind":@"talk", @"chat":chat,
+                @"message":@"50", @"sender":sender};
+            NSDictionary *row = RUINReadUsersForMessageKey(key).firstObject;
+            CHECK([row[@"readAtMilliseconds"] longLongValue] == 10000 &&
+                [row[@"timeSource"] isEqual:@"range"], @"message author direction changed the protected date");
+        }
+        RUINHistoryHostCheckConfigure(nil, NO);
+    }
+}
+
+static void CheckRangeDateMigration(NSURL *directory) {
+    NSURL *url = [directory URLByAppendingPathComponent:@"range-date-migration.sqlite"];
+    SQL(url, "CREATE TABLE read_ranges(store TEXT NOT NULL,kind TEXT NOT NULL,chat TEXT NOT NULL,reader TEXT NOT NULL,"
+        "start_id INTEGER NOT NULL,end_id INTEGER NOT NULL,start_ms INTEGER NOT NULL,end_ms INTEGER NOT NULL,"
+        "read_at_ms INTEGER NOT NULL,observed_ms INTEGER NOT NULL,time_source TEXT NOT NULL,"
+        "PRIMARY KEY(store,kind,chat,reader,start_id,end_id));"
+        "CREATE TABLE observed_ranges(kind TEXT NOT NULL,chat TEXT NOT NULL,reader TEXT NOT NULL,"
+        "start_id INTEGER NOT NULL,end_id INTEGER NOT NULL,start_ms INTEGER NOT NULL,end_ms INTEGER NOT NULL,"
+        "read_at_ms INTEGER NOT NULL,observed_ms INTEGER NOT NULL,time_source TEXT NOT NULL,"
+        "PRIMARY KEY(kind,chat,reader,start_id,end_id));"
+        "INSERT INTO read_ranges VALUES('scoped','talk','range','reader',0,100,10000,10000,10000,12000,'range');"
+        "INSERT INTO read_ranges VALUES('scoped','talk','event','reader',0,100,10000,10000,10000,12000,'server_event');"
+        "INSERT INTO observed_ranges VALUES('talk','range','reader',0,100,10000,10000,10000,12000,'range');"
+        "INSERT INTO observed_ranges VALUES('talk','event','reader',0,100,10000,10000,10000,12000,'server_event');");
+    for (NSUInteger reopen = 0; reopen < 2; reopen++) {
+        RUINHistoryStore *migrated = [[RUINHistoryStore alloc] initWithURL:url error:nil];
+        CHECK(migrated && [migrated bindStore:@"observed" kind:@"talk" chat:@"range"] &&
+            [migrated bindStore:@"observed" kind:@"talk" chat:@"event"], @"range date migration failed");
+        for (NSString *scope in @[@"scoped", @"observed"]) {
+            NSDictionary *range = [migrated readersInStore:scope chat:@"range" message:@"50"].firstObject;
+            NSDictionary *interior = [migrated readersInStore:scope chat:@"event" message:@"50"].firstObject;
+            NSDictionary *endpoint = [migrated readersInStore:scope chat:@"event" message:@"100"].firstObject;
+            CHECK([range[@"readAtMilliseconds"] longLongValue] == 10000 &&
+                [range[@"timeSource"] isEqual:@"range"] &&
+                [interior[@"readAtMilliseconds"] longLongValue] == 0 &&
+                [interior[@"timeSource"] isEqual:@"observed"] &&
+                [endpoint[@"readAtMilliseconds"] longLongValue] == 10000 &&
+                [endpoint[@"timeSource"] isEqual:@"server_event"],
+                @"migration lost a range date or expanded point evidence to older messages");
+        }
+        SQL(url, "UPDATE read_ranges SET range_at_ms=30000 WHERE chat='range';"
+            "UPDATE observed_ranges SET range_at_ms=0 WHERE chat='range';");
+        CHECK(Scalar(url, "SELECT range_at_ms FROM read_ranges WHERE chat='range'") == 10000 &&
+            Scalar(url, "SELECT range_at_ms FROM observed_ranges WHERE chat='range'") == 10000,
+            @"range-wide date advanced or disappeared after migration");
+    }
+}
+
 int main(void) {
     @autoreleasepool {
         NSURL *directory = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:
@@ -578,15 +655,22 @@ int main(void) {
             CHECK([exactTime[@"readAtMilliseconds"] longLongValue] == 1700000001000 &&
                   [exactTime[@"timeSource"] isEqual:@"server_event"],
                   @"a range snapshot downgraded the exact event date");
+            NSDictionary *rangeBackfill = [store readersInStore:@"s1" chat:@"cursor-time" message:@"7"].firstObject;
+            CHECK([rangeBackfill[@"readAtMilliseconds"] longLongValue] == 1700000001000 &&
+                [rangeBackfill[@"timeSource"] isEqual:@"range"],
+                @"valid range evidence was discarded because an endpoint event already existed");
             NSMutableDictionary *lowerCursor = [eventTime mutableCopy]; lowerCursor[@"end"] = @"5";
             lowerCursor[@"startTime"] = @1700000020000; lowerCursor[@"endTime"] = @1700000020000;
             lowerCursor[@"observedAt"] = @1700000021000;
             CHECK([store recordObservedRangesByReader:@{@"reader":@[lowerCursor]} kind:@"talk" chat:@"cursor-time"], @"lower cursor fixture failed");
             NSDictionary *stillRead = [store readersInStore:@"s1" chat:@"cursor-time" message:@"7"].firstObject;
-            CHECK(stillRead && [stillRead[@"readAtMilliseconds"] longLongValue] == 0 &&
+            CHECK(stillRead && [stillRead[@"readAtMilliseconds"] longLongValue] == 1700000001000 &&
+                  [stillRead[@"timeSource"] isEqual:@"range"] &&
                   [stillRead[@"observedAtMilliseconds"] longLongValue] == 1700000002000,
                   @"lower read-up cursor erased prior coverage or advanced its first observation");
 
+            CheckRangeAndPointDates(store);
+            CheckRangeDateMigration(directory);
             NSDictionary *firstWideRange = @{ @"start":@"0", @"end":@"100", @"startTime":@10000,
                 @"endTime":@10000, @"observedAt":@10001, @"timeSource":@"range" };
             CHECK([store recordRanges:@[firstWideRange] inStore:@"s1" kind:@"talk" chat:@"cumulative-refresh" reader:@"reader"],
@@ -763,7 +847,12 @@ int main(void) {
             CHECK(legacy && [legacy readersInStore:@"legacy" kind:@"talk" chat:@"chat" message:@"5"].count == 1 &&
                   [legacy readersInStore:@"legacy" kind:@"square" chat:@"chat" message:@"5"].count == 0, @"legacy talk-range migration lost isolation");
             CheckManagedKeys(directory);
-            CHECK(![RUINMessageHistoryDiagnostics()[@"unsendRenderingImplemented"] boolValue], @"diagnostics claimed unsend rendering");
+            NSDictionary *diagnostics = RUINMessageHistoryDiagnostics();
+            NSArray *pending = diagnostics[@"pending"];
+            CHECK(diagnostics[@"unsendRenderingImplemented"] == nil &&
+                  ![pending containsObject:@"verified unsend classification and in-chat retained rendering"] &&
+                  ![pending containsObject:@"read-user menu integration"],
+                  @"history diagnostics retained obsolete messaging claims");
             legacy = nil;
         } @catch (NSException *exception) {
             fprintf(stderr, "RUIN history check failed: %s\n", exception.reason.UTF8String ?: "unknown error");
