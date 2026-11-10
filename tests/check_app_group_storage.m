@@ -222,6 +222,98 @@ static void TestUnsafeMappingsAndMarkers(NSURL *root) {
                                   @{@"group.profile.invalid":invalidMarkerGroup}, nil);
 }
 
+static void TestContainerAliases(NSURL *root) {
+    NSURL *container = Directory(root, @"store");
+    NSURL *emptyFallback = Directory(root, @"empty");
+    Directory(root, @"sibling");
+    AddLINEStore(container, @"P_fixture-account");
+    NSURL *parentAlias = [root URLByAppendingPathComponent:@"parent-alias" isDirectory:YES];
+    assert([NSFileManager.defaultManager createSymbolicLinkAtURL:parentAlias
+        withDestinationURL:root error:NULL]);
+    NSArray<NSURL *> *aliases = @[
+        [parentAlias URLByAppendingPathComponent:@"store" isDirectory:YES],
+        [NSURL fileURLWithPath:[root.path stringByAppendingString:@"/sibling/../store/"]],
+        [NSURL fileURLWithPath:[container.path stringByAppendingString:@"/"]]
+    ];
+    NSURL *resolved = nil;
+    NSString *suite = nil;
+    RUINAppGroupStorageDisposition status;
+    for (NSURL *alias in aliases) {
+        assert(Resolve(@"fixture-account", container, alias, nil, nil, nil,
+                       &resolved, &suite, &status));
+        assert(status == RUINAppGroupStorageDispositionNative);
+        assert([resolved isEqual:container]);
+        assert(Resolve(@"fixture-account", alias, container, nil, nil, nil,
+                       &resolved, &suite, &status));
+        assert(status == RUINAppGroupStorageDispositionNative);
+        assert([resolved isEqual:alias]);
+        assert(Resolve(@"fixture-account", nil, emptyFallback, nil, nil, @[container, alias],
+                       &resolved, &suite, &status));
+        assert(status == RUINAppGroupStorageDispositionLegacyMainCandidate);
+        assert([resolved isEqual:container]);
+        assert(Resolve(@"fixture-account", nil, container, nil, nil, @[alias],
+                       &resolved, &suite, &status));
+        assert(status == RUINAppGroupStorageDispositionExistingFallback);
+        assert([resolved isEqual:container]);
+        assert(!suite);
+    }
+
+    NSString *group = @"group.profile.alias";
+    NSDictionary *authorized = @{group:container};
+    NSDictionary *mapping = @{@"group.com.linecorp.line":group};
+    assert(RUINRecordExplicitAppGroupBinding(@"group.com.linecorp.line", group, authorized, NULL));
+    for (NSURL *alias in aliases) {
+        assert(Resolve(@"fixture-account", alias, emptyFallback, mapping, authorized, nil,
+                       &resolved, &suite, &status));
+        assert(status == RUINAppGroupStorageDispositionNative);
+        assert([resolved isEqual:alias]);
+        assert(Resolve(@"fixture-account", nil, alias, mapping, authorized, nil,
+                       &resolved, &suite, &status));
+        assert(status == RUINAppGroupStorageDispositionExplicitMap);
+        assert([resolved isEqual:container]);
+        assert(Resolve(@"fixture-account", nil, alias, nil, authorized, nil,
+                       &resolved, &suite, &status));
+        assert(status == RUINAppGroupStorageDispositionPersistedMap);
+        assert([resolved isEqual:container]);
+    }
+
+    // Comparing identities must not admit a symlink as a container root.
+    NSURL *rootAlias = [root URLByAppendingPathComponent:@"root-alias" isDirectory:YES];
+    assert([NSFileManager.defaultManager createSymbolicLinkAtURL:rootAlias
+        withDestinationURL:container error:NULL]);
+    assert(Resolve(@"fixture-account", rootAlias, emptyFallback, nil, nil, nil,
+                   &resolved, &suite, &status));
+    assert(status == RUINAppGroupStorageDispositionUnsafe);
+    assert([resolved isEqual:emptyFallback]);
+    AssertUnsafePreservesFallback(emptyFallback, @"fixture-account", nil, nil, @[rootAlias]);
+}
+
+static void TestDistinctStoresThroughParentAlias(NSURL *root) {
+    NSURL *native = Directory(root, @"left/store");
+    NSURL *other = Directory(root, @"right/store");
+    NSURL *destination = Directory(root, @"right/nested");
+    AddLINEStore(native, @"P_fixture-account");
+    AddLINEStore(other, @"P_fixture-account");
+    NSURL *link = [root URLByAppendingPathComponent:@"left/jump" isDirectory:YES];
+    assert([NSFileManager.defaultManager createSymbolicLinkAtURL:link
+        withDestinationURL:destination error:NULL]);
+    NSURLComponents *components = [NSURLComponents componentsWithURL:link resolvingAgainstBaseURL:NO];
+    components.path = [link.path stringByAppendingString:@"/../store"];
+    NSURL *fallback = components.URL;
+    // Resolve '..' through the real parent: this is right/store, not left/store.
+    NSURL *resolved = nil;
+    NSString *suite = nil;
+    RUINAppGroupStorageDisposition status;
+    NSError *error = nil;
+    assert(RUINResolveAppGroupStorage(@"group.com.linecorp.line", @"fixture-account",
+        native, fallback, nil, nil, nil, &resolved, &suite, &status, &error));
+    assert(status == RUINAppGroupStorageDispositionUnsafe);
+    assert([error.domain isEqualToString:RUINAppGroupStorageErrorDomain] &&
+           error.code == RUINAppGroupStorageErrorConflictingStores);
+    assert([resolved isEqual:fallback]);
+    assert(!suite);
+}
+
 int main(void) {
     @autoreleasepool {
         NSURL *root = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString]
@@ -235,6 +327,8 @@ int main(void) {
         TestEmptyAccountResolution(Directory(root, @"empty-account-test"));
         TestFallbackPreservedAndLegacyCandidate(Directory(root, @"legacy-test"));
         TestUnsafeMappingsAndMarkers(Directory(root, @"unsafe-test"));
+        TestContainerAliases(Directory(root, @"alias-test"));
+        TestDistinctStoresThroughParentAlias(Directory(root, @"distinct-alias-test"));
         NSURL *partial = Directory(root, @"partial-fallback");
         NSURL *messages = Directory(partial, @"Library/Application Support/PrivateStore/P_fixture-account/Messages");
         assert([[NSData data] writeToURL:[messages URLByAppendingPathComponent:@"ChatExt.sqlite-wal"]
@@ -243,7 +337,7 @@ int main(void) {
             @{@"group.com.linecorp.line":@"group.profile.one"},
             @{@"group.profile.one":Directory(root,@"partial-authorized")}, nil);
         [NSFileManager.defaultManager removeItemAtURL:root error:NULL];
-        puts("PASS App Group namespace selection and binding-marker policy");
+        puts("PASS App Group namespace selection, directory identity and binding-marker policy");
     }
     return 0;
 }
