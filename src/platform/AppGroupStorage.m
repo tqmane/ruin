@@ -47,6 +47,17 @@ static BOOL RUINIsSafeGroupIdentifier(NSString *identifier) {
            ![identifier containsString:@".."];
 }
 
+static BOOL RUINSameDirectory(NSURL *firstURL, NSURL *secondURL) {
+    if (!firstURL.isFileURL || !secondURL.isFileURL) return NO;
+    struct stat first, second;
+    // Compare filesystem identity after the normal access checks; keep the
+    // selected URL unchanged, including OS-provided container aliases.
+    return stat(firstURL.fileSystemRepresentation, &first) == 0 &&
+           stat(secondURL.fileSystemRepresentation, &second) == 0 &&
+           S_ISDIR(first.st_mode) && S_ISDIR(second.st_mode) &&
+           first.st_dev == second.st_dev && first.st_ino == second.st_ino;
+}
+
 static RUINPathState RUINDirectoryState(NSURL *url) {
     if (![url isKindOfClass:NSURL.class] || !url.isFileURL) return RUINPathStateInaccessible;
     NSError *error = nil;
@@ -312,12 +323,12 @@ BOOL RUINResolveAppGroupStorage(NSString *logicalGroupIdentifier,
     BOOL mappedHasData = mappedContents.anyAccountHasLINEData;
 
     if (nativeState == RUINPathStateReadable) {
-        if ((markerURL && ![markerURL.path isEqualToString:nativeContainerURL.path] && markerHasData) ||
-            (hasExplicitMapping && ![mappedURL.path isEqualToString:nativeContainerURL.path] && mappedHasData)) {
+        if ((markerURL && !RUINSameDirectory(markerURL, nativeContainerURL) && markerHasData) ||
+            (hasExplicitMapping && !RUINSameDirectory(mappedURL, nativeContainerURL) && mappedHasData)) {
             return RUINFailResolution(RUINAppGroupStorageErrorConflictingStores,
                                       currentFallbackURL, resolvedContainerURL, suiteName, disposition, error);
         }
-        if (fallbackHasData && ![currentFallbackURL.path isEqualToString:nativeContainerURL.path]) {
+        if (fallbackHasData && !RUINSameDirectory(currentFallbackURL, nativeContainerURL)) {
             return RUINFailResolution(RUINAppGroupStorageErrorConflictingStores,
                                       currentFallbackURL, resolvedContainerURL, suiteName, disposition, error);
         }
@@ -327,11 +338,11 @@ BOOL RUINResolveAppGroupStorage(NSString *logicalGroupIdentifier,
     }
 
     if (hasExplicitMapping) {
-        if (markerURL && ![markerURL.path isEqualToString:mappedURL.path]) {
+        if (markerURL && !RUINSameDirectory(markerURL, mappedURL)) {
             return RUINFailResolution(RUINAppGroupStorageErrorConflictingStores,
                                       currentFallbackURL, resolvedContainerURL, suiteName, disposition, error);
         }
-        if (fallbackHasData && ![currentFallbackURL.path isEqualToString:mappedURL.path]) {
+        if (fallbackHasData && !RUINSameDirectory(currentFallbackURL, mappedURL)) {
             return RUINFailResolution(RUINAppGroupStorageErrorConflictingStores,
                                       currentFallbackURL, resolvedContainerURL, suiteName, disposition, error);
         }
@@ -341,7 +352,7 @@ BOOL RUINResolveAppGroupStorage(NSString *logicalGroupIdentifier,
     }
 
     if (markerURL) {
-        if (fallbackHasData && ![currentFallbackURL.path isEqualToString:markerURL.path]) {
+        if (fallbackHasData && !RUINSameDirectory(currentFallbackURL, markerURL)) {
             return RUINFailResolution(RUINAppGroupStorageErrorConflictingStores,
                                       currentFallbackURL, resolvedContainerURL, suiteName, disposition, error);
         }
@@ -360,10 +371,11 @@ BOOL RUINResolveAppGroupStorage(NSString *logicalGroupIdentifier,
             return RUINFailResolution(RUINAppGroupStorageErrorInaccessibleContainer,
                                       currentFallbackURL, resolvedContainerURL, suiteName, disposition, error);
         }
+        if (RUINSameDirectory(candidate, currentFallbackURL)) continue;
         if (candidateContents.verifiedAccountHasLINEData) {
             BOOL alreadyAdded = NO;
             for (NSURL *existing in legacyCandidates)
-                if ([existing.standardizedURL.path isEqualToString:candidate.standardizedURL.path]) {
+                if (RUINSameDirectory(existing, candidate)) {
                     alreadyAdded = YES;
                     break;
                 }
