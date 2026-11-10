@@ -10,6 +10,8 @@ FOUNDATION_EXPORT NSString *const RUINTrackReadUsersKey;
 // All methods serialize access to the SQLite connection.
 // Reader rows retain earliest positive known/observed times independently;
 // later cursors/duplicates cannot advance an earlier message's original date.
+// Range-wide dates remain separate from endpoint-only event evidence, even
+// when both inputs share the same (start, end] boundaries.
 @interface RUINHistoryStore : NSObject
 - (nullable instancetype)initWithURL:(NSURL *)url error:(NSError * _Nullable * _Nullable)error;
 - (BOOL)saveSnapshot:(NSDictionary *)snapshot;

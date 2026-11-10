@@ -74,7 +74,8 @@ static NSArray<NSDictionary *> *NormalizedRanges(id ranges) {
         NSString *source = known > 0 ? ([suppliedSource isEqual:@"server_event"] ? @"server_event" : @"range") :
             (observed > 0 ? @"observed" : @"unknown");
         [result addObject:@{@"start":@(start), @"end":@(end), @"startTime":@(startTime), @"endTime":@(endTime),
-            @"readAt":@(known), @"observedAt":@(observed), @"timeSource":source}];
+            @"readAt":@(known), @"rangeReadAt":@([source isEqual:@"range"] ? known : 0),
+            @"observedAt":@(observed), @"timeSource":source}];
     }
     return [result copy];
 }
@@ -163,11 +164,17 @@ static int InitializeSchema(sqlite3 *db) {
         if (status == SQLITE_OK) status = AddTimeColumn(db, table.UTF8String, "read_at_ms", "INTEGER NOT NULL DEFAULT 0");
         if (status == SQLITE_OK) status = AddTimeColumn(db, table.UTF8String, "observed_ms", "INTEGER NOT NULL DEFAULT 0");
         if (status == SQLITE_OK) status = AddTimeColumn(db, table.UTF8String, "time_source", "TEXT NOT NULL DEFAULT 'legacy'");
+        if (status == SQLITE_OK) status = AddTimeColumn(db, table.UTF8String, "range_at_ms", "INTEGER NOT NULL DEFAULT 0");
         if (status != SQLITE_OK) break;
         NSString *migration = [NSString stringWithFormat:
             @"UPDATE %@ SET read_at_ms=CASE WHEN end_ms>0 THEN end_ms WHEN start_ms>0 THEN start_ms ELSE 0 END WHERE time_source='legacy' AND read_at_ms=0;", table];
         status = sqlite3_exec(db, migration.UTF8String, NULL, NULL, NULL);
-        for (NSString *column in @[@"read_at_ms", @"observed_ms"]) {
+        // A point event can share the same boundaries with an earlier range.
+        // Keep the range-wide date independently of the preferred point source.
+        NSString *rangeMigration = [NSString stringWithFormat:
+            @"UPDATE %@ SET range_at_ms=read_at_ms WHERE range_at_ms=0 AND read_at_ms>0 AND time_source IN ('range','legacy');", table];
+        if (status == SQLITE_OK) status = sqlite3_exec(db, rangeMigration.UTF8String, NULL, NULL, NULL);
+        for (NSString *column in @[@"read_at_ms", @"observed_ms", @"range_at_ms"]) {
             if (status != SQLITE_OK) break;
             NSString *trigger = [NSString stringWithFormat:
                 @"CREATE TRIGGER IF NOT EXISTS ruin_first_%@_%@ BEFORE UPDATE OF %@ ON %@ "
@@ -275,9 +282,9 @@ static int InitializeSchema(sqlite3 *db) {
         if (_lastError != SQLITE_OK) return NO;
         sqlite3_stmt *statement = NULL;
         const char *sql = store ?
-            "INSERT INTO read_ranges(store,kind,chat,reader,start_id,end_id,start_ms,end_ms,read_at_ms,observed_ms,time_source) VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(store,kind,chat,reader,start_id,end_id) "
+            "INSERT INTO read_ranges(store,kind,chat,reader,start_id,end_id,start_ms,end_ms,read_at_ms,observed_ms,range_at_ms,time_source) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(store,kind,chat,reader,start_id,end_id) "
             "DO UPDATE SET " :
-            "INSERT INTO observed_ranges(kind,chat,reader,start_id,end_id,start_ms,end_ms,read_at_ms,observed_ms,time_source) VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(kind,chat,reader,start_id,end_id) "
+            "INSERT INTO observed_ranges(kind,chat,reader,start_id,end_id,start_ms,end_ms,read_at_ms,observed_ms,range_at_ms,time_source) VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(kind,chat,reader,start_id,end_id) "
             "DO UPDATE SET ";
         NSString *upsert = [@(sql) stringByAppendingString:
             @"start_ms=CASE WHEN start_ms=0 THEN excluded.start_ms WHEN excluded.start_ms=0 THEN start_ms ELSE MIN(start_ms,excluded.start_ms) END,"
@@ -286,6 +293,7 @@ static int InitializeSchema(sqlite3 *db) {
              "WHEN excluded.read_at_ms>0 AND excluded.read_at_ms=read_at_ms AND excluded.time_source='server_event' THEN 'server_event' "
              "WHEN read_at_ms=0 AND observed_ms=0 AND excluded.observed_ms>0 THEN 'observed' ELSE time_source END,"
              "read_at_ms=CASE WHEN read_at_ms=0 THEN excluded.read_at_ms WHEN excluded.read_at_ms=0 THEN read_at_ms ELSE MIN(read_at_ms,excluded.read_at_ms) END,"
+             "range_at_ms=CASE WHEN range_at_ms=0 THEN excluded.range_at_ms WHEN excluded.range_at_ms=0 THEN range_at_ms ELSE MIN(range_at_ms,excluded.range_at_ms) END,"
              "observed_ms=CASE WHEN observed_ms=0 THEN excluded.observed_ms WHEN excluded.observed_ms=0 THEN observed_ms ELSE MIN(observed_ms,excluded.observed_ms) END;"];
         _lastError = sqlite3_prepare_v2(_database, upsert.UTF8String, -1, &statement, NULL);
         for (NSString *reader in normalized) {
@@ -295,7 +303,7 @@ static int InitializeSchema(sqlite3 *db) {
                 if (_lastError == SQLITE_OK) _lastError = sqlite3_clear_bindings(statement);
                 NSArray *strings = store ? @[store, kind, chat, reader] : @[kind, chat, reader];
                 if (_lastError == SQLITE_OK) _lastError = BindStrings(statement, strings);
-                NSArray *keys = @[@"start", @"end", @"startTime", @"endTime", @"readAt", @"observedAt"];
+                NSArray *keys = @[@"start", @"end", @"startTime", @"endTime", @"readAt", @"observedAt", @"rangeReadAt"];
                 for (NSUInteger i = 0; i < keys.count && _lastError == SQLITE_OK; i++)
                     _lastError = sqlite3_bind_int64(statement, (int)(strings.count + i + 1), [range[keys[i]] longLongValue]);
                 if (_lastError == SQLITE_OK) _lastError = BindText(statement, (int)(strings.count + keys.count + 1), range[@"timeSource"]);
@@ -332,21 +340,24 @@ static int InitializeSchema(sqlite3 *db) {
         sqlite3_stmt *statement = NULL;
         _lastError = sqlite3_prepare_v2(_database,
             "WITH candidates AS ("
-            "SELECT reader,start_id,end_id,read_at_ms,observed_ms,time_source FROM read_ranges WHERE store=?1 AND kind=?2 AND chat=?3 "
-            "UNION ALL SELECT reader,start_id,end_id,read_at_ms,observed_ms,time_source FROM observed_ranges o WHERE kind=?2 AND chat=?3 "
+            "SELECT reader,start_id,end_id,read_at_ms,observed_ms,time_source,range_at_ms FROM read_ranges WHERE store=?1 AND kind=?2 AND chat=?3 "
+            "UNION ALL SELECT reader,start_id,end_id,read_at_ms,observed_ms,time_source,range_at_ms FROM observed_ranges o WHERE kind=?2 AND chat=?3 "
             "AND (SELECT COUNT(*) FROM chat_stores b WHERE b.kind=o.kind AND b.chat=o.chat)=1 "
             "AND EXISTS(SELECT 1 FROM chat_stores b WHERE b.kind=o.kind AND b.chat=o.chat AND b.store=?1)) "
             ", spans AS (SELECT reader,MIN(start_id) AS floor_id,MAX(end_id) AS ceiling_id FROM candidates GROUP BY reader), "
             "members AS (SELECT reader FROM spans WHERE floor_id<?4 AND ceiling_id>=?4), "
             "relevant AS (SELECT * FROM candidates WHERE start_id<?4 AND end_id>=?4), "
-            "first_times AS (SELECT reader,MIN(CASE WHEN read_at_ms>0 AND (time_source!='server_event' OR end_id=?4) THEN read_at_ms END) AS known_ms,"
-            "MIN(NULLIF(observed_ms,0)) AS seen_ms FROM relevant GROUP BY reader), "
+            "dated AS (SELECT *,CASE WHEN time_source='server_event' AND end_id=?4 AND read_at_ms>0 "
+            "AND (range_at_ms=0 OR read_at_ms<=range_at_ms) THEN read_at_ms ELSE range_at_ms END AS date_ms,"
+            "CASE WHEN time_source='server_event' AND end_id=?4 AND read_at_ms>0 "
+            "AND (range_at_ms=0 OR read_at_ms<=range_at_ms) THEN 'server_event' ELSE 'range' END AS date_source FROM relevant), "
+            "first_times AS (SELECT reader,MIN(NULLIF(date_ms,0)) AS known_ms,"
+            "MIN(NULLIF(observed_ms,0)) AS seen_ms FROM dated GROUP BY reader), "
             "chosen AS (SELECT m.reader,CASE WHEN f.known_ms>0 AND (f.seen_ms IS NULL OR f.known_ms<=f.seen_ms) THEN f.known_ms END AS read_ms,f.seen_ms "
             "FROM members m LEFT JOIN first_times f ON f.reader=m.reader) "
             "SELECT f.reader,COALESCE(f.read_ms,0),COALESCE(f.seen_ms,0),"
-            "COALESCE((SELECT CASE WHEN r.time_source='server_event' THEN 'server_event' ELSE 'range' END FROM relevant r "
-            "WHERE r.reader=f.reader AND r.read_at_ms=f.read_ms AND (r.time_source!='server_event' OR r.end_id=?4) "
-            "ORDER BY CASE WHEN r.time_source='server_event' THEN 0 ELSE 1 END LIMIT 1),"
+            "COALESCE((SELECT r.date_source FROM dated r WHERE r.reader=f.reader AND r.date_ms=f.read_ms "
+            "ORDER BY CASE WHEN r.date_source='server_event' THEN 0 ELSE 1 END LIMIT 1),"
             "CASE WHEN f.seen_ms>0 THEN 'observed' ELSE 'unknown' END) "
             "FROM chosen f ORDER BY CASE WHEN COALESCE(f.read_ms,f.seen_ms,0)>0 THEN 0 ELSE 1 END,COALESCE(f.read_ms,f.seen_ms),f.reader;", -1, &statement, NULL);
         if (_lastError == SQLITE_OK) _lastError = BindStrings(statement, @[store, kind, chat]);
@@ -1034,6 +1045,5 @@ NSDictionary *RUINMessageHistoryDiagnostics(void) {
         @"readObserverKind":@"talk; OpenChat read-event source not verified",
         @"readRangeCaptureBoundary":@"LineTMessageReadRange.ranges getter returns a completed model; read: decode getters are suppressed",
         @"rangeBoundaryConvention":@"start<message<=end per Android reference; iOS wire boundary/device behavior remains unverified",
-        @"unsendRenderingImplemented":@NO,
-        @"pending":@[@"verified unsend classification and in-chat retained rendering", @"media retention", @"iOS read-range boundary/device verification", @"OpenChat read-event source", @"read-user menu integration"]};
+        @"pending":@[@"media retention", @"iOS read-range boundary/device verification", @"OpenChat read-event source"]};
 }
