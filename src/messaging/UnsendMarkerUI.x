@@ -5,6 +5,10 @@
 #import "UnsendMarkerUI.h"
 #import "UnsendOperation.h"
 #import "MessageHistory.h"
+#if TARGET_OS_IPHONE
+#import "RetainedMedia.h"
+#import "RetainedMediaViewer.h"
+#endif
 #import "Features.h"
 #import "SwiftFields.h"
 #import "../core/Localization.h"
@@ -19,23 +23,11 @@
 #import <math.h>
 #import <string.h>
 
-/* Exact manifest-matching LINE 26.16.0 / 2026.1006.1718 metadata:
- _TtC17LineMessagingUIV219ChatTextMessageCell -> ChatBaseMessageCell:
- messageViewModel field 0x10ae9f458, ChatMessageViewModelProtocol? weak;
- contentContainerView 0x10ae9f248: ChatMessageContainerView;
- messageStatusView 0x10ae9f290: ChatMessageStatusView?.
- _TtC17LineMessagingUIV224ChatTextMessageViewModel -> ChatMessageViewModel:
- messageIdentifier 0x10ae9e6c4: LineSharedMessaging.MessageIdentifier?;
- server case 0x10aefaf60: MessageServerID; value 0x10aefaf88: Swift.Int64.
- FetchedModel.ID.wrappedValue (0x10af9833c) is AnyHashable, NOT assumed to
- be NSManagedObjectID. Probe reports its class without descriptions/values.
- Cell prepareForReuse v16@0:8 0x10449eef8; inherited base layoutSubviews
- v16@0:8 0x104480f90. Only the exact text-cell class is materialized/swizzled.
- Owning ChatViewController -chat @16@0:8 is the existing verified bridge.
- Resolve a permanent Message by typed server ID AND actual chat relationship,
- in that chat's own persistent store, then use RUINHistoryMessageKey.
- Never read/rewrite native text/attributed strings, mutate models, resize the
- native cell, invoke a Swift ABI function, or bind by visible label text.
+/* Native base message cells expose their view model, bubble and status through
+ verified Swift field metadata. Bind by typed MessageIdentifier.server.value
+ and the owning controller's actual chat/context/store, never visible text.
+ Layout and message content remain native. A reuse generation seals async
+ identity binding; cancelled media alone gains a standard-viewer tap target.
  */
 
 static BOOL UITargetMatches(void) {
@@ -50,7 +42,10 @@ static NSString *UIServerNumber(id value) {
     long long number = [value longLongValue];
     return number > 0 ? [NSString stringWithFormat:@"%lld", number] : nil;
 }
-static NSDictionary *UIResolveMessageKey(NSManagedObject *chat, NSString *server) {
+static NSDictionary *UIResolveMessageKeyAndVideo(NSManagedObject *chat, NSString *server, NSURL *videoURL) {
+#if !TARGET_OS_IPHONE
+    (void)videoURL;
+#endif
     Class chatClass = objc_getClass("ManagedChat"), messageClass = objc_getClass("ManagedMessage");
     if (!chatClass || !messageClass || ![chat isKindOfClass:chatClass] || ![chat isKindOfClass:NSManagedObject.class] || !server) return @{};
     NSManagedObjectContext *context = chat.managedObjectContext;
@@ -73,9 +68,18 @@ static NSDictionary *UIResolveMessageKey(NSManagedObject *chat, NSString *server
             message.objectID.persistentStore != chat.objectID.persistentStore) return;
         NSDictionary *candidate = RUINHistoryMessageKey(message);
         if ([candidate[@"kind"] isEqual:@"talk"] && [candidate[@"message"] isEqual:server] &&
-            [candidate[@"chat"] isEqual:[chat valueForKey:@"mid"]]) key = candidate;
+            [candidate[@"chat"] isEqual:[chat valueForKey:@"mid"]]) {
+            key = candidate;
+#if TARGET_OS_IPHONE
+            RUINObserveRetainedMedia(message, candidate);
+            if (videoURL) RUINObserveRetainedVideoURL(message, candidate, videoURL);
+#endif
+        }
     }];
     return key;
+}
+static NSDictionary *UIResolveMessageKey(NSManagedObject *chat, NSString *server) {
+    return UIResolveMessageKeyAndVideo(chat, server, nil);
 }
 // Reuse seal: an old weak view model cannot immediately repaint a recycled
 // cell before native configuration binds another model. No message is kept.
@@ -88,10 +92,12 @@ static NSDictionary *UIResolveMessageKey(NSManagedObject *chat, NSString *server
 @property(nonatomic) BOOL awaitingModelChange;
 @property(nonatomic) BOOL bindingPending;
 @property(nonatomic) NSUInteger generation;
+@property(nonatomic) CFTimeInterval lastMediaObservation;
+@property(nonatomic) BOOL mediaObservationPending;
 @end
 @implementation RUINUnsendMarkerRecord @end
 static void UIClearBinding(RUINUnsendMarkerRecord *record) {
-    record.model = nil; record.chat = nil; record.server = nil; record.key = nil; record.bindingPending = NO; record.generation++;
+    record.model = nil; record.chat = nil; record.server = nil; record.key = nil; record.bindingPending = NO; record.mediaObservationPending = NO; record.lastMediaObservation = 0; record.generation++;
 }
 static void UISealReuse(RUINUnsendMarkerRecord *record, id oldModel) {
     UIClearBinding(record); record.reusedModel = oldModel; record.awaitingModelChange = YES;
@@ -115,16 +121,16 @@ static CGRect UIBadgeCandidate(CGRect bounds, CGRect bubble, CGRect status, CGSi
 #if TARGET_OS_IPHONE
 #import <UIKit/UIKit.h>
 
-static const char *UICellClass = "_TtC17LineMessagingUIV219ChatTextMessageCell";
-static const char *UIModelClass = "_TtC17LineMessagingUIV224ChatTextMessageViewModel";
+static const char *UICellClass = "_TtC17LineMessagingUIV219ChatBaseMessageCell";
+static const char *UIModelClass = "_TtC17LineMessagingUIV220ChatMessageViewModel";
 static const char *UIChatControllerClass = "_TtC15LineMessagingUI18ChatViewController";
-static char UIRecordKey, UIBadgeKey;
+static char UIRecordKey, UIBadgeKey, UIMediaButtonKey;
 static NSHashTable<UICollectionViewCell *> *UICells;
 static NSTimer *UITimer;
 static NSArray *UIObservers;
 static os_unfair_lock UIProbeLock = OS_UNFAIR_LOCK_INIT;
 static NSDictionary *UIProbe;
-static BOOL UIHasModelProbe;
+static BOOL UIHasModelProbe, UIHasVideoModelProbe;
 static atomic_uint_fast64_t UILayoutCalls, UIReuseCalls, UIBoundCells, UIUnresolvedCells, UIMarkerMatches, UIBadgesAdded, UIBadgesRemoved, UINoSpace, UIErrors;
 static atomic_uint UIVisibleCount;
 static _Thread_local unsigned int UIHookDepth;
@@ -145,18 +151,25 @@ static RUINUnsendMarkerRecord *UIRecord(UICollectionViewCell *cell) {
 static void UIRemoveBadge(UICollectionViewCell *cell) {
     UILabel *badge = objc_getAssociatedObject(cell, &UIBadgeKey);
     if (badge.superview) { [badge removeFromSuperview]; atomic_fetch_add(&UIBadgesRemoved, 1); }
+    UIView *mediaButton = objc_getAssociatedObject(cell, &UIMediaButtonKey);
+    [mediaButton removeFromSuperview];
 }
 static id UIField(id object, const char *path) { return RUINCopySwiftField(object, path); }
 static void UIObserveMetadata(UICollectionViewCell *cell) {
     NSMutableArray *paths = [NSMutableArray array];
     for (NSString *path in @[@"messageViewModel", @"messageViewModel.messageIdentifier", @"messageViewModel.messageIdentifier.server",
         @"messageViewModel.messageIdentifier.server.value", @"messageViewModel.message", @"messageViewModel.message.id",
-        @"messageViewModel.message.id.wrappedValue", @"contentContainerView", @"messageStatusView", @"messageContentView"]) {
+        @"messageViewModel.message.id.wrappedValue", @"contentContainerView", @"messageStatusView", @"messageContentView",
+        @"messageViewModel.contentLoadStatus", @"messageViewModel.mediaAndDownloadURLs.media",
+        @"messageViewModel.videoPlayItem.resolvedURL.videoMessage.url", @"messageViewModel.videoPlayItem.loadedURLInfo.url",
+        @"messageViewModel.videoViewModel", @"messageContentView.viewModel",
+        @"messageContentView.videoView", @"messageContentView.playerView", @"messageContentView.videoViewModel"]) {
         id value = UIField(cell, path.UTF8String);
         NSArray *names = value ? RUINCopySwiftFieldNames(value) : @[];
         if (names.count > 64) names = [names subarrayWithRange:NSMakeRange(0, 64)];
         [paths addObject:@{@"path":path, @"present":@(value != nil), @"valueClass":value ? NSStringFromClass(object_getClass(value)) : @"",
-            @"fieldNames":names ?: @[], @"isManagedObjectID":@([value isKindOfClass:NSManagedObjectID.class])}];
+            @"fieldNames":names ?: @[], @"isManagedObjectID":@([value isKindOfClass:NSManagedObjectID.class]),
+            @"isLocalURL":@([value isKindOfClass:NSURL.class] && [value isFileURL])}];
     }
     NSArray *names = RUINCopySwiftFieldNames(cell) ?: @[];
     if (names.count > 64) names = [names subarrayWithRange:NSMakeRange(0, 64)];
@@ -177,6 +190,70 @@ static NSManagedObject *UIOwnerChat(UIViewController *controller) {
     id chat = [(id<RUINMessagingChatOwner>)controller chat];
     return [chat isKindOfClass:NSManagedObject.class] ? chat : nil;
 }
+// The native media cell and its layout remain intact. Only a retained,
+// cancelled asset gets a tap target over its existing bubble; normal messages
+// keep LINE's native gestures/viewer. Reuse and each tap revalidate identity.
+@interface RUINRetainedMediaButton : UIButton
+@property(nonatomic, weak) UICollectionViewCell *messageCell;
+@property(nonatomic, copy) NSDictionary *messageKey;
+@property(nonatomic, strong) UIImageView *preview;
+@property(nonatomic, strong) NSURL *previewURL;
+@end
+@implementation RUINRetainedMediaButton
+- (void)openMedia {
+    UICollectionViewCell *cell = self.messageCell;
+    RUINUnsendMarkerRecord *record = cell ? UIRecord(cell) : nil;
+    if (!cell.window || !UIEnabled() || ![record.key isEqual:self.messageKey] ||
+        UIField(cell, "messageViewModel") != record.model ||
+        ![UIServerNumber(UIField(record.model, "messageIdentifier.server.value")) isEqual:record.server] ||
+        UIOwnerChat(UIOwnerController(cell)) != record.chat) return;
+    RUINPresentRetainedMediaViewer(UIOwnerController(cell), RUINRetainedMediaItems(record.key));
+}
+@end
+
+static BOOL UIHasNativeImage(UIView *view, UIView *bubble, NSUInteger depth) {
+    if (!view || view.hidden || view.alpha <= 0.01 || depth > 16) return NO;
+    if ([view isKindOfClass:UIImageView.class] && [(UIImageView *)view image]) {
+        CGRect frame = [view convertRect:view.bounds toView:bubble];
+        if (frame.size.width * frame.size.height >= bubble.bounds.size.width * bubble.bounds.size.height * 0.5)
+            return YES;
+    }
+    for (UIView *child in view.subviews) if (UIHasNativeImage(child, bubble, depth + 1)) return YES;
+    return NO;
+}
+static BOOL UIUpdateMedia(UICollectionViewCell *cell, UIView *bubble, NSDictionary *key) {
+    NSArray *items = RUINRetainedMediaItems(key);
+    if (!items.count) return NO;
+    RUINRetainedMediaButton *button = objc_getAssociatedObject(cell, &UIMediaButtonKey);
+    if (!button) {
+        button = [RUINRetainedMediaButton buttonWithType:UIButtonTypeCustom];
+        button.preview = [UIImageView new]; button.preview.contentMode = UIViewContentModeScaleAspectFit;
+        button.preview.userInteractionEnabled = NO; button.preview.clipsToBounds = YES;
+        button.preview.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        [button addSubview:button.preview];
+        [button addTarget:button action:@selector(openMedia) forControlEvents:UIControlEventTouchUpInside];
+        button.accessibilityLabel = RUINLocalizedString(@"menu.retainedMedia");
+        button.accessibilityIdentifier = @"RUINRetainedMedia";
+        objc_setAssociatedObject(cell, &UIMediaButtonKey, button, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    NSURL *previewURL = nil;
+    for (NSString *role in @[@"photo", @"thumbnail"])
+        for (NSDictionary *item in items) if (!previewURL && [item[@"role"] isEqual:role]) previewURL = item[@"URL"];
+    BOOL nativeImage = UIHasNativeImage(bubble, bubble, 0);
+    if (nativeImage) { button.preview.image = nil; button.previewURL = nil; }
+    else if (![button.previewURL isEqual:previewURL]) {
+        button.previewURL = previewURL;
+        button.preview.image = previewURL ? [UIImage imageWithContentsOfFile:previewURL.path] : nil;
+    }
+    button.preview.hidden = nativeImage;
+    button.messageKey = key; button.messageCell = cell;
+    button.frame = [bubble convertRect:bubble.bounds toView:cell.contentView];
+    button.preview.frame = button.bounds;
+    if (button.superview != cell.contentView) [cell.contentView addSubview:button];
+    [cell.contentView bringSubviewToFront:button];
+    return YES;
+}
+
 static BOOL UIHasContentAt(UIView *view, UIView *host, UILabel *ownBadge, CGRect frame, NSUInteger depth, NSUInteger *budget) {
     if (view == ownBadge || view.hidden || view.alpha <= 0.01) return NO;
     if (!*budget || depth > 20) return YES;
@@ -194,8 +271,53 @@ static BOOL UIHasContentAt(UIView *view, UIView *host, UILabel *ownBadge, CGRect
     for (UIView *child in view.subviews) if (UIHasContentAt(child, host, ownBadge, frame, depth + 1, budget)) return YES;
     return NO;
 }
+static BOOL UIMediaCell(UICollectionViewCell *cell) {
+    for (NSString *name in @[@"_TtC17LineMessagingUIV220ChatImageMessageCell", @"_TtC17LineMessagingUIV220ChatVideoMessageCell",
+        @"_TtC17LineMessagingUIV222ChatVideoMessageCellV2", @"_TtC17LineMessagingUIV220ChatAudioMessageCell",
+        @"_TtC17LineMessagingUIV219ChatFileMessageCell"])
+        if ([cell isKindOfClass:NSClassFromString(name)]) return YES;
+    return NO;
+}
+static NSURL *UIResolvedVideoURL(UICollectionViewCell *cell, RUINUnsendMarkerRecord *record) {
+    if (UIField(cell, "messageViewModel") != record.model) return nil;
+    id model = record.model;
+    if ([model isKindOfClass:NSClassFromString(@"_TtC15LineMessagingUI25ChatVideoMessageViewModel")]) {
+        id URL = UIField(model, "mediaAndDownloadURLs.media");
+        return [URL isKindOfClass:NSURL.class] && [URL isFileURL] ? URL : nil;
+    }
+    if ([model isKindOfClass:NSClassFromString(@"_TtC17LineMessagingUIV227ChatVideoMessageViewModelV2")] &&
+        [UIField(model, "videoPlayItem.resolvedURL.videoMessage.messageID") isEqual:record.server])
+        for (NSString *path in @[@"videoPlayItem.loadedURLInfo.url", @"videoPlayItem.resolvedURL.videoMessage.url"]) {
+            id URL = UIField(model, path.UTF8String);
+            if ([URL isKindOfClass:NSURL.class] && [URL isFileURL]) return URL;
+        }
+    return nil;
+}
+static void UIObserveVisibleMedia(UICollectionViewCell *cell, RUINUnsendMarkerRecord *record, BOOL force) {
+    if (!UIEnabled() || !UIMediaCell(cell) || record.mediaObservationPending || !record.key.count ||
+        (!force && NSProcessInfo.processInfo.systemUptime - record.lastMediaObservation < 1)) return;
+    NSManagedObject *chat = record.chat;
+    NSManagedObjectContext *context = chat.managedObjectContext;
+    NSString *server = record.server;
+    if (!context || !server) return;
+    record.mediaObservationPending = YES; record.lastMediaObservation = NSProcessInfo.processInfo.systemUptime;
+    NSURL *videoURL = [UIResolvedVideoURL(cell, record) copy];
+    NSUInteger generation = record.generation;
+    __weak RUINUnsendMarkerRecord *weakRecord = record;
+    // ponytail: reuse the existing visible-cell heartbeat until LINE exposes a
+    // verified common media-download completion callback. Only media cells are
+    // re-resolved; UIKit never waits on their managed-object queue.
+    [context performBlock:^{
+        @try { UIResolveMessageKeyAndVideo(chat, server, videoURL); }
+        @catch (__unused NSException *exception) { atomic_fetch_add(&UIErrors, 1); }
+        dispatch_async(dispatch_get_main_queue(), ^{
+            RUINUnsendMarkerRecord *latest = weakRecord;
+            if (latest.generation == generation) latest.mediaObservationPending = NO;
+        });
+    }];
+}
 static void UIRefreshCell(UICollectionViewCell *cell) {
-    if (object_getClass(cell) != objc_getClass(UICellClass)) return;
+    if (![cell isKindOfClass:objc_getClass(UICellClass)]) return;
     if (!UICells) UICells = [NSHashTable weakObjectsHashTable]; [UICells addObject:cell];
     RUINUnsendMarkerRecord *record = UIRecord(cell);
     if (!UIEnabled() || !cell.window || cell.hidden || cell.alpha <= 0.01 || UIApplication.sharedApplication.applicationState != UIApplicationStateActive) {
@@ -203,7 +325,12 @@ static void UIRefreshCell(UICollectionViewCell *cell) {
     }
     @try {
         id model = UIField(cell, "messageViewModel");
-        if (model && !UIHasModelProbe) { UIObserveMetadata(cell); UIHasModelProbe = YES; }
+        BOOL videoCell = [cell isKindOfClass:NSClassFromString(@"_TtC17LineMessagingUIV220ChatVideoMessageCell")] ||
+            [cell isKindOfClass:NSClassFromString(@"_TtC17LineMessagingUIV222ChatVideoMessageCellV2")];
+        if (model && (!UIHasModelProbe || (videoCell && !UIHasVideoModelProbe))) {
+            UIObserveMetadata(cell); UIHasModelProbe = YES;
+            if (videoCell) UIHasVideoModelProbe = YES;
+        }
         Class modelClass = objc_getClass(UIModelClass);
         if (!modelClass || ![model isKindOfClass:modelClass] || !UIMayBind(record, model)) { UIRemoveBadge(cell); return; }
         NSString *server = UIServerNumber(UIField(model, "messageIdentifier.server.value"));
@@ -240,12 +367,15 @@ static void UIRefreshCell(UICollectionViewCell *cell) {
             }];
             UIRemoveBadge(cell); return;
         }
-        if (!RUINUnsendOperationHasRetainedMarker(record.key)) { UIRemoveBadge(cell); return; }
+        UIObserveVisibleMedia(cell, record, NO);
+        NSArray *mediaItems = RUINRetainedMediaItems(record.key);
+        if (!mediaItems.count && !RUINUnsendOperationHasRetainedMarker(record.key)) { UIRemoveBadge(cell); return; }
         atomic_fetch_add(&UIMarkerMatches, 1);
         UIView *bubble = UIField(cell, "contentContainerView"), *status = UIField(cell, "messageStatusView");
         if (object_getClass(bubble) != objc_getClass("_TtC17LineMessagingUIV224ChatMessageContainerView") ||
             ![status isKindOfClass:NSClassFromString(@"_TtC17LineMessagingUIV221ChatMessageStatusView")] ||
             ![bubble isDescendantOfView:cell.contentView] || ![status isDescendantOfView:cell.contentView] || status.hidden) { UIRemoveBadge(cell); return; }
+        BOOL retainedMedia = mediaItems.count && UIUpdateMedia(cell, bubble, record.key);
         UILabel *badge = objc_getAssociatedObject(cell, &UIBadgeKey);
         if (!badge) {
             NSString *markerLabel = RUINLocalizedString(@"取消済");
@@ -264,6 +394,8 @@ static void UIRefreshCell(UICollectionViewCell *cell) {
             CGRect candidate = UIBadgeCandidate(cell.contentView.bounds, body, marks, size, i); NSUInteger budget = 160;
             if (!CGRectIsNull(candidate) && !UIHasContentAt(cell.contentView, cell.contentView, badge, candidate, 0, &budget)) { frame = candidate; break; }
         }
+        if (CGRectIsNull(frame) && retainedMedia && body.size.width >= size.width + 8 && body.size.height >= size.height + 8)
+            frame = CGRectMake(CGRectGetMaxX(body) - size.width - 4, CGRectGetMinY(body) + 4, size.width, size.height);
         if (CGRectIsNull(frame)) { atomic_fetch_add(&UINoSpace, 1); UIRemoveBadge(cell); return; }
         badge.frame = frame;
         if (badge.superview != cell.contentView) { [cell.contentView addSubview:badge]; atomic_fetch_add(&UIBadgesAdded, 1); }
@@ -332,7 +464,7 @@ static void InitUIReuse(Class cls) { %init(RUINMarkerReuse, RUINUnsendMarkerCell
 static void UIScan(UIView *view, NSUInteger depth, NSUInteger *budget) {
     if (!view || !*budget || depth > 28) return;
     (*budget)--;
-    if (object_getClass(view) == objc_getClass(UICellClass)) { [UICells addObject:(id)view]; if (UIEnabled()) UIObserveMetadata((id)view); }
+    if ([view isKindOfClass:objc_getClass(UICellClass)]) { [UICells addObject:(id)view]; if (UIEnabled()) UIObserveMetadata((id)view); }
     for (UIView *child in view.subviews) UIScan(child, depth + 1, budget);
 }
 void RUINRefreshUnsendMarkerUI(void) {
@@ -361,9 +493,14 @@ void RUINInstallUnsendMarkerUI(void) {
     else for (NSUInteger i = 0; i < 3; i++) if (atomic_load(&UIHooks[i].status) != 3) atomic_store(&UIHooks[i].status, 1);
     if (!UIObservers) {
         NSMutableArray *observers = [NSMutableArray array];
-        for (NSNotificationName name in @[NSUserDefaultsDidChangeNotification, UIApplicationDidBecomeActiveNotification, UIApplicationDidEnterBackgroundNotification])
+        for (NSNotificationName name in @[NSUserDefaultsDidChangeNotification, UIApplicationDidBecomeActiveNotification, UIApplicationDidEnterBackgroundNotification, RUINRetainedMediaDidChangeNotification])
             [observers addObject:[NSNotificationCenter.defaultCenter addObserverForName:name object:nil queue:nil
                 usingBlock:^(__unused NSNotification *note) { dispatch_async(dispatch_get_main_queue(), ^{ RUINRefreshUnsendMarkerUI(); }); }]];
+        [observers addObject:[NSNotificationCenter.defaultCenter addObserverForName:UIApplicationWillResignActiveNotification
+            object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
+                for (UICollectionViewCell *cell in UICells.allObjects) if (cell.window)
+                    UIObserveVisibleMedia(cell, UIRecord(cell), YES);
+            }]];
         UIObservers = [observers copy];
     }
     RUINRefreshUnsendMarkerUI();
@@ -377,9 +514,9 @@ NSDictionary *RUINUnsendMarkerUIDiagnostics(void) {
         @"unresolvedBindings":@(atomic_load(&UIUnresolvedCells)), @"markerMatches":@(atomic_load(&UIMarkerMatches)),
         @"badgesAdded":@(atomic_load(&UIBadgesAdded)), @"badgesRemoved":@(atomic_load(&UIBadgesRemoved)), @"noSafeSpace":@(atomic_load(&UINoSpace)),
         @"inspectionErrors":@(atomic_load(&UIErrors)), @"fieldMetadataProbe":probe,
-        @"binding":@"exact text cell/view model; typed MessageIdentifier.server.value; owning controller chat/context; permanent unique Message within actual chat/store; full History key marker query",
+        @"binding":@"native base message cell/view model; typed MessageIdentifier.server.value; owning controller chat/context; permanent unique Message within actual chat/store; full History key marker query",
         @"label":@"取消済", @"nativeTextModified":@NO, @"nativeLayoutResized":@NO, @"pixelVerified":@NO,
-        @"limits":@"text cells only; ambiguous/missing identity or occupied badge space stays native; reused cells wait for a different bound view model; one-second visible-cell polling handles sidecar arrival"};
+        @"limits":@"normal/group message cells; ambiguous/missing identity or occupied badge space stays native; reused cells wait for a different bound view model; one-second visible-cell polling handles sidecar arrival"};
 }
 #endif
 

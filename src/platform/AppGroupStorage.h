@@ -58,4 +58,14 @@ FOUNDATION_EXPORT BOOL RUINRecordExplicitAppGroupBinding(
     NSDictionary<NSString *, NSURL *> *authorizedGroupContainers,
     NSError * _Nullable * _Nullable error);
 
+// Pin a fresh sandbox namespace to the OS-reported signing identity. An
+// unmarked populated store or a changed owner is never adopted or moved.
+FOUNDATION_EXPORT BOOL RUINPinSandboxAppGroupStorage(NSString *logicalGroupIdentifier,
+    NSString *signingIdentifier, NSURL *sandboxURL, NSError * _Nullable * _Nullable error);
+
+// Read only: require an existing valid purpose/owner marker. Never creates a
+// marker or adopts an unmarked sandbox, even when it is empty.
+FOUNDATION_EXPORT BOOL RUINVerifySandboxAppGroupStorageBinding(NSString *logicalGroupIdentifier,
+    NSString *signingIdentifier, NSURL *sandboxURL, NSError * _Nullable * _Nullable error);
+
 NS_ASSUME_NONNULL_END

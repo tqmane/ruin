@@ -1,10 +1,14 @@
 #import <Foundation/Foundation.h>
 #import <Security/SecItem.h>
+#import <mach-o/loader.h>
+#import <dlfcn.h>
 #import <stdatomic.h>
 #import <stdlib.h>
+#import <string.h>
 #import "BundleIdentity.h"
 #import "Keychain.h"
 #import "../core/TargetMetadata.h"
+#import "../core/NativeFunctionPointer.h"
 
 #if !defined(RUIN_KEYCHAIN_HOST_CHECK)
 #import "fishhook.h"
@@ -21,6 +25,7 @@ static OSStatus (*originalSecItemCopyMatching)(CFDictionaryRef, CFTypeRef *);
 static OSStatus (*originalSecItemAdd)(CFDictionaryRef, CFTypeRef *);
 static OSStatus (*originalSecItemUpdate)(CFDictionaryRef, CFDictionaryRef);
 static OSStatus (*originalSecItemDelete)(CFDictionaryRef);
+static void *securityFrameworkHandle;
 #endif
 static NSDictionary<NSString *, NSString *> *accessGroupMap;
 static atomic_uint_fast64_t mappedQueries;
@@ -52,14 +57,13 @@ static BOOL RUINUsesAuthenticatedImports(void) {
 #endif
 
 static RUINKeychainBindingAction RUINKeychainBindingActionForMap(
-    NSDictionary *mapping, BOOL originalGroupsAllowed, BOOL authenticatedImports) {
+    NSDictionary *mapping, BOOL originalGroupsAllowed, BOOL verifiedPlainMainImage) {
     if (![mapping isKindOfClass:NSDictionary.class]) return RUINKeychainBindingActionPermissionUnproven;
     if (!mapping.count) return originalGroupsAllowed
         ? RUINKeychainBindingActionNativePassthrough
         : RUINKeychainBindingActionPermissionUnproven;
-    return authenticatedImports
-        ? RUINKeychainBindingActionUnsupportedAuthenticatedImports
-        : RUINKeychainBindingActionRebind;
+    return verifiedPlainMainImage ? RUINKeychainBindingActionRebind
+        : RUINKeychainBindingActionUnsupportedAuthenticatedImports;
 }
 
 static BOOL RUINKeychainBindingActionNeedsRebind(RUINKeychainBindingAction action) {
@@ -68,6 +72,49 @@ static BOOL RUINKeychainBindingActionNeedsRebind(RUINKeychainBindingAction actio
 
 static BOOL RUINKeychainBindingActionCanReadyWithoutRebind(RUINKeychainBindingAction action) {
     return action == RUINKeychainBindingActionNativePassthrough;
+}
+
+static BOOL RUINKeychainMainImageHasNoAuthenticatedPointerSections(const struct mach_header_64 *header) {
+    if (!header || header->magic != MH_MAGIC_64 || header->filetype != MH_EXECUTE ||
+        header->sizeofcmds > 1024 * 1024 || header->ncmds > header->sizeofcmds / sizeof(struct load_command)) return NO;
+    const uint8_t *cursor = (const void *)(header + 1), *end = cursor + header->sizeofcmds;
+    for (uint32_t i = 0; i < header->ncmds; i++) {
+        if ((size_t)(end - cursor) < sizeof(struct load_command)) return NO;
+        const struct load_command *command = (const void *)cursor;
+        if (command->cmdsize < sizeof(*command) || command->cmdsize > (size_t)(end - cursor)) return NO;
+        if (command->cmd == LC_SEGMENT_64) {
+            if (command->cmdsize < sizeof(struct segment_command_64)) return NO;
+            const struct segment_command_64 *segment = (const void *)command;
+            size_t sectionBytes = command->cmdsize - sizeof(*segment);
+            if (segment->nsects > sectionBytes / sizeof(struct section_64) ||
+                !strncmp(segment->segname, "__AUTH", 6)) return NO;
+            const struct section_64 *sections = (const void *)(segment + 1);
+            for (uint32_t section = 0; section < segment->nsects; section++)
+                if (!strncmp(sections[section].sectname, "__auth", 6)) return NO;
+        }
+        cursor += command->cmdsize;
+    }
+    return cursor == end;
+}
+
+static BOOL RUINKeychainMainImageAllowsRebinding(const RUINVersionMapping *mapping,
+    const RUINMainExecutableImage *image, BOOL authenticatedProducer) {
+    if (!mapping || !mapping->host.version || !mapping->host.build || !mapping->host.uuid ||
+        !image || !image->header || image->header->magic != MH_MAGIC_64 || image->header->filetype != MH_EXECUTE ||
+        image->header->cputype != CPU_TYPE_ARM64 || image->header->cpusubtype != CPU_SUBTYPE_ARM64_ALL ||
+        image->cpuType != CPU_TYPE_ARM64 || image->cpuSubtype != CPU_SUBTYPE_ARM64_ALL ||
+        !RUINVerifyHostImage(&mapping->host, image->header)) return NO;
+
+    NSUUID *expectedUUID = [[NSUUID alloc] initWithUUIDString:@(mapping->host.uuid)];
+    if (!expectedUUID) return NO;
+    uuid_t expectedBytes;
+    [expectedUUID getUUIDBytes:expectedBytes];
+    if (memcmp(image->uuid, expectedBytes, sizeof(expectedBytes))) return NO;
+
+    // The arm64e producer has verified ABI coverage only for the plain 26.17 main image.
+    if (authenticatedProducer &&
+        (strcmp(mapping->host.version, "26.17.0") || strcmp(mapping->host.build, "2026.1103.1841"))) return NO;
+    return RUINKeychainMainImageHasNoAuthenticatedPointerSections(image->header);
 }
 
 typedef RUINGroupPermission (^RUINGroupPermissionProbe)(NSString *group);
@@ -86,6 +133,11 @@ static NSString *RUINIdentifierPrefix(NSString *identifier) {
         return nil;
     NSString *prefix = [identifier substringToIndex:separator.location];
     return RUINIsIdentifierPrefix(prefix) ? prefix : nil;
+}
+
+static NSString *RUINCanonicalAppAccessGroup(NSString *defaultGroup) {
+    NSString *prefix = RUINIdentifierPrefix(defaultGroup);
+    return prefix ? [prefix stringByAppendingString:@".jp.naver.line"] : nil;
 }
 
 static NSArray<NSString *> *RUINSharedGroupsFromMetadata(NSDictionary *metadata) {
@@ -126,8 +178,14 @@ static NSDictionary<NSString *, NSString *> *RUINBuildAccessGroupMap(
     NSMutableDictionary<NSString *, NSString *> *map = [NSMutableDictionary dictionary];
     RUINGroupPermission appPermission = RUINCachedGroupPermission(RUINOldAppAccessGroup, probe, permissionCache);
     if (appPermission != RUINGroupPermissionAllowed && appPermission != RUINGroupPermissionDenied) return nil;
-    if (appPermission == RUINGroupPermissionDenied && ![defaultGroup isEqualToString:RUINOldAppAccessGroup])
+    if (appPermission == RUINGroupPermissionDenied && ![defaultGroup isEqualToString:RUINOldAppAccessGroup]) {
         map[RUINOldAppAccessGroup] = defaultGroup;
+        // LINE may also request its canonical bundle group with this signature's team prefix.
+        NSString *canonicalAppGroup = RUINCanonicalAppAccessGroup(defaultGroup);
+        if (canonicalAppGroup && ![canonicalAppGroup isEqualToString:defaultGroup] &&
+            ![canonicalAppGroup isEqualToString:RUINOldAppAccessGroup])
+            map[canonicalAppGroup] = defaultGroup;
+    }
 
     RUINGroupPermission sharedPermission = RUINCachedGroupPermission(RUINOldSharedAccessGroup, probe, permissionCache);
     if (sharedPermission != RUINGroupPermissionAllowed && sharedPermission != RUINGroupPermissionDenied) return nil;
@@ -179,6 +237,9 @@ static NSDictionary *RUINReuseAccessGroupBinding(NSDictionary *mapping, NSDictio
             probe(previous) != RUINGroupPermissionAllowed) return nil;
         result[logical] = previous;
     }
+    NSString *canonicalAppGroup = RUINCanonicalAppAccessGroup(defaultGroup);
+    if (canonicalAppGroup && result[canonicalAppGroup] && result[RUINOldAppAccessGroup])
+        result[canonicalAppGroup] = result[RUINOldAppAccessGroup];
     return result;
 }
 
@@ -352,6 +413,21 @@ static OSStatus RUINSecItemDelete(CFDictionaryRef query) {
     return originalSecItemDelete(mapped ? (__bridge CFDictionaryRef)mapped : query);
 }
 
+static BOOL RUINResolveSecurityItemOperations(void) {
+    if (!securityFrameworkHandle)
+        securityFrameworkHandle = dlopen("/System/Library/Frameworks/Security.framework/Security", RTLD_LAZY);
+    if (!securityFrameworkHandle) return NO;
+    originalSecItemCopyMatching = (OSStatus (*)(CFDictionaryRef, CFTypeRef *))RUINNativeFunctionPointerForCall(
+        RUINNativeFunctionPointerRaw(dlsym(securityFrameworkHandle, "SecItemCopyMatching")));
+    originalSecItemAdd = (OSStatus (*)(CFDictionaryRef, CFTypeRef *))RUINNativeFunctionPointerForCall(
+        RUINNativeFunctionPointerRaw(dlsym(securityFrameworkHandle, "SecItemAdd")));
+    originalSecItemUpdate = (OSStatus (*)(CFDictionaryRef, CFDictionaryRef))RUINNativeFunctionPointerForCall(
+        RUINNativeFunctionPointerRaw(dlsym(securityFrameworkHandle, "SecItemUpdate")));
+    originalSecItemDelete = (OSStatus (*)(CFDictionaryRef))RUINNativeFunctionPointerForCall(
+        RUINNativeFunctionPointerRaw(dlsym(securityFrameworkHandle, "SecItemDelete")));
+    return originalSecItemCopyMatching && originalSecItemAdd && originalSecItemUpdate && originalSecItemDelete;
+}
+
 void RUINInstallKeychainCompatibility(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
@@ -370,8 +446,16 @@ void RUINInstallKeychainCompatibility(void) {
         if (!mapping) { keychainBindingStatus = @"PermissionUnproven"; return; }
         accessGroupMap = mapping;
 
+        RUINMainExecutableImage mainImage = {0};
+        const RUINVersionMapping *currentMapping = NULL;
+        BOOL verifiedPlainMainImage = NO;
+        if (mapping.count) {
+            currentMapping = RUINCurrentMapping();
+            verifiedPlainMainImage = currentMapping && RUINResolveMainExecutableImage(&mainImage) &&
+                RUINKeychainMainImageAllowsRebinding(currentMapping, &mainImage, RUINUsesAuthenticatedImports());
+        }
         RUINKeychainBindingAction action = RUINKeychainBindingActionForMap(
-            mapping, originalGroupsAllowed, RUINUsesAuthenticatedImports());
+            mapping, originalGroupsAllowed, verifiedPlainMainImage);
         if (RUINKeychainBindingActionCanReadyWithoutRebind(action)) {
             keychainBindingStatus = @"NativePassthrough";
             compatibilityReady = YES;
@@ -406,13 +490,19 @@ void RUINInstallKeychainCompatibility(void) {
             if (!mapping) { keychainBindingStatus = @"NamespaceBindingUnavailable"; return; }
         }
 
+        if (!RUINResolveSecurityItemOperations()) {
+            compatibilityReady = NO;
+            keychainBindingStatus = @"RebindUnavailable";
+            return;
+        }
         struct rebinding rebindings[] = {
-            {"SecItemCopyMatching", (void *)RUINSecItemCopyMatching, (void **)&originalSecItemCopyMatching},
-            {"SecItemAdd", (void *)RUINSecItemAdd, (void **)&originalSecItemAdd},
-            {"SecItemUpdate", (void *)RUINSecItemUpdate, (void **)&originalSecItemUpdate},
-            {"SecItemDelete", (void *)RUINSecItemDelete, (void **)&originalSecItemDelete}
+            {"SecItemCopyMatching", (void *)RUINNativeFunctionPointerRaw((const void *)RUINSecItemCopyMatching), NULL},
+            {"SecItemAdd", (void *)RUINNativeFunctionPointerRaw((const void *)RUINSecItemAdd), NULL},
+            {"SecItemUpdate", (void *)RUINNativeFunctionPointerRaw((const void *)RUINSecItemUpdate), NULL},
+            {"SecItemDelete", (void *)RUINNativeFunctionPointerRaw((const void *)RUINSecItemDelete), NULL}
         };
-        int result = rebind_symbols(rebindings, sizeof(rebindings) / sizeof(rebindings[0]));
+        int result = rebind_symbols_image((void *)mainImage.header, mainImage.slide,
+            rebindings, sizeof(rebindings) / sizeof(rebindings[0]));
         compatibilityReady = stableNamespace && result == 0 && originalSecItemCopyMatching && originalSecItemAdd &&
             originalSecItemUpdate && originalSecItemDelete;
         keychainBindingStatus = compatibilityReady ? @"RebindReady" : @"RebindUnavailable";

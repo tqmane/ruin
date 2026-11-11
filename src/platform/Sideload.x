@@ -17,6 +17,7 @@ static atomic_uint localContainerRequests;
 static NSDictionary<NSString *, NSURL *> *resolvedGroupURLs;
 static BOOL migrationReady;
 static NSUInteger unsafeStorageCount;
+static NSArray *storageBindingErrors;
 
 static BOOL RUINLineGroupIdentifier(id identifier) {
     return [identifier isKindOfClass:NSString.class] && [@[
@@ -39,6 +40,21 @@ static NSURL *RUINResolveGroupURL(NSFileManager *manager, NSString *identifier, 
 }
 
 #if !defined(RUIN_SIDELOAD_HOST_CHECK)
+// Security exports are present in the iOS SDK's Security.tbd. The weak
+// declarations keep an unavailable entitlement reader fail-closed.
+typedef struct __SecTask *RUINSecTaskRef;
+extern RUINSecTaskRef SecTaskCreateFromSelf(CFAllocatorRef allocator) __attribute__((weak_import));
+extern CFTypeRef SecTaskCopyValueForEntitlement(RUINSecTaskRef task, CFStringRef entitlement,
+    CFErrorRef *error) __attribute__((weak_import));
+static NSString *RUINSandboxSigningIdentifier(void) {
+    if (!SecTaskCreateFromSelf || !SecTaskCopyValueForEntitlement) return nil;
+    RUINSecTaskRef task = SecTaskCreateFromSelf(NULL);
+    if (!task) return nil;
+    id identifier = CFBridgingRelease(SecTaskCopyValueForEntitlement(task, CFSTR("application-identifier"), NULL));
+    CFRelease(task);
+    return [identifier isKindOfClass:NSString.class] ? identifier : nil;
+}
+
 static NSArray<NSString *> *RUINOriginalGroups(void) {
     return @[@"group.com.linecorp.line",@"group.com.linecorp.Line.encrypted.app",
         @"group.share.com.linecorp.line",@"group.com.linecorp.Line.encrypted.share",@"group.ly-app.family"];
@@ -79,13 +95,19 @@ static void RUINPrepareStorageBindings(NSDictionary *requestedMap) {
     }
     id value = [NSUserDefaults.standardUserDefaults objectForKey:@"mid"];
     NSString *account = [value isKindOfClass:NSString.class] ? value : @"";
+    NSString *signingIdentifier = RUINSandboxSigningIdentifier();
     NSMutableDictionary *URLs = [NSMutableDictionary dictionary], *suites = [NSMutableDictionary dictionary];
+    NSMutableArray *errors = [NSMutableArray array];
     for (NSString *logical in RUINOriginalGroups()) {
         NSURL *fallback = [[support URLByAppendingPathComponent:@"RUIN/AppGroups" isDirectory:YES]
             URLByAppendingPathComponent:logical isDirectory:YES];
         NSURL *resolved = nil; NSString *suite = nil; NSError *error = nil;
         RUINAppGroupStorageDisposition disposition;
-        NSArray *legacy = [logical isEqual:@"group.com.linecorp.line"] && account.length ? authorized.allValues : @[];
+        // An existing owner pin keeps unrelated profile stores out of legacy
+        // discovery. Native, explicit and persisted bindings still resolve normally.
+        NSArray *legacy = [logical isEqual:@"group.com.linecorp.line"] && account.length &&
+            !RUINVerifySandboxAppGroupStorageBinding(logical, signingIdentifier, fallback, NULL)
+            ? authorized.allValues : @[];
         BOOL ok = RUINResolveAppGroupStorage(logical,account,authorized[logical],fallback,
             requestedMap,authorized,legacy,&resolved,&suite,&disposition,&error);
         if (!ok || disposition == RUINAppGroupStorageDispositionUnsafe ||
@@ -93,16 +115,22 @@ static void RUINPrepareStorageBindings(NSDictionary *requestedMap) {
             // Keep the current sandbox available for diagnostics. The login
             // guard stops a new migration while bindings are ambiguous/denied.
             unsafeStorageCount++;
+            [errors addObject:@{@"namespace":logical, @"disposition":@(disposition), @"errorCode":@(error.code)}];
             resolved = fallback;
             suite = nil;
         }
-        // Sandbox-only storage cannot follow a changed application identifier.
-        // Keep active sessions on that path, but require a native or explicitly
-        // pinned group before starting another login/transfer.
+        // A fresh app-owned sandbox is usable after pinning its purpose and
+        // signing owner. Never adopt unmarked old history or another identity.
         if (disposition == RUINAppGroupStorageDispositionNewFallback ||
-            disposition == RUINAppGroupStorageDispositionExistingFallback) unsafeStorageCount++;
+            disposition == RUINAppGroupStorageDispositionExistingFallback) {
+            if (!RUINPinSandboxAppGroupStorage(logical, signingIdentifier, resolved, &error)) {
+                unsafeStorageCount++;
+                [errors addObject:@{@"namespace":logical, @"disposition":@(disposition), @"errorCode":@(error.code)}];
+            }
+        }
         if (!resolved.isFileURL || ![manager createDirectoryAtURL:resolved withIntermediateDirectories:YES attributes:nil error:NULL]) {
             unsafeStorageCount++;
+            [errors addObject:@{@"namespace":logical, @"disposition":@(disposition), @"errorCode":@(error.code)}];
             continue;
         }
         URLs[logical] = resolved;
@@ -110,6 +138,7 @@ static void RUINPrepareStorageBindings(NSDictionary *requestedMap) {
         if (ok && disposition == RUINAppGroupStorageDispositionExplicitMap &&
             !RUINRecordExplicitAppGroupBinding(logical,suite,authorized,NULL)) unsafeStorageCount++;
     }
+    storageBindingErrors = [errors copy];
     resolvedGroupURLs = [URLs copy];
     groupMap = [suites copy];
 }
@@ -185,7 +214,7 @@ NSDictionary *RUINCompatibilityDiagnostics(void) {
              @"appGroupPreferencesMappingInstalled": @(suitesInstalled),
              @"mappedPreferencesRequests": @(atomic_load(&mappedSuiteRequests)),
              @"storageMigrationReady":@(migrationReady), @"unsafeStorageBindings":@(unsafeStorageCount),
-             @"resolvedStorageNamespaces":@(resolvedGroupURLs.count)};
+             @"resolvedStorageNamespaces":@(resolvedGroupURLs.count), @"storageBindingErrors":storageBindingErrors ?: @[]};
 }
 
 BOOL RUINStorageMigrationReady(void) { return migrationReady; }

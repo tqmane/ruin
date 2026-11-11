@@ -106,6 +106,18 @@
 	<string>iPad扱いでサブ端末ログイン</string>
 	<key>iPad扱いのサブ端末モード</key>
 	<string>iPad扱いのサブ端末モード</string>
+	<key>media.historyFooter</key>
+	<string>送信取消が行われる前に本設定を有効にしておくことで、この端末に受信済みの本文とダウンロード済みのメディアが端末内に安全に保持されます（1対1およびグループトークで検証済み、OpenChatは未検証）。保持されたメディアはトーク画面の通常タップで開くことができ、長押しメニューは補助として利用できます。送信取消前にダウンロードされていない原本は復元できず、保存されたサムネイルはプレビュー表示のみとなります。既読者一覧にはこの端末で記録された名前と日時が表示され、以前に確認された既読日時が保持されます。</string>
+	<key>media.previewOnly</key>
+	<string>プレビューのみ</string>
+	<key>media.retainedTitle</key>
+	<string>保持されたメディア</string>
+	<key>media.settingFooter</key>
+	<string>送信取消が行われる前に本設定を有効にしておく必要があります。保持されるのは送信取消時点でダウンロード済みのメディアのみで、未取得の原本は復元できません。保存されたサムネイルはプレビュー表示のみとなります。</string>
+	<key>media.settingTitle</key>
+	<string>送信取消された本文とメディアを保持</string>
+	<key>menu.retainedMedia</key>
+	<string>保存されたメディア</string>
 	<key>「%@」と「%@」を同時に非表示にできません。</key>
 	<string>「%@」と「%@」を同時に非表示にできません。</string>
 	<key>「%@」の表示名をこの端末だけ変更します。空欄で解除し、旧表示名ルールもこのIDには適用しません。</key>

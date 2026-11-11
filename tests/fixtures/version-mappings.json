@@ -10,6 +10,21 @@
         "version" : "26.16.0"
       },
       "messaging" : {
+        "nativeMuteSend" : {
+          "anchors" : [
+
+          ],
+          "configurationConformanceVA" : null,
+          "configurationGetterVA" : null,
+          "configurationReturnVA" : null,
+          "configurationValueTypeVA" : null,
+          "configurationWitnessTableVA" : null,
+          "conformanceVA" : null,
+          "getterVA" : null,
+          "policyReturnVA" : null,
+          "status" : "unsupported",
+          "witnessTableVA" : null
+        },
         "readBoundary" : {
           "anchors" : [
             {
@@ -582,6 +597,360 @@
         "version" : "26.17.0"
       },
       "messaging" : {
+        "nativeMuteSend" : {
+          "anchors" : [
+            {
+              "address" : "0x10403172c",
+              "wordCount" : 2,
+              "words" : [
+                "0x150903b6",
+                "0x17ffffff"
+              ]
+            },
+            {
+              "address" : "0x108272604",
+              "wordCount" : 4,
+              "words" : [
+                "0xa9be4ff4",
+                "0xa9017bfd",
+                "0x910043fd",
+                "0x94000910"
+              ]
+            },
+            {
+              "address" : "0x108272614",
+              "wordCount" : 4,
+              "words" : [
+                "0x54000040",
+                "0x97ffccbc",
+                "0x94000903",
+                "0x975e79f8"
+              ]
+            },
+            {
+              "address" : "0x108272624",
+              "wordCount" : 4,
+              "words" : [
+                "0x975b2126",
+                "0xd0013d68",
+                "0x91018108",
+                "0x94000921"
+              ]
+            },
+            {
+              "address" : "0x108272634",
+              "wordCount" : 4,
+              "words" : [
+                "0xd2800241",
+                "0x94000923",
+                "0x97e702d5",
+                "0x12000260"
+              ]
+            },
+            {
+              "address" : "0x108272644",
+              "wordCount" : 2,
+              "words" : [
+                "0xa9417bfd",
+                "0x17e688dd"
+              ]
+            },
+            {
+              "address" : "0x108274ab4",
+              "wordCount" : 4,
+              "words" : [
+                "0xd1008108",
+                "0xb2410102",
+                "0x52800000",
+                "0xd65f03c0"
+              ]
+            },
+            {
+              "address" : "0x108274ac4",
+              "wordCount" : 2,
+              "words" : [
+                "0xf2fa0001",
+                "0x17ffbf67"
+              ]
+            },
+            {
+              "address" : "0x104733d30",
+              "wordCount" : 4,
+              "words" : [
+                "0xa942da75",
+                "0x91004260",
+                "0xaa1503e1",
+                "0x96e3651f"
+              ]
+            },
+            {
+              "address" : "0x104733d40",
+              "wordCount" : 4,
+              "words" : [
+                "0xf94006c8",
+                "0xaa0003f4",
+                "0xaa1503e0",
+                "0xaa1603e1"
+              ]
+            },
+            {
+              "address" : "0x104733d50",
+              "wordCount" : 4,
+              "words" : [
+                "0xd63f0100",
+                "0x14000002",
+                "0x52800000",
+                "0x12000000"
+              ]
+            },
+            {
+              "address" : "0x10462f558",
+              "wordCount" : 4,
+              "words" : [
+                "0x9400029e",
+                "0x910003e0",
+                "0x91004294",
+                "0x940411c8"
+              ]
+            },
+            {
+              "address" : "0x10462f568",
+              "wordCount" : 1,
+              "words" : [
+                "0x12000000"
+              ]
+            },
+            {
+              "address" : "0x109d41400",
+              "wordCount" : 4,
+              "words" : [
+                "0x2728051",
+                "0xe207e4",
+                "0x2728018",
+                "0x0"
+              ]
+            },
+            {
+              "address" : "0x10ab847f0",
+              "wordCount" : 4,
+              "words" : [
+                "0x10043",
+                "0xffffe98c",
+                "0xff1fbf58",
+                "0x0"
+              ]
+            },
+            {
+              "address" : "0x10ab84800",
+              "wordCount" : 4,
+              "words" : [
+                "0x1",
+                "0x0",
+                "0x13",
+                "0x0"
+              ]
+            },
+            {
+              "address" : "0x10aa20060",
+              "wordCount" : 4,
+              "words" : [
+                "0x74616863",
+                "0x6c69732e",
+                "0x6d746e65",
+                "0x61737365"
+              ]
+            },
+            {
+              "address" : "0x10aa20070",
+              "wordCount" : 1,
+              "words" : [
+                "0x6567"
+              ]
+            },
+            {
+              "address" : "0x104788560",
+              "wordCount" : 4,
+              "words" : [
+                "0xa9be4ff4",
+                "0xa9017bfd",
+                "0x910043fd",
+                "0xaa0803f3"
+              ]
+            },
+            {
+              "address" : "0x104788570",
+              "wordCount" : 4,
+              "words" : [
+                "0x97ffffcc",
+                "0x12000008",
+                "0x39000268",
+                "0xa9417bfd"
+              ]
+            },
+            {
+              "address" : "0x104788580",
+              "wordCount" : 2,
+              "words" : [
+                "0xa8c24ff4",
+                "0xd65f03c0"
+              ]
+            },
+            {
+              "address" : "0x1047884a0",
+              "wordCount" : 4,
+              "words" : [
+                "0xd10103ff",
+                "0xa90157f6",
+                "0xa9024ff4",
+                "0xa9037bfd"
+              ]
+            },
+            {
+              "address" : "0x1047884b0",
+              "wordCount" : 4,
+              "words" : [
+                "0x9100c3fd",
+                "0xaa0003f4",
+                "0x97ff9c9d",
+                "0x36000060"
+              ]
+            },
+            {
+              "address" : "0x1047884c0",
+              "wordCount" : 2,
+              "words" : [
+                "0x52800000",
+                "0x14000022"
+              ]
+            },
+            {
+              "address" : "0x103403e24",
+              "wordCount" : 4,
+              "words" : [
+                "0xa9be4ff4",
+                "0xa9017bfd",
+                "0x910043fd",
+                "0xaa0103e0"
+              ]
+            },
+            {
+              "address" : "0x103403e34",
+              "wordCount" : 4,
+              "words" : [
+                "0xf9400869",
+                "0xaa0203f4",
+                "0xaa0203e1",
+                "0xaa0303e2"
+              ]
+            },
+            {
+              "address" : "0x103403e44",
+              "wordCount" : 3,
+              "words" : [
+                "0xd63f0120",
+                "0xa9417bfd",
+                "0x1730228f"
+              ]
+            },
+            {
+              "address" : "0x104733ce0",
+              "wordCount" : 4,
+              "words" : [
+                "0x9002b297",
+                "0x910342f7",
+                "0xaa1703e0",
+                "0x953a6086"
+              ]
+            },
+            {
+              "address" : "0x104733cf0",
+              "wordCount" : 4,
+              "words" : [
+                "0xf9000be0",
+                "0x910082e0",
+                "0x910043e1",
+                "0x953a6082"
+              ]
+            },
+            {
+              "address" : "0x104733d00",
+              "wordCount" : 4,
+              "words" : [
+                "0xaa0003f7",
+                "0xd0046ee3",
+                "0x912c4063",
+                "0x91003fe8"
+              ]
+            },
+            {
+              "address" : "0x104733d10",
+              "wordCount" : 3,
+              "words" : [
+                "0xaa1603e1",
+                "0xaa1503e2",
+                "0x97b37a38"
+              ]
+            },
+            {
+              "address" : "0x109d89988",
+              "wordCount" : 4,
+              "words" : [
+                "0x2746c51",
+                "0xdfd2cc",
+                "0x3788180",
+                "0x0"
+              ]
+            },
+            {
+              "address" : "0x104788484",
+              "wordCount" : 4,
+              "words" : [
+                "0x90030708",
+                "0x9126c108",
+                "0xd1008108",
+                "0xb2410101"
+              ]
+            },
+            {
+              "address" : "0x104788494",
+              "wordCount" : 3,
+              "words" : [
+                "0xd2800360",
+                "0xf2fa0000",
+                "0xd65f03c0"
+              ]
+            },
+            {
+              "address" : "0x10a8689b0",
+              "wordCount" : 4,
+              "words" : [
+                "0x636e7566",
+                "0x6e6f6974",
+                "0x62616c2e",
+                "0x6c69732e"
+              ]
+            },
+            {
+              "address" : "0x10a8689c0",
+              "wordCount" : 3,
+              "words" : [
+                "0x5f746e65",
+                "0x7373656d",
+                "0x656761"
+              ]
+            }
+          ],
+          "configurationConformanceVA" : "0x109d89988",
+          "configurationGetterVA" : "0x104788560",
+          "configurationReturnVA" : "0x103403e48",
+          "configurationValueTypeVA" : "0x10a20b821",
+          "configurationWitnessTableVA" : "0x10d511b10",
+          "conformanceVA" : "0x109d41400",
+          "getterVA" : "0x104031730",
+          "policyReturnVA" : "0x104733d54",
+          "status" : "verified",
+          "witnessTableVA" : "0x10c469420"
+        },
         "readBoundary" : {
           "anchors" : [
 

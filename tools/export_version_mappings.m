@@ -177,7 +177,20 @@ static NSDictionary *MappingJSON(const RUINVersionMapping *mapping)
         @"messaging": @{
             @"readBoundary": ReadBoundaryJSON(&mapping->messaging.readBoundary),
             @"unsendOperation": UnsendJSON(&mapping->messaging.unsendOperation),
-            @"readUntilABIStatus": Status(mapping->messaging.readUntilABIStatus)
+            @"readUntilABIStatus": Status(mapping->messaging.readUntilABIStatus),
+            @"nativeMuteSend": @{
+                @"status": Status(mapping->messaging.nativeMuteSend.status),
+                @"witnessTableVA": Address(mapping->messaging.nativeMuteSend.status, mapping->messaging.nativeMuteSend.witnessTableVA),
+                @"conformanceVA": Address(mapping->messaging.nativeMuteSend.status, mapping->messaging.nativeMuteSend.conformanceVA),
+                @"getterVA": Address(mapping->messaging.nativeMuteSend.status, mapping->messaging.nativeMuteSend.getterVA),
+                @"policyReturnVA": Address(mapping->messaging.nativeMuteSend.status, mapping->messaging.nativeMuteSend.policyReturnVA),
+                @"configurationWitnessTableVA": Address(mapping->messaging.nativeMuteSend.status, mapping->messaging.nativeMuteSend.configurationWitnessTableVA),
+                @"configurationConformanceVA": Address(mapping->messaging.nativeMuteSend.status, mapping->messaging.nativeMuteSend.configurationConformanceVA),
+                @"configurationValueTypeVA": Address(mapping->messaging.nativeMuteSend.status, mapping->messaging.nativeMuteSend.configurationValueTypeVA),
+                @"configurationGetterVA": Address(mapping->messaging.nativeMuteSend.status, mapping->messaging.nativeMuteSend.configurationGetterVA),
+                @"configurationReturnVA": Address(mapping->messaging.nativeMuteSend.status, mapping->messaging.nativeMuteSend.configurationReturnVA),
+                @"anchors": AnchorArray(mapping->messaging.nativeMuteSend.anchors, mapping->messaging.nativeMuteSend.anchorCount)
+            }
         },
         @"nativeTabs": @{
             @"status": Status(tabs->status),

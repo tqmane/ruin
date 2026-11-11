@@ -21,6 +21,7 @@
 #import "UnsendRetention.h"
 #import "UnsendOperation.h"
 #import "UnsendMarkerUI.h"
+#import "RetainedMedia.h"
 #import "AgeVerification.h"
 #import "ReadUsersEvents.h"
 #import "AutomaticReadGate.h"
@@ -193,6 +194,7 @@ NSDictionary *RUINRuntimeDiagnostics(void) {
         @"nativeReadRangeSync": RUINNativeReadRangeSyncDiagnostics(),
         @"readRangeFetch": RUINReadRangeFetchDiagnostics(),
         @"unsendRetention": RUINUnsendRetentionDiagnostics(),
+        @"retainedMedia": RUINRetainedMediaDiagnostics(),
         @"unsendOperation": RUINUnsendOperationDiagnostics(),
         @"unsendMarkerUI": RUINUnsendMarkerUIDiagnostics(),
         @"ageVerification": RUINAgeVerificationDiagnostics(),
@@ -233,6 +235,7 @@ void RUINRefreshSettingsFeatures(void) {
     RUINInstallAutomaticReadGate();
     RUINInstallMessageHistory();
     RUINInstallUnsendRetention();
+    RUINInstallRetainedMedia();
     RUINInstallUnsendOperation();
     RUINInstallUnsendMarkerUI();
     RUINInstallAgeVerification();
@@ -296,6 +299,7 @@ static void RUINApplicationDidBecomeActive(void) {
         RUINInstallConfirmations();
         RUINInstallMessageHistory();
         RUINInstallUnsendRetention();
+        RUINInstallRetainedMedia();
         RUINInstallUnsendOperation();
         RUINInstallUnsendMarkerUI();
         RUINInstallAgeVerification();

@@ -4,6 +4,7 @@
 #import "UnsendOperation.h"
 #import "Features.h"
 #import "MessageHistory.h"
+#import "RetainedMedia.h"
 #import "../core/Localization.h"
 #import "../core/TargetMetadata.h"
 #import "../known/MessagingMappings.h"
@@ -228,6 +229,9 @@ static BOOL RetainedMarker(NSDictionary *key, BOOL write) {
                 atomic_fetch_add(&rejectedLookups, 1); return actual;
             }
             if (!RetainedMarker(key, YES)) { atomic_fetch_add(&markerFailures, 1); return actual; }
+#if TARGET_OS_IPHONE
+            RUINCaptureRetainedMedia(object, key);
+#endif
             // Freeze any earlier archive. A missing archive is never fabricated;
             // native original text is preserved by bypassing this local destroy.
             @try {

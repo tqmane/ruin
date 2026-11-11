@@ -98,7 +98,8 @@ HOST_FIXTURES := \
 	build/check_native_theme_receipt \
 	build/check_native_theme_validation \
 	build/check_native_read_positions \
-	build/check_local_notifications
+	build/check_local_notifications \
+	build/check_retained_media_store
 $(HOST_FIXTURES): $(wildcard src/*/*.h) $(HOST_COMMON)
 
 build/export_version_mappings: tools/export_version_mappings.m $(HOST_COMMON) $(wildcard src/*/*.h)
@@ -123,6 +124,7 @@ check-host: check-portable check-mapping-manifest $(HOST_FIXTURES)
 	./build/check_native_range_queue
 	./build/check_features
 	./build/check_history
+	./build/check_retained_media_store
 	./build/check_native_read_positions
 	./build/check_swift_fields
 	./build/check_boundary early
@@ -165,6 +167,8 @@ check-host: check-portable check-mapping-manifest $(HOST_FIXTURES)
 	./build/check_localization "$(CURDIR)/resources/RUINResources.bundle"
 	./build/check_legacy_messaging_configuration
 	python3 tests/check_secondary_login.py
+	python3 tests/check_native_mute_send.py
+	python3 tests/check_retained_video_cache.py
 	python3 tests/check_theme_archive.py
 
 build/check_chat_catalog: $(call source,src/interface/ChatCatalog.m) src/interface/ChatCatalog.h
@@ -371,7 +375,7 @@ build/$(1)/SwiftFields.o: $$(SWIFT_SOURCES) src/core/SwiftFields.h
 	xcrun --sdk iphoneos swiftc -sdk $$(SDK) -target $(1)-apple-ios18.0 -parse-as-library -whole-module-optimization -O -module-name RUINRuntime -emit-object $$(SWIFT_SOURCES) -o $$@
 
 build/$(1)/RUIN.dylib: $(call arch_objects,$(1))
-	xcrun --sdk iphoneos swiftc -sdk $$(SDK) -target $(1)-apple-ios18.0 -emit-library $$^ -framework Foundation -framework UIKit -framework CoreText -framework WebKit -framework CoreGraphics -framework Security -framework CoreData -framework ImageIO -framework UniformTypeIdentifiers -framework UserNotifications -lsqlite3 -lz -Xlinker -install_name -Xlinker @rpath/RUIN.dylib -o $$@
+	xcrun --sdk iphoneos swiftc -sdk $$(SDK) -target $(1)-apple-ios18.0 -emit-library $$^ -framework Foundation -framework UIKit -framework AVFoundation -framework CoreText -framework WebKit -framework CoreGraphics -framework Security -framework CoreData -framework ImageIO -framework UniformTypeIdentifiers -framework UserNotifications -framework QuickLook -lsqlite3 -lz -Xlinker -install_name -Xlinker @rpath/RUIN.dylib -o $$@
 endef
 
 $(foreach arch,$(RUIN_ARCHS),$(eval $(call RUIN_ARCH_RULES,$(arch))))
@@ -507,3 +511,8 @@ build/check_native_tab_availability: $(call source,src/interface/NativeTabAvaila
 	mkdir -p build
 	$(HOST_CC) -DRUIN_NATIVE_TAB_AVAILABILITY_HOST_CHECK -fobjc-arc -fblocks $(HOST_WARNINGS) $(CPPFLAGS) \
 		$(call source,src/interface/NativeTabAvailability.m) -framework Foundation -o $@
+
+# Uses the production file store, including unlink races and process-restart markers.
+build/check_retained_media_store: tests/check_retained_media_store.m src/messaging/RetainedMediaStore.m
+	mkdir -p build
+	$(HOST_CC) -fobjc-arc -fblocks $(HOST_WARNINGS) $(CPPFLAGS) tests/check_retained_media_store.m src/messaging/RetainedMediaStore.m -framework Foundation -framework ImageIO -framework UniformTypeIdentifiers -o $@

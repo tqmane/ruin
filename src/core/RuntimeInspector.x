@@ -43,6 +43,10 @@ static atomic_uint_fast64_t gActionCount = ATOMIC_VAR_INIT(0);
 static atomic_bool gTruncated = ATOMIC_VAR_INIT(false);
 static atomic_bool gForegroundWindowFound = ATOMIC_VAR_INIT(false);
 static NSMutableArray *gNativePresentations;
+static BOOL gMuteGestureProbeInstalled;
+static atomic_uint_fast64_t gMuteLongPressCalls;
+static atomic_int gMuteLastGestureState = ATOMIC_VAR_INIT(-1);
+static NSString *gMuteLastSenderClass;
 static NSString *gPresentationEncoding;
 static BOOL gPresentationHookInstalled;
 
@@ -240,6 +244,34 @@ static void RUINInstallPresentationInspection(void) {
     if (!encoding || strcmp(encoding, "v36@0:8@16B24@?28")) return;
     %init(RUINPresentationInspection);
     gPresentationHookInstalled = YES;
+}
+
+@interface RUINMuteInputBarProbe : UIView
+- (void)longPressDidActivate:(id)sender;
+@end
+
+%group RUINMuteGestureInspection
+%hook RUINMuteInputBarProbe
+- (void)longPressDidActivate:(id)sender {
+    atomic_fetch_add(&gMuteLongPressCalls, 1);
+    if (NSThread.isMainThread) {
+        gMuteLastSenderClass = RUINClassName(sender);
+        atomic_store(&gMuteLastGestureState, [sender isKindOfClass:UIGestureRecognizer.class]
+            ? (int)[(UIGestureRecognizer *)sender state] : -1);
+    }
+    %orig(sender);
+}
+%end
+%end
+
+static void RUINInstallMuteGestureInspection(void) {
+    if (gMuteGestureProbeInstalled) return;
+    Class cls = NSClassFromString(@"_TtC15LineMessagingUI12ChatInputBar");
+    Method method = cls ? class_getInstanceMethod(cls, @selector(longPressDidActivate:)) : NULL;
+    const char *types = method ? method_getTypeEncoding(method) : NULL;
+    if (![cls isSubclassOfClass:UIView.class] || !types || strcmp(types, "v24@0:8@16")) return;
+    %init(RUINMuteGestureInspection, RUINMuteInputBarProbe = cls);
+    gMuteGestureProbeInstalled = YES;
 }
 
 void RUINRecordThemePackageInspection(id event, NSString *phase) {
@@ -855,6 +887,7 @@ void InstallRuntimeInspector(void) {
     if (!RUINInspectorEnabled()) { atomic_store(&gStatus, kStatusDisabled); return; }
     if (!RUINInspectorTargetMatches()) { atomic_store(&gStatus, kStatusVersionGated); return; }
     RUINInstallPresentationInspection();
+    RUINInstallMuteGestureInspection();
     static dispatch_once_t themeSaveOnce;
     dispatch_once(&themeSaveOnce, ^{
         [NSNotificationCenter.defaultCenter addObserverForName:NSManagedObjectContextWillSaveNotification
@@ -879,6 +912,10 @@ NSDictionary<NSString *, id> *RuntimeInspectorDiagnostics(void) {
     return @{@"status": (status >= 0 && (NSUInteger)status < names.count) ? names[(NSUInteger)status] : @"unknown",
         @"registered": @(atomic_load(&gRegistered)), @"notifications": @(atomic_load(&gNotifications)),
         @"presentationTraceInstalled":@(gPresentationHookInstalled),
+        @"muteGestureProbeInstalled":@(gMuteGestureProbeInstalled),
+        @"muteLongPressCalls":@(atomic_load(&gMuteLongPressCalls)),
+        @"muteLastGestureState":@(atomic_load(&gMuteLastGestureState)),
+        @"muteLastSenderClass":gMuteLastSenderClass ?: NSNull.null,
         @"presentationMethodEncoding":gPresentationEncoding ?: NSNull.null,
         @"snapshots": @(atomic_load(&gSnapshots)), @"controllers": @(atomic_load(&gControllerCount)),
         @"swiftFieldNames": @(atomic_load(&gFieldNameCount)), @"foregroundWindowFound": @(atomic_load(&gForegroundWindowFound)),

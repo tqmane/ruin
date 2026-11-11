@@ -314,6 +314,81 @@ static void TestDistinctStoresThroughParentAlias(NSURL *root) {
     assert(!suite);
 }
 
+static void TestSandboxOwnerBinding(NSURL *root) {
+    NSURL *fresh = [root URLByAppendingPathComponent:@"fresh" isDirectory:YES];
+    NSString *logical = @"group.com.linecorp.line";
+    assert(!RUINVerifySandboxAppGroupStorageBinding(logical, @"TEAM.fixture.app", fresh, NULL));
+    assert(![NSFileManager.defaultManager fileExistsAtPath:fresh.path]);
+    NSURL *empty = Directory(root, @"empty");
+    assert(!RUINVerifySandboxAppGroupStorageBinding(logical, @"TEAM.fixture.app", empty, NULL));
+    assert([NSFileManager.defaultManager contentsOfDirectoryAtPath:empty.path error:NULL].count == 0);
+
+    assert(RUINPinSandboxAppGroupStorage(logical, @"TEAM.fixture.app", fresh, NULL));
+    NSURL *marker = [fresh URLByAppendingPathComponent:
+        @"Library/Application Support/RUINAppGroupBindings/group.com.linecorp.line.plist"];
+    NSData *originalMarker = [NSData dataWithContentsOfURL:marker];
+    assert(originalMarker.length && RUINVerifySandboxAppGroupStorageBinding(logical, @"TEAM.fixture.app", fresh, NULL));
+    AddLINEStore(fresh, @"P_fixture-account");
+    assert(RUINVerifySandboxAppGroupStorageBinding(logical, @"TEAM.fixture.app", fresh, NULL));
+    assert(RUINPinSandboxAppGroupStorage(logical, @"TEAM.fixture.app", fresh, NULL));
+    assert(!RUINVerifySandboxAppGroupStorageBinding(logical, @"OTHER.fixture.app", fresh, NULL));
+    assert(!RUINPinSandboxAppGroupStorage(logical, @"OTHER.fixture.app", fresh, NULL));
+    assert([[NSData dataWithContentsOfURL:marker] isEqual:originalMarker]);
+    NSURL *unmarked = Directory(root, @"unmarked"); AddLINEStore(unmarked, @"P_fixture-account");
+    assert(!RUINVerifySandboxAppGroupStorageBinding(logical, @"TEAM.fixture.app", unmarked, NULL));
+    assert(!RUINPinSandboxAppGroupStorage(logical, @"TEAM.fixture.app", unmarked, NULL));
+    assert(!RUINPinSandboxAppGroupStorage(logical, @"", fresh, NULL));
+
+    NSURL *ownerless = Directory(root, @"ownerless");
+    assert(RUINRecordExplicitAppGroupBinding(logical, @"group.fixture.ownerless",
+        @{@"group.fixture.ownerless":ownerless}, NULL));
+    assert(!RUINVerifySandboxAppGroupStorageBinding(logical, @"TEAM.fixture.app", ownerless, NULL));
+    assert(!RUINPinSandboxAppGroupStorage(logical, @"TEAM.fixture.app", ownerless, NULL));
+}
+
+static void TestPinnedFallbackWithUnrelatedLegacy(NSURL *root) {
+    NSString *logical = @"group.com.linecorp.line", *owner = @"TEAM.fixture.app";
+    NSURL *fallback = [root URLByAppendingPathComponent:@"pinned" isDirectory:YES];
+    assert(RUINPinSandboxAppGroupStorage(logical, owner, fallback, NULL));
+    AddLINEStore(fallback, @"P_fixture-account");
+    NSURL *legacy = Directory(root, @"authorized-legacy"); AddLINEStore(legacy, @"S_unrelated-account");
+    NSDictionary *authorized = @{@"group.profile.legacy":legacy};
+    NSArray *candidates = authorized.allValues;
+    // The resolver's conflict guard remains in force when legacy discovery is requested.
+    AssertUnsafePreservesFallback(fallback, @"fixture-account", nil, authorized, candidates);
+    BOOL pinned = RUINVerifySandboxAppGroupStorageBinding(logical, owner, fallback, NULL);
+    assert(pinned);
+    NSURL *resolved = nil; NSString *suite = nil;
+    RUINAppGroupStorageDisposition status;
+    assert(Resolve(@"fixture-account", nil, fallback, nil, authorized, pinned ? @[] : candidates,
+        &resolved, &suite, &status));
+    assert(status == RUINAppGroupStorageDispositionExistingFallback && [resolved isEqual:fallback] && !suite);
+
+    NSURL *unmarked = Directory(root, @"unmarked"); AddLINEStore(unmarked, @"P_fixture-account");
+    NSURL *otherOwner = [root URLByAppendingPathComponent:@"other-owner" isDirectory:YES];
+    assert(RUINPinSandboxAppGroupStorage(logical, @"OTHER.fixture.app", otherOwner, NULL));
+    AddLINEStore(otherOwner, @"P_fixture-account");
+    NSURL *invalid = [root URLByAppendingPathComponent:@"invalid" isDirectory:YES];
+    assert(RUINPinSandboxAppGroupStorage(logical, owner, invalid, NULL));
+    AddLINEStore(invalid, @"P_fixture-account");
+    NSURL *invalidMarker = [invalid URLByAppendingPathComponent:
+        @"Library/Application Support/RUINAppGroupBindings/group.com.linecorp.line.plist"];
+    assert([[@"invalid marker" dataUsingEncoding:NSUTF8StringEncoding] writeToURL:invalidMarker options:0 error:NULL]);
+    for (NSURL *rejected in @[unmarked, otherOwner, invalid]) {
+        BOOL bound = RUINVerifySandboxAppGroupStorageBinding(logical, owner, rejected, NULL);
+        assert(!bound);
+        AssertUnsafePreservesFallback(rejected, @"fixture-account", nil, authorized, bound ? @[] : candidates);
+    }
+
+    // A sandbox pin does not bypass native, explicit-map, or persisted-map conflicts.
+    assert(Resolve(@"fixture-account", Directory(root, @"native"), fallback, nil, authorized, @[],
+        &resolved, &suite, &status));
+    assert(status == RUINAppGroupStorageDispositionUnsafe && [resolved isEqual:fallback]);
+    AssertUnsafePreservesFallback(fallback, @"fixture-account", @{logical:@"group.profile.legacy"}, authorized, @[]);
+    assert(RUINRecordExplicitAppGroupBinding(logical, @"group.profile.legacy", authorized, NULL));
+    AssertUnsafePreservesFallback(fallback, @"fixture-account", nil, authorized, @[]);
+}
+
 int main(void) {
     @autoreleasepool {
         NSURL *root = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString]
@@ -323,6 +398,8 @@ int main(void) {
                                                        attributes:nil
                                                             error:NULL]);
         TestNativeAndFallbackPolicy(Directory(root, @"native-test"));
+        TestSandboxOwnerBinding(Directory(root, @"sandbox-owner-test"));
+        TestPinnedFallbackWithUnrelatedLegacy(Directory(root, @"pinned-legacy-test"));
         TestExplicitMapAndPersistedBinding(Directory(root, @"marker-test"));
         TestEmptyAccountResolution(Directory(root, @"empty-account-test"));
         TestFallbackPreservedAndLegacyCandidate(Directory(root, @"legacy-test"));

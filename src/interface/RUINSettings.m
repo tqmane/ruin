@@ -40,6 +40,11 @@ static BOOL RUINSettingsHostIsFullySupported(void) {
     return RUINFullySupportedTargetMatchesInfo(info);
 }
 
+static BOOL RUINShouldSuppressPartialCompatibilityWarning(void) {
+    return [RUINSettingsInfoString(@"CFBundleShortVersionString") isEqualToString:@"26.17.0"] &&
+        [RUINSettingsInfoString(@"CFBundleVersion") isEqualToString:@"2026.1103.1841"];
+}
+
 static NSString *RUINPartialCompatibilityMessage(void) {
     NSString *format = RUINLocalizedString(@"LINE %@（ビルド %@）は完全には検証されていないため、一部の機能を利用できない可能性があります。");
     return [NSString stringWithFormat:format,
@@ -112,7 +117,7 @@ static NSArray<NSDictionary *> *ToggleRows(NSInteger section) {
         case RUINSettingsSectionConfirmations: return @[Toggle(RUINLocalizedString(@"グループへの送信確認"), RUINConfirmSendEnabledDefaultsKey), Toggle(RUINLocalizedString(@"通話開始の確認"), RUINConfirmCallEnabledDefaultsKey), Toggle(RUINLocalizedString(@"カメラをオンにする前に確認"), RUINConfirmCameraOnEnabledDefaultsKey), Toggle(RUINLocalizedString(@"通話終了の確認"), RUINConfirmDisconnectEnabledDefaultsKey)];
         case RUINSettingsSectionAppearance: return @[Toggle(RUINLocalizedString(@"広告を非表示"), RUINHideAdsDefaultsKey), Toggle(RUINLocalizedString(@"おすすめ欄を非表示"), RUINHideRecommendationsDefaultsKey), Toggle(RUINLocalizedString(@"音声入力ボタンを非表示"), RUINHideVoiceInputDefaultsKey), Toggle(RUINLocalizedString(@"Agent-iバーを非表示"), RUINHideAgentIBarDefaultsKey)];
         case RUINSettingsSectionTabs: return RUINNativeTabRows();
-        case RUINSettingsSectionHistory: return @[Toggle(RUINLocalizedString(@"送信取消された本文を保持"), RUINKeepUnsentMessagesKey), Toggle(RUINLocalizedString(@"既読範囲を記録"), RUINTrackReadUsersKey), Toggle(RUINLocalizedString(@"年齢確認をスキップ"), RUINBypassAgeVerificationDefaultsKey), Toggle(RUINLocalizedString(@"スタンプをGIFでコピー"), RUINCopyStickerGIFEnabledDefaultsKey)];
+        case RUINSettingsSectionHistory: return @[Toggle(RUINLocalizedString(@"media.settingTitle"), RUINKeepUnsentMessagesKey), Toggle(RUINLocalizedString(@"既読範囲を記録"), RUINTrackReadUsersKey), Toggle(RUINLocalizedString(@"年齢確認をスキップ"), RUINBypassAgeVerificationDefaultsKey), Toggle(RUINLocalizedString(@"スタンプをGIFでコピー"), RUINCopyStickerGIFEnabledDefaultsKey)];
         case RUINSettingsSectionNotifications: return @[Toggle(RUINLocalizedString(@"新着のローカル通知"), RUINLocalNotificationsEnabledDefaultsKey)];
         case RUINSettingsSectionLineFeatures: return @[Toggle(RUINLocalizedString(@"ローカルLYP機能"), RUINLocalLYPEnabledDefaultsKey), Toggle(RUINLocalizedString(@"24h送信取消・ミュートメッセージ"), RUINLegacyMessagingEnabledDefaultsKey)];
         default: return @[];
@@ -170,7 +175,7 @@ static NSArray<NSDictionary *> *ToggleRows(NSInteger section) {
             if ([RUINNativeTabAvailabilityDiagnostics()[@"menuOnlyScopeVerified"] boolValue]) dependency = @"";
             return [NSString stringWithFormat:RUINLocalizedString(@"現在利用可能なタブのみ設定できます。「ホーム」と「トーク」は非表示にできません。%@変更はアプリの再起動後に反映されます。"),dependency];
         }
-        case RUINSettingsSectionHistory: return RUINLocalizedString(@"1対1トークでの受信済みテキスト保持と「取消済」表示を確認済みです。添付ファイル・グループ・オープンチャットでの保持は検証中です。既読者一覧には、この端末で記録した名前と日時を表示します。");
+        case RUINSettingsSectionHistory: return RUINLocalizedString(@"media.historyFooter");
         case RUINSettingsSectionSecondaryLogin: return RUINLocalizedString(@"変更はログアウト後、ログイン画面の「ログイン」長押しで行います。切り替え後はアプリの再起動が必要です。");
         case RUINSettingsSectionDiagnostics: return RUINLocalizedString(@"着せかえ・スタンプGIF・MID検索なども全機能対応の対象です。未完成の項目を対応済みとは表示しません。");
         case RUINSettingsSectionNotifications: return RUINLocalizedString(@"1対1・グループトークの新着のみ通知します。アプリ停止中の即時受信には対応していません。");
@@ -180,7 +185,8 @@ static NSArray<NSDictionary *> *ToggleRows(NSInteger section) {
 }
 - (NSInteger)tableView:(__unused UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
     if (!self.compatible) return 1;
-    if (section == RUINSettingsSectionVersion && !self.fullySupported) return 2;
+    if (section == RUINSettingsSectionVersion && !self.fullySupported &&
+        !RUINShouldSuppressPartialCompatibilityWarning()) return 2;
     if (section == RUINSettingsSectionLocalNames) return 1;
     if (section == RUINSettingsSectionReadControls || section == RUINSettingsSectionConfirmations || section == RUINSettingsSectionTabs) return ToggleRows(section).count + 1;
     if (section == RUINSettingsSectionDiagnostics || section == RUINSettingsSectionShops) return 2;
@@ -482,7 +488,7 @@ static void RUINRecordPartialWarningPresented(NSString *buildIdentifier) {
 }
 
 BOOL RUINMaybeShowCompatibilityWarning(void) {
-    if (!RUINIsCompatible() || RUINSettingsHostIsFullySupported() ||
+    if (RUINShouldSuppressPartialCompatibilityWarning() || !RUINIsCompatible() || RUINSettingsHostIsFullySupported() ||
         UIApplication.sharedApplication.applicationState != UIApplicationStateActive) return NO;
 
     NSString *buildIdentifier = RUINPartialWarningBuildIdentifier();
@@ -493,7 +499,7 @@ BOOL RUINMaybeShowCompatibilityWarning(void) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
         sCompatibilityWarningScheduled = NO;
         if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive ||
-            !RUINIsCompatible() || RUINSettingsHostIsFullySupported()) return;
+            RUINShouldSuppressPartialCompatibilityWarning() || !RUINIsCompatible() || RUINSettingsHostIsFullySupported()) return;
 
         NSString *currentBuildIdentifier = RUINPartialWarningBuildIdentifier();
         if (RUINPartialWarningWasPresented(currentBuildIdentifier)) return;

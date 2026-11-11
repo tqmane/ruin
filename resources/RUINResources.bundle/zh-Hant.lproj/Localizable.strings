@@ -106,6 +106,18 @@
 	<string>以iPad附屬裝置登入</string>
 	<key>iPad扱いのサブ端末モード</key>
 	<string>iPad附屬裝置模式</string>
+	<key>media.historyFooter</key>
+	<string>必須在訊息收回前開啟此設定，方可私密保留已接收至此裝置的文字及本機已下載的媒體（1對1與群組已驗證，OpenChat未驗證）。保留的媒體可在聊天中直接輕點開啟，長按選單僅作為輔助。收回前未下載的原始檔案無法復原，儲存的縮圖僅供預覽。已讀成員名單顯示此裝置記錄的名稱與時間，並保留先前已知的已讀時間戳記。</string>
+	<key>media.previewOnly</key>
+	<string>僅預覽</string>
+	<key>media.retainedTitle</key>
+	<string>已保留媒體</string>
+	<key>media.settingFooter</key>
+	<string>必須在訊息收回前開啟此設定。僅保留收回前已下載至本機的媒體，未下載的原始檔案無法復原；儲存的縮圖僅供預覽。</string>
+	<key>media.settingTitle</key>
+	<string>保留已收回文字與媒體</string>
+	<key>menu.retainedMedia</key>
+	<string>已儲存媒體</string>
 	<key>「%@」と「%@」を同時に非表示にできません。</key>
 	<string>不能同時隱藏「%@」與「%@」。</string>
 	<key>「%@」の表示名をこの端末だけ変更します。空欄で解除し、旧表示名ルールもこのIDには適用しません。</key>

@@ -4,6 +4,7 @@
 #import "MessagingPrivateAPI.h"
 #import "UnsendRetention.h"
 #import "MessageHistory.h"
+#import "RetainedMedia.h"
 #import "Features.h"
 #import "../core/Localization.h"
 #import <CoreData/CoreData.h>
@@ -300,6 +301,9 @@ static NSString *InspectAndRetain(id message) {
         }
         if (!filteredMarker && (!atomic_load(&nativeKeysVerified) ||
             (state != RUINNativeUnsendNormal && state != RUINNativeUnsendSilent))) return nil;
+#if TARGET_OS_IPHONE
+        RUINCaptureRetainedMedia(message, key);
+#endif
         atomic_fetch_add(&snapshotRequests, 1);
         NSDictionary *snapshot = RUINHistoryRetainUnsentSnapshotForKey(key);
         if (!snapshot.count || [snapshot[@"originalUnavailable"] boolValue]) {

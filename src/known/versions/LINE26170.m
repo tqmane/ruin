@@ -74,6 +74,51 @@ static const uintptr_t kUnsendLookup[] = {
     0x103ed1934, 0x103ed18e4, 0x1000bb64c
 };
 
+// LineMessaging.MessagingGeneralSettingsService : LineMessagingV2.GeneralSettingsService.
+// Its only requirement is a scalar Bool getter. The menu policy supplies
+// metadata in x0, conformance in x1 and borrowed self in x20 before BLR x8.
+static const RUINInstructionAnchor kNativeMuteSend[] = {
+    {0x10403172c, 2, {0x150903b6, 0x17ffffff}},
+    {0x108272604, 4, {0xa9be4ff4, 0xa9017bfd, 0x910043fd, 0x94000910}},
+    {0x108272614, 4, {0x54000040, 0x97ffccbc, 0x94000903, 0x975e79f8}},
+    {0x108272624, 4, {0x975b2126, 0xd0013d68, 0x91018108, 0x94000921}},
+    {0x108272634, 4, {0xd2800241, 0x94000923, 0x97e702d5, 0x12000260}},
+    {0x108272644, 2, {0xa9417bfd, 0x17e688dd}},
+    {0x108274ab4, 4, {0xd1008108, 0xb2410102, 0x52800000, 0xd65f03c0}},
+    {0x108274ac4, 2, {0xf2fa0001, 0x17ffbf67}},
+    {0x104733d30, 4, {0xa942da75, 0x91004260, 0xaa1503e1, 0x96e3651f}},
+    {0x104733d40, 4, {0xf94006c8, 0xaa0003f4, 0xaa1503e0, 0xaa1603e1}},
+    {0x104733d50, 4, {0xd63f0100, 0x14000002, 0x52800000, 0x12000000}},
+    {0x10462f558, 4, {0x9400029e, 0x910003e0, 0x91004294, 0x940411c8}},
+    {0x10462f568, 1, {0x12000000}},
+    {0x109d41400, 4, {0x02728051, 0x00e207e4, 0x02728018, 0x00000000}},
+    {0x10ab847f0, 4, {0x00010043, 0xffffe98c, 0xff1fbf58, 0x00000000}},
+    {0x10ab84800, 4, {0x00000001, 0x00000000, 0x00000013, 0x00000000}},
+    {0x10aa20060, 4, {0x74616863, 0x6c69732e, 0x6d746e65, 0x61737365}},
+    {0x10aa20070, 1, {0x00006567}},
+    // CompositeConfigurationKey<LabsSilentMessageEnabledKey> returns Bool
+    // indirectly through x8; x0 is the configuration snapshot, x1/x2 are
+    // key metadata/conformance and x20 is the static method's metatype.
+    {0x104788560, 4, {0xa9be4ff4, 0xa9017bfd, 0x910043fd, 0xaa0803f3}},
+    {0x104788570, 4, {0x97ffffcc, 0x12000008, 0x39000268, 0xa9417bfd}},
+    {0x104788580, 2, {0xa8c24ff4, 0xd65f03c0}},
+    {0x1047884a0, 4, {0xd10103ff, 0xa90157f6, 0xa9024ff4, 0xa9037bfd}},
+    {0x1047884b0, 4, {0x9100c3fd, 0xaa0003f4, 0x97ff9c9d, 0x36000060}},
+    {0x1047884c0, 2, {0x52800000, 0x14000022}},
+    {0x103403e24, 4, {0xa9be4ff4, 0xa9017bfd, 0x910043fd, 0xaa0103e0}},
+    {0x103403e34, 4, {0xf9400869, 0xaa0203f4, 0xaa0203e1, 0xaa0303e2}},
+    {0x103403e44, 3, {0xd63f0120, 0xa9417bfd, 0x1730228f}},
+    {0x104733ce0, 4, {0x9002b297, 0x910342f7, 0xaa1703e0, 0x953a6086}},
+    {0x104733cf0, 4, {0xf9000be0, 0x910082e0, 0x910043e1, 0x953a6082}},
+    {0x104733d00, 4, {0xaa0003f7, 0xd0046ee3, 0x912c4063, 0x91003fe8}},
+    {0x104733d10, 3, {0xaa1603e1, 0xaa1503e2, 0x97b37a38}},
+    {0x109d89988, 4, {0x02746c51, 0x00dfd2cc, 0x03788180, 0x00000000}},
+    {0x104788484, 4, {0x90030708, 0x9126c108, 0xd1008108, 0xb2410101}},
+    {0x104788494, 3, {0xd2800360, 0xf2fa0000, 0xd65f03c0}},
+    {0x10a8689b0, 4, {0x636e7566, 0x6e6f6974, 0x62616c2e, 0x6c69732e}},
+    {0x10a8689c0, 3, {0x5f746e65, 0x7373656d, 0x00656761}}
+};
+
 const RUINVersionMapping RUINLINE26170 = {
     .host = {"26.17.0", "2026.1103.1841", "614CED59-07E5-372D-94B2-D4901870C7A0",
         "a3de1677f3140ed076554f642933209db2d41b838d2a28b98ab4a2bdcacf1bd8", RUINMappingStatusUnverified},
@@ -113,7 +158,21 @@ const RUINVersionMapping RUINLINE26170 = {
         .unsendOperation = {RUINMappingStatusVerified, kUnsendParser,
             sizeof(kUnsendParser) / sizeof(*kUnsendParser), 0x10476ec44,
             RUINMappingStatusVerified, kUnsendLookup, sizeof(kUnsendLookup) / sizeof(*kUnsendLookup)},
-        .readUntilABIStatus = RUINMappingStatusVerified
+        .readUntilABIStatus = RUINMappingStatusVerified,
+        .nativeMuteSend = {
+            .status = RUINMappingStatusVerified,
+            .witnessTableVA = 0x10c469420,
+            .conformanceVA = 0x109d41400,
+            .getterVA = 0x104031730,
+            .policyReturnVA = 0x104733d54,
+            .anchors = kNativeMuteSend,
+            .anchorCount = sizeof(kNativeMuteSend) / sizeof(*kNativeMuteSend),
+            .configurationWitnessTableVA = 0x10d511b10,
+            .configurationConformanceVA = 0x109d89988,
+            .configurationValueTypeVA = 0x10a20b821,
+            .configurationGetterVA = 0x104788560,
+            .configurationReturnVA = 0x103403e48
+        }
     },
     .nativeTabs = {
         .status = RUINMappingStatusVerified,

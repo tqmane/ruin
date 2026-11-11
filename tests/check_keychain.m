@@ -4,6 +4,9 @@
 #import <assert.h>
 #import <stdio.h>
 
+extern const RUINVersionMapping RUINLINE26160;
+extern const RUINVersionMapping RUINLINE26170;
+
 static NSDictionary *gFakePermissions;
 static NSDictionary *gFakeAddResult;
 static NSDictionary *gFakeAddAttributes;
@@ -83,6 +86,65 @@ int main(void) {
             @"CFBundleVersion": @"2026.1006.1718"
         }));
 
+        const RUINVersionMapping *mapping2617 = &RUINLINE26170;
+        const RUINVersionMapping *mapping2616 = &RUINLINE26160;
+        struct { struct mach_header_64 header; struct uuid_command uuid; } plainMainStorage = {0};
+        plainMainStorage.header = (struct mach_header_64){.magic = MH_MAGIC_64, .cputype = CPU_TYPE_ARM64,
+            .cpusubtype = CPU_SUBTYPE_ARM64_ALL, .filetype = MH_EXECUTE, .ncmds = 1,
+            .sizeofcmds = sizeof(plainMainStorage.uuid)};
+        plainMainStorage.uuid.cmd = LC_UUID;
+        plainMainStorage.uuid.cmdsize = sizeof(plainMainStorage.uuid);
+        struct mach_header_64 *plainMainHeader = &plainMainStorage.header;
+        NSUUID *mappingUUID = [[NSUUID alloc] initWithUUIDString:@(mapping2617->host.uuid)];
+        [mappingUUID getUUIDBytes:plainMainStorage.uuid.uuid];
+        RUINMainExecutableImage plainMain = {.header = plainMainHeader, .cpuType = CPU_TYPE_ARM64,
+            .cpuSubtype = CPU_SUBTYPE_ARM64_ALL};
+        memcpy(plainMain.uuid, plainMainStorage.uuid.uuid, sizeof(plainMain.uuid));
+        assert(mapping2617->host.supportStatus == RUINMappingStatusUnverified);
+        assert(RUINKeychainMainImageAllowsRebinding(mapping2617, &plainMain, YES));
+        assert(RUINKeychainMainImageAllowsRebinding(mapping2617, &plainMain, NO));
+
+        NSUUID *oldMappingUUID = [[NSUUID alloc] initWithUUIDString:@(mapping2616->host.uuid)];
+        [oldMappingUUID getUUIDBytes:plainMainStorage.uuid.uuid];
+        memcpy(plainMain.uuid, plainMainStorage.uuid.uuid, sizeof(plainMain.uuid));
+        assert(!RUINKeychainMainImageAllowsRebinding(mapping2616, &plainMain, YES));
+        assert(RUINKeychainMainImageAllowsRebinding(mapping2616, &plainMain, NO));
+        [mappingUUID getUUIDBytes:plainMainStorage.uuid.uuid];
+        memcpy(plainMain.uuid, plainMainStorage.uuid.uuid, sizeof(plainMain.uuid));
+
+        assert(!RUINKeychainMainImageAllowsRebinding(NULL, &plainMain, YES));
+        plainMainHeader->cpusubtype = CPU_SUBTYPE_ARM64E;
+        plainMain.cpuSubtype = CPU_SUBTYPE_ARM64E;
+        assert(!RUINKeychainMainImageAllowsRebinding(mapping2617, &plainMain, YES));
+        plainMainHeader->cpusubtype = CPU_SUBTYPE_ARM64_ALL;
+        plainMain.cpuSubtype = CPU_SUBTYPE_ARM64_ALL;
+        plainMainHeader->filetype = MH_DYLIB;
+        assert(!RUINKeychainMainImageAllowsRebinding(mapping2617, &plainMain, YES));
+        plainMainHeader->filetype = MH_EXECUTE;
+        plainMain.uuid[0] ^= 1;
+        assert(!RUINKeychainMainImageAllowsRebinding(mapping2617, &plainMain, YES));
+        plainMain.uuid[0] ^= 1;
+
+        struct {
+            struct mach_header_64 header;
+            struct uuid_command uuid;
+            struct segment_command_64 segment;
+            struct section_64 section;
+        } authenticatedMain = {0};
+        authenticatedMain.header = *plainMainHeader;
+        authenticatedMain.uuid = plainMainStorage.uuid;
+        authenticatedMain.header.ncmds = 2;
+        authenticatedMain.header.sizeofcmds = sizeof(authenticatedMain.uuid) +
+            sizeof(authenticatedMain.segment) + sizeof(authenticatedMain.section);
+        authenticatedMain.segment.cmd = LC_SEGMENT_64;
+        authenticatedMain.segment.cmdsize = (uint32_t)(sizeof(authenticatedMain.segment) + sizeof(authenticatedMain.section));
+        authenticatedMain.segment.nsects = 1;
+        strcpy(authenticatedMain.segment.segname, "__AUTH_CONST");
+        strcpy(authenticatedMain.section.sectname, "__auth_got");
+        RUINMainExecutableImage authenticatedMainImage = plainMain;
+        authenticatedMainImage.header = &authenticatedMain.header;
+        assert(!RUINKeychainMainImageAllowsRebinding(mapping2617, &authenticatedMainImage, YES));
+
         NSDictionary *allowedOriginalGroups = RUINPermissions(
             @[RUINOldAppAccessGroup, RUINOldSharedAccessGroup], @[]);
         BOOL originalGroupsAllowed = NO;
@@ -90,6 +152,8 @@ int main(void) {
             @"HOSTPREFIX.jp.naver.line", logicalLINE, allowedOriginalGroups, &originalGroupsAllowed);
         assert(unchanged && unchanged.count == 0);
         assert(originalGroupsAllowed);
+        NSString *unchangedCanonicalAppGroup = RUINCanonicalAppAccessGroup(@"HOSTPREFIX.jp.naver.line.generic");
+        assert(unchangedCanonicalAppGroup && !unchanged[unchangedCanonicalAppGroup]);
         assert(RUINKeychainBindingActionForMap(unchanged, originalGroupsAllowed, YES) ==
                RUINKeychainBindingActionNativePassthrough);
         assert(RUINKeychainBindingActionCanReadyWithoutRebind(
@@ -119,20 +183,34 @@ int main(void) {
             &originalGroupsAllowed);
         assert([genericMissingMetadata[RUINOldAppAccessGroup] isEqualToString:defaultGroup]);
         assert([genericMissingMetadata[RUINOldSharedAccessGroup] isEqualToString:defaultShared]);
+        NSString *canonicalAppGroup = RUINCanonicalAppAccessGroup(defaultGroup);
+        assert([canonicalAppGroup isEqualToString:@"HOSTPREFIX.jp.naver.line"]);
+        assert([genericMissingMetadata[canonicalAppGroup] isEqualToString:defaultGroup]);
+        NSString *observedDefaultGroup = @"TESTTEAM01.app.example.signed";
+        NSDictionary *observedEntitlementMap = RUINMapWithPermissions(observedDefaultGroup, logicalLINE,
+            RUINPermissions(@[@"TESTTEAM01.com.linecorp.trident.shared"],
+                @[RUINOldAppAccessGroup, RUINOldSharedAccessGroup]));
+        assert([observedEntitlementMap[@"TESTTEAM01.jp.naver.line"] isEqual:observedDefaultGroup]);
         // The same jp.naver.line metadata still needs a map when either original ACL is denied.
         assert(!originalGroupsAllowed);
+        assert(RUINKeychainBindingActionForMap(genericMissingMetadata, originalGroupsAllowed,
+            RUINKeychainMainImageAllowsRebinding(NULL, &plainMain, YES)) ==
+            RUINKeychainBindingActionUnsupportedAuthenticatedImports);
         RUINKeychainBindingAction arm64eMappedAction = RUINKeychainBindingActionForMap(
-            genericMissingMetadata, originalGroupsAllowed, YES);
+            genericMissingMetadata, originalGroupsAllowed, NO);
         assert(arm64eMappedAction == RUINKeychainBindingActionUnsupportedAuthenticatedImports);
         assert(!RUINKeychainBindingActionNeedsRebind(arm64eMappedAction));
         assert(!RUINKeychainBindingActionCanReadyWithoutRebind(arm64eMappedAction));
-        assert(RUINKeychainBindingActionForMap(genericMissingMetadata, originalGroupsAllowed, NO) ==
+        assert(RUINKeychainBindingActionForMap(genericMissingMetadata, originalGroupsAllowed, YES) ==
                RUINKeychainBindingActionRebind);
         assert(RUINKeychainBindingActionNeedsRebind(
-            RUINKeychainBindingActionForMap(genericMissingMetadata, originalGroupsAllowed, NO)));
+            RUINKeychainBindingActionForMap(genericMissingMetadata, originalGroupsAllowed, YES)));
         accessGroupMap = genericMissingMetadata;
         NSDictionary *mappedApp = RUINMappedAttributes((__bridge CFDictionaryRef)originalAttributes);
         assert([mappedApp[(__bridge id)kSecAttrAccessGroup] isEqualToString:defaultGroup]);
+        NSDictionary *canonicalAppAttributes = @{(__bridge id)kSecAttrAccessGroup:canonicalAppGroup};
+        assert([RUINMappedAttributes((__bridge CFDictionaryRef)canonicalAppAttributes)[(__bridge id)kSecAttrAccessGroup]
+            isEqualToString:defaultGroup]);
 
         NSDictionary *oldMetadata = @{
             @"CFBundleIdentifier": @"generic.signed.app",
@@ -196,8 +274,11 @@ int main(void) {
                 return YES;
             });
         assert([reused[RUINOldAppAccessGroup] isEqual:@"HOSTPREFIX.previous.signed.app"]);
+        assert([reused[canonicalAppGroup] isEqual:@"HOSTPREFIX.previous.signed.app"]);
         assert(persistCalls == 1 && accessGroupMap == reused);
         assert([RUINMappedAttributes((__bridge CFDictionaryRef)originalAttributes)[(__bridge id)kSecAttrAccessGroup]
+            isEqual:@"HOSTPREFIX.previous.signed.app"]);
+        assert([RUINMappedAttributes((__bridge CFDictionaryRef)canonicalAppAttributes)[(__bridge id)kSecAttrAccessGroup]
             isEqual:@"HOSTPREFIX.previous.signed.app"]);
 
         accessGroupMap = genericMissingMetadata;
