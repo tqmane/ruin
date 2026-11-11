@@ -3,6 +3,7 @@
 #import <fcntl.h>
 #import <sys/stat.h>
 #import <unistd.h>
+#import <CommonCrypto/CommonDigest.h>
 
 NSString *const RUINAppGroupStorageErrorDomain = @"RUINAppGroupStorage";
 
@@ -169,9 +170,9 @@ static NSURL *RUINMarkerURL(NSURL *containerURL, NSString *logicalGroupIdentifie
                                        isDirectory:NO];
 }
 
-static RUINMarkerState RUINReadMarker(NSURL *containerURL,
-                                      NSString *logicalGroupIdentifier,
-                                      NSError **error) {
+static RUINMarkerState RUINReadMarkerContents(NSURL *containerURL,
+    NSString *logicalGroupIdentifier, NSDictionary **contents, NSError **error) {
+    if (contents) *contents = nil;
     NSURL *markerURL = RUINMarkerURL(containerURL, logicalGroupIdentifier);
     RUINPathState state = RUINRegularFileState(markerURL);
     if (state == RUINPathStateMissing) return RUINMarkerStateMissing;
@@ -197,7 +198,13 @@ static RUINMarkerState RUINReadMarker(NSURL *containerURL,
         RUINSetStorageError(error, RUINAppGroupStorageErrorInvalidMarker);
         return RUINMarkerStateInvalid;
     }
+    if (contents) *contents = object;
     return RUINMarkerStateValid;
+}
+
+static RUINMarkerState RUINReadMarker(NSURL *containerURL,
+    NSString *logicalGroupIdentifier, NSError **error) {
+    return RUINReadMarkerContents(containerURL, logicalGroupIdentifier, NULL, error);
 }
 
 static BOOL RUINSetResolution(NSURL *url,
@@ -407,22 +414,8 @@ BOOL RUINResolveAppGroupStorage(NSString *logicalGroupIdentifier,
                              resolvedContainerURL, suiteName, disposition);
 }
 
-BOOL RUINRecordExplicitAppGroupBinding(NSString *logicalGroupIdentifier,
-                                       NSString *authorizedGroupIdentifier,
-                                       NSDictionary<NSString *,NSURL *> *authorizedGroupContainers,
-                                       NSError **error) {
-    if (error) *error = nil;
-    if (!RUINIsSafeGroupIdentifier(logicalGroupIdentifier) ||
-        !RUINIsSafeGroupIdentifier(authorizedGroupIdentifier) ||
-        ![authorizedGroupContainers isKindOfClass:NSDictionary.class]) {
-        RUINSetStorageError(error, RUINAppGroupStorageErrorInvalidArgument);
-        return NO;
-    }
-    NSURL *containerURL = authorizedGroupContainers[authorizedGroupIdentifier];
-    if (![containerURL isKindOfClass:NSURL.class] || !containerURL.isFileURL) {
-        RUINSetStorageError(error, RUINAppGroupStorageErrorUnauthorizedMapping);
-        return NO;
-    }
+static BOOL RUINWriteStorageBinding(NSString *logicalGroupIdentifier, NSURL *containerURL,
+    NSDictionary *additionalFields, NSError **error) {
     RUINPathState containerState = RUINDirectoryState(containerURL);
     if (containerState == RUINPathStateInaccessible ||
         (containerState == RUINPathStateReadable &&
@@ -451,8 +444,9 @@ BOOL RUINRecordExplicitAppGroupBinding(NSString *logicalGroupIdentifier,
     if (existing == RUINMarkerStateValid) return YES;
     if (existing != RUINMarkerStateMissing) return NO;
 
-    NSDictionary *marker = @{RUINBindingMarkerVersionKey:@(RUINBindingMarkerVersion),
-                             RUINBindingMarkerPurposeKey:logicalGroupIdentifier};
+    NSMutableDictionary *marker = [@{RUINBindingMarkerVersionKey:@(RUINBindingMarkerVersion),
+        RUINBindingMarkerPurposeKey:logicalGroupIdentifier} mutableCopy];
+    [marker addEntriesFromDictionary:additionalFields];
     NSData *data = [NSPropertyListSerialization dataWithPropertyList:marker
                                                              format:NSPropertyListBinaryFormat_v1_0
                                                             options:0
@@ -487,4 +481,73 @@ BOOL RUINRecordExplicitAppGroupBinding(NSString *logicalGroupIdentifier,
         return NO;
     }
     return YES;
+}
+
+BOOL RUINRecordExplicitAppGroupBinding(NSString *logicalGroupIdentifier,
+                                       NSString *authorizedGroupIdentifier,
+                                       NSDictionary<NSString *,NSURL *> *authorizedGroupContainers,
+                                       NSError **error) {
+    if (error) *error = nil;
+    if (!RUINIsSafeGroupIdentifier(logicalGroupIdentifier) ||
+        !RUINIsSafeGroupIdentifier(authorizedGroupIdentifier) ||
+        ![authorizedGroupContainers isKindOfClass:NSDictionary.class]) {
+        RUINSetStorageError(error, RUINAppGroupStorageErrorInvalidArgument);
+        return NO;
+    }
+    NSURL *containerURL = authorizedGroupContainers[authorizedGroupIdentifier];
+    if (![containerURL isKindOfClass:NSURL.class] || !containerURL.isFileURL) {
+        RUINSetStorageError(error, RUINAppGroupStorageErrorUnauthorizedMapping);
+        return NO;
+    }
+    return RUINWriteStorageBinding(logicalGroupIdentifier, containerURL, @{}, error);
+}
+
+static NSString *RUINSandboxOwnerDigest(NSString *logicalGroupIdentifier, NSString *signingIdentifier,
+    NSURL *sandboxURL, NSError **error) {
+    if (!RUINIsSafeGroupIdentifier(logicalGroupIdentifier) ||
+        ![sandboxURL isKindOfClass:NSURL.class] || !sandboxURL.isFileURL ||
+        ![signingIdentifier isKindOfClass:NSString.class] || !signingIdentifier.length || signingIdentifier.length > 1024) {
+        RUINSetStorageError(error, RUINAppGroupStorageErrorInvalidArgument); return nil;
+    }
+    NSData *owner = [signingIdentifier dataUsingEncoding:NSUTF8StringEncoding];
+    unsigned char hash[CC_SHA256_DIGEST_LENGTH]; CC_SHA256(owner.bytes, (CC_LONG)owner.length, hash);
+    NSMutableString *digest = [NSMutableString string];
+    for (NSUInteger i = 0; i < sizeof(hash); i++) [digest appendFormat:@"%02x", hash[i]];
+    return digest;
+}
+
+static RUINMarkerState RUINReadSandboxOwnerBinding(NSString *logicalGroupIdentifier,
+    NSString *digest, NSURL *sandboxURL, NSError **error) {
+    NSDictionary *stored = nil;
+    RUINMarkerState marker = RUINReadMarkerContents(sandboxURL, logicalGroupIdentifier, &stored, error);
+    if (marker == RUINMarkerStateValid) {
+        if ([stored[@"sandboxOwnerDigest"] isEqual:digest]) return RUINMarkerStateValid;
+        RUINSetStorageError(error, RUINAppGroupStorageErrorAmbiguousBinding);
+        return RUINMarkerStateInvalid;
+    }
+    return marker;
+}
+
+BOOL RUINVerifySandboxAppGroupStorageBinding(NSString *logicalGroupIdentifier, NSString *signingIdentifier,
+    NSURL *sandboxURL, NSError **error) {
+    if (error) *error = nil;
+    NSString *digest = RUINSandboxOwnerDigest(logicalGroupIdentifier, signingIdentifier, sandboxURL, error);
+    return digest && RUINReadSandboxOwnerBinding(logicalGroupIdentifier, digest, sandboxURL, error) == RUINMarkerStateValid;
+}
+
+BOOL RUINPinSandboxAppGroupStorage(NSString *logicalGroupIdentifier, NSString *signingIdentifier,
+    NSURL *sandboxURL, NSError **error) {
+    if (error) *error = nil;
+    NSString *digest = RUINSandboxOwnerDigest(logicalGroupIdentifier, signingIdentifier, sandboxURL, error);
+    if (!digest) return NO;
+    RUINMarkerState marker = RUINReadSandboxOwnerBinding(logicalGroupIdentifier, digest, sandboxURL, error);
+    if (marker == RUINMarkerStateValid) return YES;
+    if (marker != RUINMarkerStateMissing) return NO;
+    RUINContainerContents contents;
+    RUINPathState state = RUINInspectMessageStore(sandboxURL, @"", &contents);
+    if (state == RUINPathStateInaccessible || contents.anyAccountHasLINEData) {
+        RUINSetStorageError(error, RUINAppGroupStorageErrorAmbiguousBinding); return NO;
+    }
+    return RUINWriteStorageBinding(logicalGroupIdentifier, sandboxURL, @{@"sandboxOwnerDigest":digest}, error) &&
+        RUINReadSandboxOwnerBinding(logicalGroupIdentifier, digest, sandboxURL, error) == RUINMarkerStateValid;
 }

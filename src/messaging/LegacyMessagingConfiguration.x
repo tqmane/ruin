@@ -2,6 +2,7 @@
 
 #import "MessagingPrivateAPI.h"
 #import "LegacyMessagingConfiguration.h"
+#import "NativeMuteSend.h"
 #import "../core/Features.h"
 #import "../core/TargetMetadata.h"
 #import <objc/runtime.h>
@@ -160,6 +161,7 @@ void RUINInstallLegacyMessagingConfiguration(void) {
         %init(RUINLegacyMessaging);
         gHookStatus = @"installed";
     });
+    RUINInstallNativeMuteSettingAdapter();
 }
 
 NSDictionary *RUINLegacyMessagingConfigurationDiagnostics(void) {

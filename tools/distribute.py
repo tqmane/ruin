@@ -25,7 +25,7 @@ OTOOL_ARCHITECTURE_RE = re.compile(r"\(architecture ([^)]+)\):$")
 # Direct links reviewed for this build; new SDK dependencies require review.
 APPLE_DEPENDENCIES = {
     f"/System/Library/Frameworks/{name}.framework/{name}"
-    for name in ("Foundation", "UIKit", "CoreText", "WebKit", "CoreGraphics",
+    for name in ("Foundation", "UIKit", "AVFoundation", "QuickLook", "CoreText", "WebKit", "CoreGraphics",
                  "Security", "CoreData", "ImageIO", "UniformTypeIdentifiers",
                  "UserNotifications", "CoreFoundation")
 } | {

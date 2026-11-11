@@ -9,10 +9,12 @@
 #import "ReadersSheet.h"
 #import "MIDLookup.h"
 #import "MessageHistory.h"
+#import "RetainedMedia.h"
 #import "ReadRangeFetch.h"
 #import "ReadUntil.h"
 #import "SwiftFields.h"
 #import "GIFEncoder.h"
+#import "../interface/RetainedMediaViewer.h"
 
 #import <CoreData/CoreData.h>
 #import <UIKit/UIKit.h>
@@ -60,6 +62,7 @@ static atomic_uint_fast64_t sStickerGIFPasteboardVerifiedCount, sStickerGIFLastF
 static atomic_int sStickerGIFLastEncodingRejectionCode = ATOMIC_VAR_INIT(0);
 static os_unfair_lock sMenuHookLock = OS_UNFAIR_LOCK_INIT;
 static _Thread_local unsigned int sMessageLongPressDepth;
+static id sRetainedMediaObserverToken;
 static char sMenuContextAssociationKey;
 static char sCalloutActionCellRegistrationAssociationKey;
 
@@ -73,6 +76,7 @@ static char sCalloutActionCellRegistrationAssociationKey;
 @property(nonatomic) BOOL includesReadUsers;
 @property(nonatomic) BOOL includesReadUntil;
 @property(nonatomic, strong, nullable) NSURL *stickerGIFURL;
+@property(nonatomic, copy) NSArray<NSDictionary *> *retainedMediaItems;
 @property(nonatomic) NSInteger originalItemCount;
 @property(nonatomic) BOOL hasOriginalItemCount;
 @property(nonatomic, strong) UICollectionViewLayout *originalMenuLayout;
@@ -815,8 +819,9 @@ static RUINMenuExtrasContext *RUINMenuExtrasResolveContext(
     BOOL includesReadUsers = [NSUserDefaults.standardUserDefaults boolForKey:RUINTrackReadUsersKey];
     BOOL canCopyStickerGIF = RUINMenuExtrasPreferenceEnabled(RUINCopyStickerGIFEnabledDefaultsKey);
     BOOL canReadUntil = RUINReadUntilAvailable();
+    BOOL canViewRetainedMedia = [NSUserDefaults.standardUserDefaults boolForKey:RUINKeepUnsentMessagesKey];
     if (!NSThread.isMainThread || UIApplication.sharedApplication.applicationState != UIApplicationStateActive ||
-        (!includesReadUsers && !canCopyStickerGIF && !canReadUntil)) return nil;
+        (!includesReadUsers && !canCopyStickerGIF && !canReadUntil && !canViewRetainedMedia)) return nil;
     UIWindow *menuWindow = container.window;
     UIWindowScene *scene = menuWindow.windowScene;
     if (!menuWindow || !scene || scene.activationState != UISceneActivationStateForegroundActive) return nil;
@@ -871,13 +876,18 @@ static RUINMenuExtrasContext *RUINMenuExtrasResolveContext(
         context.includesReadUsers = includesReadUsers;
         context.includesReadUntil = canReadUntil && [messageKey[@"kind"] isEqual:@"talk"];
         if (canCopyStickerGIF) context.stickerGIFURL = RUINMenuExtrasAnimatedStickerFileURLForCell(cell);
+        if (canViewRetainedMedia) {
+            NSArray<NSDictionary *> *items = RUINRetainedMediaItems(messageKey);
+            if (items.count) context.retainedMediaItems = [items copy];
+        }
         if (!context.messageKey.count) continue;
         match = context;
         matches++;
     }
     if (matches == 1) {
         if (match.includesReadUsers) atomic_store_explicit(&sReadUsersBindingVerified, true, memory_order_release);
-        if (match.includesReadUsers || match.includesReadUntil || match.stickerGIFURL) return match;
+        if (match.includesReadUsers || match.includesReadUntil || match.stickerGIFURL || match.retainedMediaItems.count)
+            return match;
     }
     return nil;
 }
@@ -924,7 +934,7 @@ static void RUINMenuExtrasAttachEntries(UIView *container)
     NSInteger nativeRows = [maximumRows isKindOfClass:NSNumber.class] ? [maximumRows integerValue] : 0;
     context.nativeMaximumRows = nativeRows >= 1 && nativeRows <= 8 ? nativeRows : 3;
     NSInteger addedItems = (context.includesReadUsers ? 1 : 0) + (context.includesReadUntil ? 1 : 0) +
-        (context.stickerGIFURL ? 1 : 0);
+        (context.stickerGIFURL ? 1 : 0) + (context.retainedMediaItems.count ? 1 : 0);
     if (context.hasOriginalItemCount && context.originalItemCount > 0 && columns > 0 &&
         addedItems > 0 &&
         (context.originalItemCount + addedItems - 1) / columns > (context.originalItemCount - 1) / columns &&
@@ -942,6 +952,45 @@ static void RUINMenuExtrasAttachEntries(UIView *container)
     [collectionView reloadData];
     [menuView invalidateIntrinsicContentSize];
     [container setNeedsLayout];
+}
+
+static void RUINMenuExtrasRefreshOpenRetainedMediaMenu(NSDictionary *messageKey)
+{
+    if (![messageKey isKindOfClass:NSDictionary.class] || !messageKey.count) return;
+    Class containerClass = objc_getClass("_TtC22LineSharedUIComponents24CalloutMenuContainerView");
+    if (!containerClass) return;
+    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if (![scene isKindOfClass:UIWindowScene.class] || scene.activationState != UISceneActivationStateForegroundActive)
+            continue;
+        for (UIWindow *window in ((UIWindowScene *)scene).windows) {
+            if (window.hidden || window.alpha <= 0.01) continue;
+            NSMutableArray<UIView *> *pending = [NSMutableArray arrayWithObject:window];
+            while (pending.count) {
+                UIView *view = pending.lastObject;
+                [pending removeLastObject];
+                if (view.hidden || view.alpha <= 0.01) continue;
+                if ([view isKindOfClass:containerClass]) {
+                    id menuView = RUINCopySwiftField(view, "menuView");
+                    id collectionView = [menuView isKindOfClass:UIView.class]
+                        ? RUINCopySwiftField(menuView, "collectionView") : nil;
+                    if ([collectionView isKindOfClass:UICollectionView.class]) {
+                        RUINMenuExtrasContext *context = objc_getAssociatedObject(menuView, &sMenuContextAssociationKey);
+                        BOOL matches = [context.messageKey isEqual:messageKey];
+                        if (!context) {
+                            RUINMenuExtrasContext *candidate = RUINMenuExtrasResolveContext(view,
+                                (UICollectionView *)collectionView);
+                            matches = [candidate.messageKey isEqual:messageKey];
+                        }
+                        if (matches) {
+                            RUINMenuExtrasAttachEntries(view);
+                            return;
+                        }
+                    }
+                }
+                [pending addObjectsFromArray:view.subviews];
+            }
+        }
+    }
 }
 
 static UICollectionViewCell *RUINMenuExtrasActionCell(
@@ -1017,10 +1066,19 @@ static UICollectionViewCell *RUINMenuExtrasReadUntilCell(UICollectionView *colle
     return RUINMenuExtrasActionCell(collectionView, indexPath, RUINLocalizedString(@"このメッセージまで既読"), image);
 }
 
+static UICollectionViewCell *RUINMenuExtrasRetainedMediaCell(
+    UICollectionView *collectionView, NSIndexPath *indexPath)
+{
+    UIImage *image = [[UIImage imageNamed:@"tabler-eye" inBundle:RUINResourceBundle() compatibleWithTraitCollection:nil]
+        imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+    return RUINMenuExtrasActionCell(collectionView, indexPath,
+        RUINLocalizedString(@"menu.retainedMedia"), image);
+}
+
 static NSInteger RUINMenuExtrasAdditionalActionCount(RUINMenuExtrasContext *context)
 {
     return (context.includesReadUsers ? 1 : 0) + (context.includesReadUntil ? 1 : 0) +
-        (context.stickerGIFURL ? 1 : 0);
+        (context.stickerGIFURL ? 1 : 0) + (context.retainedMediaItems.count ? 1 : 0);
 }
 
 %group RUINMenuIntrinsic
@@ -1074,6 +1132,9 @@ static NSInteger RUINMenuExtrasAdditionalActionCount(RUINMenuExtrasContext *cont
         actionIndex += context.includesReadUntil ? 1 : 0;
         if (context.stickerGIFURL && indexPath.item == actionIndex)
             return RUINMenuExtrasStickerGIFCell(collectionView, indexPath);
+        actionIndex += context.stickerGIFURL ? 1 : 0;
+        if (context.retainedMediaItems.count && indexPath.item == actionIndex)
+            return RUINMenuExtrasRetainedMediaCell(collectionView, indexPath);
     }
     return %orig;
 
@@ -1126,10 +1187,13 @@ static void RUINMenuExtrasPresentReaders(UIViewController *chatController,
         context.hasOriginalItemCount;
     NSInteger readUntilIndex = context.originalItemCount + (context.includesReadUsers ? 1 : 0);
     NSInteger stickerGIFIndex = readUntilIndex + (context.includesReadUntil ? 1 : 0);
+    NSInteger retainedMediaIndex = stickerGIFIndex + (context.stickerGIFURL ? 1 : 0);
     BOOL selectedStickerGIF = menuActionSelected && context.stickerGIFURL && indexPath.item == stickerGIFIndex;
     BOOL selectedReadUsers = menuActionSelected && context.includesReadUsers &&
         indexPath.item == context.originalItemCount;
     BOOL selectedReadUntil = menuActionSelected && context.includesReadUntil && indexPath.item == readUntilIndex;
+    BOOL selectedRetainedMedia = menuActionSelected && context.retainedMediaItems.count &&
+        indexPath.item == retainedMediaIndex;
     if (selectedStickerGIF) {
         UICollectionViewCell *cell = context.messageCell;
         NSDictionary *messageKey = RUINMenuExtrasMessageKeyForCell(cell);
@@ -1155,7 +1219,7 @@ static void RUINMenuExtrasPresentReaders(UIViewController *chatController,
         }});
         return;
     }
-    if (!selectedReadUsers && !selectedReadUntil) {
+    if (!selectedReadUsers && !selectedReadUntil && !selectedRetainedMedia) {
         %orig;
         return;
     }
@@ -1168,6 +1232,7 @@ static void RUINMenuExtrasPresentReaders(UIViewController *chatController,
     if (!messageKey.count || ![messageKey isEqual:context.messageKey] || ![currentIndexPath isEqual:context.messageIndexPath]) {
         UIViewController *chatController = context.chatViewController;
         [(id)self accessibilityPerformEscape];
+        if (selectedRetainedMedia) return;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             RUINMenuExtrasPresentMessage(chatController,
                 RUINLocalizedString(selectedReadUntil ? @"このメッセージまで既読" : @"既読者一覧"),
@@ -1177,6 +1242,16 @@ static void RUINMenuExtrasPresentReaders(UIViewController *chatController,
     }
 
     UIViewController *chatController = context.chatViewController;
+    if (selectedRetainedMedia) {
+        NSDictionary *copiedKey = [messageKey copy];
+        __weak UIViewController *source = chatController;
+        [(id)self accessibilityPerformEscape];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 250 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+            NSArray<NSDictionary *> *items = RUINRetainedMediaItems(copiedKey);
+            if (items.count) RUINPresentRetainedMediaViewer(source, items);
+        });
+        return;
+    }
     __block id nativeChat = nil;
     @try {
         SEL chatSelector = sel_registerName("chat");
@@ -1367,6 +1442,14 @@ void RUINInstallMenuExtras(void)
         atomic_store_explicit(&sCalloutGridHooksReady, false, memory_order_release);
         os_unfair_lock_unlock(&sMenuHookLock);
         return;
+    }
+
+    if (!sRetainedMediaObserverToken) {
+        sRetainedMediaObserverToken = [NSNotificationCenter.defaultCenter
+            addObserverForName:RUINRetainedMediaDidChangeNotification object:nil queue:NSOperationQueue.mainQueue
+            usingBlock:^(NSNotification *notification) {
+                RUINMenuExtrasRefreshOpenRetainedMediaMenu(notification.object);
+            }];
     }
 
     Class interaction = objc_getClass("_TtC17LineMessagingUIV229MessageContextMenuInteraction");

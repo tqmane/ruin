@@ -21,7 +21,15 @@
 } while (0)
 
 static NSDictionary *gFakeInfoDictionary;
+static NSUserDefaults *gFixtureDefaults;
 static atomic_bool gConcurrentNameFailure = ATOMIC_VAR_INIT(false);
+
+static id RUINFixtureStandardUserDefaults(id self, SEL selector)
+{
+    (void)self;
+    (void)selector;
+    return gFixtureDefaults;
+}
 
 static NSDictionary *RUINFakeInfoDictionary(id self, SEL selector)
 {
@@ -537,6 +545,20 @@ static int RUINRunChecks(void)
 int main(void)
 {
     @autoreleasepool {
-        return RUINRunChecks();
+        NSString *suite = [@"com.tqmane.ruin.check.features." stringByAppendingString:NSUUID.UUID.UUIDString];
+        Method defaultsMethod = class_getClassMethod(NSUserDefaults.class, @selector(standardUserDefaults));
+        IMP originalDefaults = NULL;
+        @try {
+            gFixtureDefaults = [[NSUserDefaults alloc] initWithSuiteName:suite];
+            CHECK(gFixtureDefaults != nil && defaultsMethod != NULL, @"fixture defaults setup failed");
+            originalDefaults = method_setImplementation(defaultsMethod, (IMP)RUINFixtureStandardUserDefaults);
+            CHECK(originalDefaults != NULL && NSUserDefaults.standardUserDefaults == gFixtureDefaults,
+                  @"fixture defaults routing failed");
+            return RUINRunChecks();
+        } @finally {
+            if (originalDefaults) method_setImplementation(defaultsMethod, originalDefaults);
+            [gFixtureDefaults removePersistentDomainForName:suite];
+            gFixtureDefaults = nil;
+        }
     }
 }

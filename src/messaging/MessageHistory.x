@@ -18,6 +18,7 @@
 #import <string.h>
 #if TARGET_OS_IPHONE
 #import "LocalNotifications.h"
+#import "RetainedMedia.h"
 #endif
 
 NSString *const RUINKeepUnsentMessagesKey = @"RUINKeepUnsentMessages";
@@ -681,6 +682,9 @@ static void CaptureMessage(id object) {
         NSManagedObject *message = object;
         NSDictionary *key = MessageKeyOnContextQueue(message);
         if (!key.count) return;
+#if TARGET_OS_IPHONE
+        if (retain) RUINObserveRetainedMedia(message, key);
+#endif
         NSMutableDictionary *snapshot = nil;
         if (retain) {
             NSString *text = ObjectGetter(message, "plaintext") ?: ManagedValue(message, @"text");

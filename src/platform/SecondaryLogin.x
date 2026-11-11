@@ -6,6 +6,7 @@
 #import "../core/Localization.h"
 #import "Features.h"
 #import "../core/TargetMetadata.h"
+#import "../core/NativeFunctionPointer.h"
 #import "LINEPrivateCalls.h"
 #import "BinaryVerifier.h"
 #import <UIKit/UIKit.h>
@@ -15,18 +16,34 @@
 #import <mach-o/dyld.h>
 #import <dlfcn.h>
 #import <stdatomic.h>
+#import <mach-o/loader.h>
+#import <mach/machine.h>
+#import <string.h>
 
 NSString *const RUINSecondaryLoginEnabledKey = @"RUINSecondaryLoginEnabled";
+@protocol RUINAccessibilityElementsProviding <NSObject>
+- (NSArray *)accessibilityElements;
+@end
+
 static BOOL activeSecondaryMode;
 static BOOL deviceIdiomHookInstalled, welcomeHookInstalled, secondaryScreenHookInstalled;
 static BOOL autoLoginOpened;
 static BOOL autoQROpened;
-static atomic_ulong appIdiomRequests;
+static atomic_ulong appIdiomRequests, enabledIdiomQueries, LINEIdiomQueries;
+static atomic_ulong unscopedLINEQueries, backgroundLINEQueries, otherImageQueries;
+static const void *verifiedLoginGuestImage;
 static char gestureKey;
 static NSString *lastLoginScreen;
 static __weak UIViewController *loginProjectionOwner;
 static _Thread_local NSUInteger loginProjectionDepth;
 static atomic_ulong swiftUILoginBindings;
+static atomic_bool welcomeHooksReady = ATOMIC_VAR_INIT(false);
+static atomic_bool welcomeCatchUpScheduled = ATOMIC_VAR_INIT(false);
+static atomic_bool secondaryLoginRetryScheduled = ATOMIC_VAR_INIT(false);
+static atomic_uint secondaryLoginRetryCount = ATOMIC_VAR_INIT(0);
+
+static void RUINScheduleWelcomeCatchUp(void);
+static void RUINSecondaryLoginImageAdded(const struct mach_header *header, intptr_t slide);
 
 static BOOL RUINHasLoginProjectionScope(void) {
     if (!activeSecondaryMode || !NSThread.isMainThread) return NO;
@@ -52,23 +69,57 @@ static BOOL RUINSecondaryLoginTargetMatches(void) {
     return RUINTargetMetadataMatchesInfo(info);
 }
 
+// LiveContainer changes the guest executable's Mach-O type. This permission is
+// only for public idiom queries from the verified owner of LINE's Welcome
+// implementation; numeric/Swift main-image resolvers remain unchanged.
+static void RUINRememberLoginGuestImage(Class welcome) {
+    Method action = class_getInstanceMethod(welcome, sel_registerName("loginButtonAction"));
+    Dl_info owner;
+    const void *implementation = action ? (const void *)RUINNativeFunctionPointerRaw((const void *)method_getImplementation(action)) : NULL;
+    if (!implementation || !dladdr(implementation, &owner)) return;
+    const struct mach_header_64 *header = owner.dli_fbase;
+    const RUINVersionMapping *mapping = RUINMappingForInfo(NSBundle.mainBundle.infoDictionary);
+    if (!mapping || strcmp(mapping->host.version, "26.17.0") || !header ||
+        header->magic != MH_MAGIC_64 || header->filetype != MH_DYLIB || header->cputype != CPU_TYPE_ARM64 ||
+        header->ncmds > 4096 || header->sizeofcmds > 1024 * 1024) return;
+    NSUUID *expected = [[NSUUID alloc] initWithUUIDString:@(mapping->host.uuid)];
+    uuid_t UUID; [expected getUUIDBytes:UUID];
+    const uint8_t *cursor = (const uint8_t *)(header + 1), *end = cursor + header->sizeofcmds;
+    for (uint32_t i = 0; i < header->ncmds; i++) {
+        if ((size_t)(end - cursor) < sizeof(struct load_command)) return;
+        const struct load_command *command = (const void *)cursor;
+        if (command->cmdsize < sizeof(*command) || command->cmdsize > (size_t)(end - cursor)) return;
+        if (command->cmd == LC_UUID && command->cmdsize >= sizeof(struct uuid_command) && expected &&
+            !memcmp(((const struct uuid_command *)command)->uuid, UUID, sizeof(UUID))) {
+            verifiedLoginGuestImage = header; return;
+        }
+        cursor += command->cmdsize;
+    }
+}
+
+static BOOL RUINLoginCallerIsLINE(void *caller) {
+    Dl_info info;
+    if (!dladdr(caller, &info)) return NO;
+    RUINMainExecutableImage image;
+    return (RUINResolveMainExecutableImage(&image) && info.dli_fbase == (const void *)image.header) ||
+        (verifiedLoginGuestImage && info.dli_fbase == verifiedLoginGuestImage);
+}
+
 %group RUINSecondaryDeviceRole
 %hook UIDevice
-- (UIUserInterfaceIdiom)userInterfaceIdiom
-{
+- (UIUserInterfaceIdiom)userInterfaceIdiom {
     UIUserInterfaceIdiom nativeIdiom = %orig;
-    if (RUINHasLoginProjectionScope()) {
-        Dl_info info;
-        RUINMainExecutableImage image;
-        // Capture LINE's caller here: a helper function's caller is this dylib.
-        void *caller = __builtin_extract_return_addr(__builtin_return_address(0));
-        if (RUINResolveMainExecutableImage(&image) && dladdr(caller, &info) &&
-            info.dli_fbase == (const void *)image.header) {
-            atomic_fetch_add(&appIdiomRequests, 1);
-            return UIUserInterfaceIdiomPad;
-        }
-    }
-    return nativeIdiom;
+    if (!activeSecondaryMode) return nativeIdiom;
+    atomic_fetch_add(&enabledIdiomQueries, 1);
+    void *caller = __builtin_extract_return_addr(__builtin_return_address(0));
+    if (!RUINLoginCallerIsLINE(caller)) { atomic_fetch_add(&otherImageQueries, 1); return nativeIdiom; }
+    atomic_fetch_add(&LINEIdiomQueries, 1);
+    if (!RUINHasLoginProjectionScope()) atomic_fetch_add(&unscopedLINEQueries, 1);
+    if (!NSThread.isMainThread) atomic_fetch_add(&backgroundLINEQueries, 1);
+    // LINE caches its device role before Welcome and queries it again from
+    // async login tasks. UIKit/SwiftUI callers still receive the physical idiom.
+    atomic_fetch_add(&appIdiomRequests, 1);
+    return UIUserInterfaceIdiomPad;
 }
 %end
 %end
@@ -90,7 +141,9 @@ static void RUINPresentLoginModeMenu(UIViewController *controller, UILongPressGe
     for (NSNumber *enabled in @[@YES, @NO]) {
         NSString *title = enabled.boolValue ? RUINLocalizedString(@"iPad扱いでサブ端末ログイン") : RUINLocalizedString(@"通常のiPhoneログイン");
         [menu addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
-            [NSUserDefaults.standardUserDefaults setBool:enabled.boolValue forKey:RUINSecondaryLoginEnabledKey];
+            NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+            [defaults setBool:enabled.boolValue forKey:RUINSecondaryLoginEnabledKey];
+            [defaults synchronize];
             dispatch_async(dispatch_get_main_queue(), ^{ RUINShowLoginRestartNotice(controller); });
         }]];
     }
@@ -128,13 +181,23 @@ static void RUINFindLoginAccessibilityElement(id object, NSHashTable *visited,
     if ([object isKindOfClass:NSObject.class]) {
         NSObject *element = object;
         if (element.accessibilityElementsHidden) return;
-        if ([element conformsToProtocol:@protocol(UIAccessibilityIdentification)] &&
+        if ([element respondsToSelector:@selector(accessibilityIdentifier)] &&
             [[(id<UIAccessibilityIdentification>)element accessibilityIdentifier] isEqualToString:@"login"] &&
             (element.accessibilityTraits & UIAccessibilityTraitButton) &&
             !(element.accessibilityTraits & UIAccessibilityTraitNotEnabled) &&
             !CGRectIsEmpty(element.accessibilityFrame)) {
             if (*match && *match != object) *ambiguous = YES;
             *match = object;
+        }
+        if ([element respondsToSelector:@selector(accessibilityElements)]) {
+            NSArray *children = [(id<RUINAccessibilityElementsProviding>)element accessibilityElements];
+            if ([children isKindOfClass:NSArray.class]) {
+                if (children.count > 128) *ambiguous = YES;
+                else for (id child in children) {
+                    if (!*budget) break;
+                    RUINFindLoginAccessibilityElement(child, visited, depth + 1, budget, match, ambiguous);
+                }
+            }
         }
         NSInteger count = [element accessibilityElementCount];
         if (count != NSNotFound && count > 128) *ambiguous = YES;
@@ -183,13 +246,19 @@ static BOOL RUINPointIsOnNativeLoginButton(UIViewController *owner, CGPoint poin
 }
 @end
 
+@interface RUINLoginLongPressGestureRecognizer : UILongPressGestureRecognizer
+@end
+@implementation RUINLoginLongPressGestureRecognizer
+- (BOOL)canBePreventedByGestureRecognizer:(__unused UIGestureRecognizer *)other { return NO; }
+@end
+
 static void RUINWelcomeDidAppear(UIViewController *controller) {
     lastLoginScreen = @"welcome";
     loginProjectionOwner = controller;
     UIControl *control = RUINFindLoginControl(controller.view, controller);
     UIView *targetView = control ?: controller.view;
     if (!objc_getAssociatedObject(targetView, &gestureKey)) {
-        UILongPressGestureRecognizer *gesture = [[UILongPressGestureRecognizer alloc]
+        UILongPressGestureRecognizer *gesture = [[RUINLoginLongPressGestureRecognizer alloc]
             initWithTarget:controller action:sel_registerName("ruin_chooseLoginMode:")];
         gesture.minimumPressDuration = 0.65;
         gesture.cancelsTouchesInView = YES;
@@ -235,6 +304,47 @@ static void RUINSecondaryLoginDidAppear(UIViewController *controller) {
             }
         });
     }
+}
+
+static void RUINScanWelcomeControllerTree(UIViewController *controller, Class welcomeClass,
+    NSHashTable *visited, NSUInteger depth, NSUInteger *budget) {
+    if (!controller || depth > 32 || !*budget || [visited containsObject:controller]) return;
+    (*budget)--;
+    [visited addObject:controller];
+
+    if ([controller class] == welcomeClass) {
+        UIView *view = controller.viewIfLoaded;
+        if (view.window && !view.hidden && view.alpha > 0.01) RUINWelcomeDidAppear(controller);
+    }
+    RUINScanWelcomeControllerTree(controller.presentedViewController, welcomeClass, visited, depth + 1, budget);
+    for (UIViewController *child in controller.childViewControllers) {
+        if (!*budget) break;
+        RUINScanWelcomeControllerTree(child, welcomeClass, visited, depth + 1, budget);
+    }
+}
+
+static void RUINScanForegroundWelcomeControllers(void) {
+    Class welcomeClass = objc_getClass("_TtC18LineRegistrationUI21WelcomeViewController");
+    if (!welcomeClass) return;
+    NSHashTable *visited = [NSHashTable hashTableWithOptions:NSPointerFunctionsObjectPointerPersonality];
+    NSUInteger budget = 512;
+    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if (![scene isKindOfClass:UIWindowScene.class] || scene.activationState != UISceneActivationStateForegroundActive) continue;
+        for (UIWindow *window in ((UIWindowScene *)scene).windows) {
+            if (window.hidden || !window.rootViewController || !budget) continue;
+            RUINScanWelcomeControllerTree(window.rootViewController, welcomeClass, visited, 0, &budget);
+        }
+    }
+}
+
+static void RUINScheduleWelcomeCatchUp(void) {
+    if (!atomic_load(&welcomeHooksReady)) return;
+    bool expected = false;
+    if (!atomic_compare_exchange_strong(&welcomeCatchUpScheduled, &expected, true)) return;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        atomic_store(&welcomeCatchUpScheduled, false);
+        if (atomic_load(&welcomeHooksReady)) RUINScanForegroundWelcomeControllers();
+    });
 }
 
 %group RUINWelcomeLogin
@@ -305,6 +415,16 @@ static void RUINSecondaryLoginDidAppear(UIViewController *controller) {
     loginProjectionDepth++;
     @try { %orig; } @finally { loginProjectionDepth--; }
 }
+- (void)showPrimaryDeviceLoginButtonPressed {
+    if (!activeSecondaryMode) { %orig; return; }
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    [defaults setBool:NO forKey:RUINSecondaryLoginEnabledKey];
+    [defaults synchronize];
+    __weak UIViewController *controller = self;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (controller) RUINShowLoginRestartNotice(controller);
+    });
+}
 %end
 %end
 
@@ -315,8 +435,24 @@ static BOOL RUINSecondaryMethodMatches(Class cls, const char *name, const char *
     return actual && !strcmp(actual, types) && method_getImplementation(method) != NULL;
 }
 
+static void RUINSecondaryLoginImageAdded(__unused const struct mach_header *header, __unused intptr_t slide) {
+    if (atomic_load(&welcomeHooksReady) || atomic_load(&secondaryLoginRetryCount) >= 8) return;
+    bool expected = false;
+    if (!atomic_compare_exchange_strong(&secondaryLoginRetryScheduled, &expected, true)) return;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        atomic_store(&secondaryLoginRetryScheduled, false);
+        if (atomic_load(&welcomeHooksReady)) return;
+        unsigned retry = atomic_fetch_add(&secondaryLoginRetryCount, 1);
+        if (retry < 8) RUINInstallSecondaryLogin();
+    });
+}
+
 void RUINInstallSecondaryLogin(void) {
     if (!RUINSecondaryLoginTargetMatches()) return;
+    static dispatch_once_t imageCallbackOnce;
+    dispatch_once(&imageCallbackOnce, ^{
+        _dyld_register_func_for_add_image(RUINSecondaryLoginImageAdded);
+    });
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         NSString *requested = NSProcessInfo.processInfo.environment[@"RUIN_SECONDARY_LOGIN"];
@@ -338,8 +474,10 @@ void RUINInstallSecondaryLogin(void) {
             RUINSecondaryMethodMatches(welcome, "loginButtonAction", "v16@0:8") &&
             !class_getInstanceMethod(welcome, sel_registerName("ruin_chooseLoginMode:")) &&
             !class_getInstanceMethod(welcome, sel_registerName("ruin_loginTap:"))) {
+            RUINRememberLoginGuestImage(welcome);
             %init(RUINWelcomeLogin, RUINWelcomeController = welcome);
             welcomeHookInstalled = YES;
+            atomic_store(&welcomeHooksReady, true);
         }
     }
     if (!secondaryScreenHookInstalled) {
@@ -348,11 +486,13 @@ void RUINInstallSecondaryLogin(void) {
             RUINSecondaryMethodMatches(secondary, "viewDidLoad", "v16@0:8") &&
             RUINSecondaryMethodMatches(secondary, "viewDidAppear:", "v20@0:8B16") &&
             RUINSecondaryMethodMatches(secondary, "viewDidDisappear:", "v20@0:8B16") &&
-            RUINSecondaryMethodMatches(secondary, "showQRCodeLoginButtonPressed", "v16@0:8")) {
+            RUINSecondaryMethodMatches(secondary, "showQRCodeLoginButtonPressed", "v16@0:8") &&
+            RUINSecondaryMethodMatches(secondary, "showPrimaryDeviceLoginButtonPressed", "v16@0:8")) {
             %init(RUINSecondaryLoginScreen, RUINSecondaryController = secondary);
             secondaryScreenHookInstalled = YES;
         }
     }
+    RUINScheduleWelcomeCatchUp();
 }
 
 NSDictionary *RUINSecondaryLoginDiagnostics(void) {
@@ -363,6 +503,12 @@ NSDictionary *RUINSecondaryLoginDiagnostics(void) {
         @"welcomeHooksInstalled": @(welcomeHookInstalled),
         @"secondaryScreenHookInstalled": @(secondaryScreenHookInstalled),
         @"tabletQueriesFromLINE": @(atomic_load(&appIdiomRequests)),
+        @"enabledIdiomQueries":@(atomic_load(&enabledIdiomQueries)),
+        @"queriesFromLINE":@(atomic_load(&LINEIdiomQueries)),
+        @"queriesFromLINEOutsideVisibleLogin":@(atomic_load(&unscopedLINEQueries)),
+        @"queriesFromLINEBackgroundThread":@(atomic_load(&backgroundLINEQueries)),
+        @"queriesFromOtherImages":@(atomic_load(&otherImageQueries)),
+        @"verifiedLoginGuestImage":@(verifiedLoginGuestImage != NULL),
         @"loginProjectionActive": @(RUINHasLoginProjectionScope()),
         @"swiftUILoginBindings": @(atomic_load(&swiftUILoginBindings)),
         @"lastLoginScreen": lastLoginScreen ?: @"not_observed",

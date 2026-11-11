@@ -106,6 +106,18 @@
 	<string>作为iPad副设备登录</string>
 	<key>iPad扱いのサブ端末モード</key>
 	<string>iPad副设备模式</string>
+	<key>media.historyFooter</key>
+	<string>必须在消息撤回前开启此设置，方可私密保留已接收到本设备的文本及本地已下载的媒体（1对1与群聊已验证，OpenChat未验证）。保留的媒体可在聊天中直接轻点打开，长按菜单仅作为辅助。撤回前未下载的原始文件无法恢复，保存的缩略图仅供预览。已读成员列表显示本设备记录的名称与时间，并保留此前已知的已读时间戳。</string>
+	<key>media.previewOnly</key>
+	<string>仅预览</string>
+	<key>media.retainedTitle</key>
+	<string>已保留媒体</string>
+	<key>media.settingFooter</key>
+	<string>必须在消息撤回前开启此设置。仅保留撤回前已下载到本地的媒体，未下载的原始文件无法恢复；保存的缩略图仅供预览。</string>
+	<key>media.settingTitle</key>
+	<string>保留已撤回文本与媒体</string>
+	<key>menu.retainedMedia</key>
+	<string>已保存媒体</string>
 	<key>「%@」と「%@」を同時に非表示にできません。</key>
 	<string>不能同时隐藏“%@”和“%@”。</string>
 	<key>「%@」の表示名をこの端末だけ変更します。空欄で解除し、旧表示名ルールもこのIDには適用しません。</key>

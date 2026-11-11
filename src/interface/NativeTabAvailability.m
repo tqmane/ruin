@@ -7,11 +7,14 @@
 #import "../core/NativeFunctionPointer.h"
 #include <stdatomic.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #if !defined(RUIN_NATIVE_TAB_AVAILABILITY_HOST_CHECK)
 #import <mach/mach.h>
 #import <mach-o/dyld.h>
+#import <dlfcn.h>
+#import <objc/runtime.h>
 #endif
 
 // LINE 26.16.0's default availableMenus implementation invokes these scalar
@@ -40,6 +43,7 @@ static intptr_t imageSlide;
 static const RUINNativeTabRefreshRead *refreshReads;
 static size_t refreshReadCount;
 static BOOL menuScopeVerified, recoveryMode;
+static BOOL verifiedGuestImage;
 #if defined(RUIN_NATIVE_TAB_AVAILABILITY_HOST_CHECK)
 static BOOL testMenuCaller = YES;
 #endif
@@ -203,10 +207,136 @@ static NativeGetter RefreshGate(unsigned slot) {
     }
 }
 
+#if !defined(RUIN_NATIVE_TAB_AVAILABILITY_HOST_CHECK)
+// Keep LiveContainer's MH_DYLIB exception local; shared numeric consumers still require MH_EXECUTE.
+static const char kNativeTabGuestUUID[] = "614CED59-07E5-372D-94B2-D4901870C7A0";
+
+static const struct load_command *NativeTabNextLoadCommand(const uint8_t *cursor, const uint8_t *end) {
+    if ((size_t)(end-cursor) < sizeof(struct load_command)) return NULL;
+    const struct load_command *command=(const void *)cursor;
+    return command->cmdsize >= sizeof(*command) && command->cmdsize <= (size_t)(end-cursor) ? command : NULL;
+}
+
+static BOOL NativeTabGuestUUIDMatches(const struct mach_header_64 *header, const char *uuidString) {
+    if (!header || header->magic != MH_MAGIC_64 || header->filetype != MH_DYLIB ||
+        header->cputype != CPU_TYPE_ARM64 || header->cpusubtype != CPU_SUBTYPE_ARM64_ALL ||
+        header->ncmds > 4096 || header->sizeofcmds > 1024*1024 ||
+        header->ncmds > header->sizeofcmds/sizeof(struct load_command)) return NO;
+    NSUUID *expected=[[NSUUID alloc] initWithUUIDString:@(uuidString ?: "")];
+    if (!expected) return NO;
+    uuid_t expectedBytes; [expected getUUIDBytes:expectedBytes];
+    uintptr_t start=(uintptr_t)(header+1);
+    if (header->sizeofcmds > UINTPTR_MAX-start) return NO;
+    const uint8_t *cursor=(const void *)start, *end=(const void *)(start+header->sizeofcmds);
+    BOOL found=NO;
+    for (uint32_t i=0;i<header->ncmds;i++) {
+        const struct load_command *command=NativeTabNextLoadCommand(cursor,end);
+        if (!command) return NO;
+        if (command->cmd==LC_UUID) {
+            if (found || command->cmdsize!=sizeof(struct uuid_command) ||
+                memcmp(((const struct uuid_command *)command)->uuid,expectedBytes,sizeof(expectedBytes))) return NO;
+            found=YES;
+        }
+        cursor+=command->cmdsize;
+    }
+    return found && cursor==end;
+}
+
+static BOOL NativeTabReadGuestImageBytes(const struct mach_header_64 *header, intptr_t slide,
+    uintptr_t address, void *output, size_t length, const char *segmentName) {
+    if (!NativeTabGuestUUIDMatches(header,kNativeTabGuestUUID) ||
+        !output || !length || !segmentName || strlen(segmentName)>16 || address>UINTPTR_MAX-length) return NO;
+    uintptr_t start=(uintptr_t)(header+1);
+    if (header->sizeofcmds>UINTPTR_MAX-start) return NO;
+    const uint8_t *cursor=(const void *)start, *end=(const void *)(start+header->sizeofcmds);
+    BOOL contained=NO;
+    for (uint32_t i=0;i<header->ncmds;i++) {
+        const struct load_command *command=NativeTabNextLoadCommand(cursor,end);
+        if (!command) return NO;
+        if (command->cmd==LC_SEGMENT_64) {
+            if (command->cmdsize<sizeof(struct segment_command_64)) return NO;
+            const struct segment_command_64 *segment=(const void *)command;
+            if (!strncmp(segment->segname,segmentName,sizeof(segment->segname)) &&
+                (segment->initprot&VM_PROT_READ) && address>=segment->vmaddr &&
+                address-segment->vmaddr<=segment->vmsize &&
+                length<=segment->vmsize-(address-segment->vmaddr)) contained=YES;
+        }
+        cursor+=command->cmdsize;
+    }
+    if (!contained || cursor!=end) return NO;
+    uintptr_t resolved;
+    if (slide>=0) {
+        if (address>UINTPTR_MAX-(uintptr_t)slide) return NO;
+        resolved=address+(uintptr_t)slide;
+    } else {
+        uintptr_t magnitude=(uintptr_t)(-(slide+1))+1;
+        if (address<magnitude) return NO;
+        resolved=address-magnitude;
+    }
+    if (resolved>UINTPTR_MAX-length) return NO;
+    memcpy(output,(const void *)resolved,length);
+    return YES;
+}
+
+static BOOL NativeTabReadImageBytes(const struct mach_header_64 *header, intptr_t slide,
+    uintptr_t address, void *output, size_t length, const char *segmentName, BOOL guestImage) {
+    return guestImage ? NativeTabReadGuestImageBytes(header,slide,address,output,length,segmentName) :
+        RUINReadImageBytes(header,slide,address,output,length,segmentName);
+}
+
+static BOOL NativeTabVerifyImageInstructions(const struct mach_header_64 *header, intptr_t slide,
+    const RUINInstructionAnchor *anchor, BOOL guestImage) {
+    if (!guestImage) return RUINVerifyInstructions(header,slide,anchor,1);
+    uint32_t actual[4]={0};
+    return anchor && anchor->wordCount && anchor->wordCount<=4 &&
+        NativeTabReadGuestImageBytes(header,slide,anchor->address,actual,
+            anchor->wordCount*sizeof(*actual),"__TEXT") &&
+        !memcmp(actual,anchor->words,anchor->wordCount*sizeof(*actual));
+}
+
+static BOOL NativeTabResolveGuestImage(const RUINVersionMapping *mapping, RUINMainExecutableImage *result) {
+    NSDictionary *info=NSBundle.mainBundle.infoDictionary;
+    if (!mapping || !result || RUINMappingForInfo(info)!=mapping ||
+        strcmp(mapping->host.version,"26.17.0") || strcmp(mapping->host.build,"2026.1103.1841") ||
+        strcmp(mapping->host.uuid,kNativeTabGuestUUID)) return NO;
+    Class delegate=objc_getClass("_TtC4LINE11AppDelegate");
+    SEL selector=sel_registerName("didReceiveChangedConfigurationNotification:");
+    unsigned int methodCount=0;
+    Method *methods=delegate ? class_copyMethodList(delegate,&methodCount) : NULL;
+    Method ownerMethod=NULL;
+    for (unsigned int i=0;i<methodCount;i++) if (method_getName(methods[i])==selector) {
+        if (ownerMethod) { free(methods); return NO; }
+        ownerMethod=methods[i];
+    }
+    free(methods);
+    if (!ownerMethod || strcmp(method_getTypeEncoding(ownerMethod),"v24@0:8@16")) return NO;
+    Dl_info owner={0};
+    const void *implementation=(const void *)RUINNativeFunctionPointerRaw((const void *)method_getImplementation(ownerMethod));
+    if (!dladdr(implementation,&owner) || !owner.dli_fbase) return NO;
+    const struct mach_header_64 *header=owner.dli_fbase;
+    if (!NativeTabGuestUUIDMatches(header,mapping->host.uuid)) return NO;
+    uint32_t imageCount=_dyld_image_count(), imageIndex=UINT32_MAX;
+    intptr_t slide=0;
+    for (uint32_t i=0;i<imageCount;i++) if (_dyld_get_image_header(i)==(const struct mach_header *)header) {
+        if (imageIndex!=UINT32_MAX) return NO;
+        imageIndex=i;
+        slide=_dyld_get_image_vmaddr_slide(i);
+    }
+    if (imageIndex==UINT32_MAX) return NO;
+    memset(result,0,sizeof(*result));
+    result->header=header; result->slide=slide; result->imageIndex=imageIndex;
+    result->cpuType=header->cputype; result->cpuSubtype=header->cpusubtype;
+    NSUUID *expected=[[NSUUID alloc] initWithUUIDString:@(mapping->host.uuid)];
+    [expected getUUIDBytes:result->uuid];
+    return YES;
+}
+#endif
+
 static BOOL NativeWitnessPointerABISupported(const struct mach_header_64 *header,
-    const RUINNativeTabMapping *mapping) {
+    const RUINNativeTabMapping *mapping, BOOL verifiedGuestImage) {
     static const uint32_t plainBridge[] = {0xaa1603e0,0xaa1503e1,0xd61f0100};
-    if (!header || header->magic != MH_MAGIC_64 || header->filetype != MH_EXECUTE ||
+    if (!header || header->magic != MH_MAGIC_64 ||
+        (header->filetype != MH_EXECUTE && !(verifiedGuestImage && header->filetype == MH_DYLIB)) ||
         header->cputype != CPU_TYPE_ARM64 || header->cpusubtype != CPU_SUBTYPE_ARM64_ALL ||
         !mapping || mapping->status != RUINMappingStatusVerified ||
         memcmp(mapping->bridgeWords,plainBridge,sizeof(plainBridge))) return NO;
@@ -236,8 +366,8 @@ static BOOL NativeWitnessSnapshotMatches(const RUINNativeTabMapping *mapping, in
 }
 
 static BOOL StoreNativeWitnessReplacements(const struct mach_header_64 *header,
-    intptr_t slide, const RUINNativeTabMapping *mapping, uintptr_t *table) {
-    if (!table || !NativeWitnessPointerABISupported(header,mapping) ||
+    intptr_t slide, const RUINNativeTabMapping *mapping, uintptr_t *table, BOOL verifiedGuestImage) {
+    if (!table || !NativeWitnessPointerABISupported(header,mapping,verifiedGuestImage) ||
         !NativeWitnessSnapshotMatches(mapping,slide,table)) return NO;
     const NativeGetter replacements[] = {GateTimeline,GateCustomizable,GateNewsRow,GateMore,GateFallbackMore};
     for (size_t i=0;i<5;i++)
@@ -275,6 +405,7 @@ NSDictionary *RUINNativeTabAvailabilityDiagnostics(void) {
         @"requiredServiceKept":@(atomic_load(&requiredServiceKept)),
         @"nativeTimeline":@(atomic_load(&nativeTimeline)), @"nativeMoreKind":@(atomic_load(&nativeMoreKind)),
         @"nativeMoreAvailable":@(atomic_load(&nativeMoreAvailable) || atomic_load(&nativeFallbackMoreAvailable)),
+        @"verifiedGuestImage":@(verifiedGuestImage),
         @"menuOnlyScopeVerified":@(menuScopeVerified), @"tabFilterRecoveryMode":@(recoveryMode),
         @"nativeRefreshScopeVerified":@(refreshReadCount != 0),
         @"nativeServiceAvailabilityChanged":@NO,
@@ -284,29 +415,33 @@ NSDictionary *RUINNativeTabAvailabilityDiagnostics(void) {
 void RUINInstallNativeTabAvailability(void) {
 #if !defined(RUIN_NATIVE_TAB_AVAILABILITY_HOST_CHECK)
     const RUINVersionMapping *versionMapping = RUINCurrentMapping();
-    if (!versionMapping) { atomic_store(&status,1); return; }
+    RUINMainExecutableImage image={0};
+    BOOL guestImage=NO;
+    if (!versionMapping) {
+        versionMapping=RUINMappingForInfo(NSBundle.mainBundle.infoDictionary);
+        if (!NativeTabResolveGuestImage(versionMapping,&image)) { atomic_store(&status,1); return; }
+        guestImage=YES;
+    } else if (!RUINResolveMainExecutableImage(&image)) { atomic_store(&status,1); return; }
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         const RUINNativeTabMapping *mapping = &versionMapping->nativeTabs;
         if (mapping->status != RUINMappingStatusVerified) { atomic_store(&status,1); return; }
-        RUINMainExecutableImage image;
-        if (!RUINResolveMainExecutableImage(&image)) { atomic_store(&status,1); return; }
         intptr_t slide = image.slide;
         const struct mach_header_64 *header = image.header;
-        if (!NativeWitnessPointerABISupported(header,mapping)) {
+        if (!NativeWitnessPointerABISupported(header,mapping,guestImage)) {
             atomic_store(&status,UnsupportedNativePointerABI); return;
         }
-        if (!RUINVerifyHostImage(&versionMapping->host,header)) { atomic_store(&status,2); return; }
+        if (!guestImage && !RUINVerifyHostImage(&versionMapping->host,header)) { atomic_store(&status,2); return; }
         RUINInstructionAnchor bridge = {mapping->bridgeVA,3,{0}};
         memcpy(bridge.words,mapping->bridgeWords,sizeof(mapping->bridgeWords));
         int32_t cases[5];
         uintptr_t snapshot[23];
-        if (!RUINVerifyInstructions(header,slide,&bridge,1) ||
-            !RUINVerifyInstructions(header,slide,&mapping->menuGenerator,1) ||
+        if (!NativeTabVerifyImageInstructions(header,slide,&bridge,guestImage) ||
+            !NativeTabVerifyImageInstructions(header,slide,&mapping->menuGenerator,guestImage) ||
             mapping->menuGeneratorEndVA <= mapping->menuGenerator.address ||
-            !RUINReadImageBytes(header,slide,mapping->caseTableVA,cases,sizeof(cases),"__TEXT") ||
+            !NativeTabReadImageBytes(header,slide,mapping->caseTableVA,cases,sizeof(cases),"__TEXT",guestImage) ||
             memcmp(cases,mapping->caseWords,sizeof(cases)) ||
-            !RUINReadImageBytes(header,slide,mapping->witnessTableVA,snapshot,sizeof(snapshot),"__DATA_CONST")) {
+            !NativeTabReadImageBytes(header,slide,mapping->witnessTableVA,snapshot,sizeof(snapshot),"__DATA_CONST",guestImage)) {
             atomic_store(&status,2); return;
         }
         if (!NativeWitnessSnapshotMatches(mapping,slide,snapshot)) {
@@ -317,7 +452,7 @@ void RUINInstallNativeTabAvailability(void) {
             const RUINNativeTabRefreshRead *read = &mapping->refreshReads[i];
             uint32_t actual[5];
             if (!RefreshGate(read->slot) || read->slot/8 >= 23 || read->returnVA < sizeof(actual) ||
-                !RUINReadImageBytes(header,slide,read->returnVA-sizeof(actual),actual,sizeof(actual),"__TEXT") ||
+                !NativeTabReadImageBytes(header,slide,read->returnVA-sizeof(actual),actual,sizeof(actual),"__TEXT",guestImage) ||
                 memcmp(actual,read->callWords,sizeof(actual))) { atomic_store(&status,2); return; }
             if (read->slot == 0x50) {
                 // This reader tail-calls a Swift ABI bridge rather than BLR.
@@ -328,7 +463,7 @@ void RUINInstallNativeTabAvailability(void) {
                 RUINInstructionAnchor thunk = {(uintptr_t)((int64_t)read->returnVA-4+delta*4),4,
                     {0xaa0003f4,0xaa1503e0,0xaa1603e1,0xd61f0100}};
                 if ((actual[4] & 0xfc000000) != 0x94000000 ||
-                    !RUINVerifyInstructions(header,slide,&thunk,1)) { atomic_store(&status,2); return; }
+                    !NativeTabVerifyImageInstructions(header,slide,&thunk,guestImage)) { atomic_store(&status,2); return; }
             }
         }
         memcpy(originals,snapshot,sizeof(originals));
@@ -346,7 +481,7 @@ void RUINInstallNativeTabAvailability(void) {
             vm_protect(mach_task_self(),page,vm_page_size,FALSE,VM_PROT_READ|VM_PROT_WRITE|VM_PROT_COPY) != KERN_SUCCESS) {
             atomic_store(&status,3); return;
         }
-        if (!StoreNativeWitnessReplacements(header,slide,mapping,table)) {
+        if (!StoreNativeWitnessReplacements(header,slide,mapping,table,guestImage)) {
             vm_protect(mach_task_self(),page,vm_page_size,FALSE,regionInfo.protection);
             atomic_store(&status,UnsupportedNativePointerABI); return;
         }
@@ -362,6 +497,7 @@ void RUINInstallNativeTabAvailability(void) {
         refreshReadCount = refreshCount;
         recoveryMode = [NSProcessInfo.processInfo.environment[@"RUIN_DISABLE_TAB_HIDING"] isEqual:@"1"];
         menuScopeVerified = YES;
+        verifiedGuestImage = guestImage;
         atomic_store(&status,5);
     });
 #endif
@@ -416,9 +552,9 @@ static void CheckNativeWitnessPACBoundary(void) {
         mapping.getters[i]=rawGetter;
         mapping.refreshReads[i].getterVA=rawGetter;
     }
-    assert(NativeWitnessPointerABISupported(&header,&mapping));
+    assert(NativeWitnessPointerABISupported(&header,&mapping,NO));
     assert(NativeWitnessSnapshotMatches(&mapping,0,snapshot));
-    assert(StoreNativeWitnessReplacements(&header,0,&mapping,table));
+    assert(StoreNativeWitnessReplacements(&header,0,&mapping,table,NO));
     assert(table[0] == snapshot[0] && !memcmp(originals,snapshot,sizeof(snapshot)));
     assert(table[0x28/8] == RUINNativeFunctionPointerRaw((const void *)GateTimeline));
     assert(table[0x30/8] == RUINNativeFunctionPointerRaw((const void *)GateRefreshVOOM));
@@ -430,23 +566,23 @@ static void CheckNativeWitnessPACBoundary(void) {
     assert(!memcmp(table,snapshot,sizeof(table)));
 
     header.cpusubtype=CPU_SUBTYPE_ARM64E;
-    assert(!StoreNativeWitnessReplacements(&header,0,&mapping,table));
+    assert(!StoreNativeWitnessReplacements(&header,0,&mapping,table,NO));
     header.cpusubtype=123;
-    assert(!StoreNativeWitnessReplacements(&header,0,&mapping,table));
+    assert(!StoreNativeWitnessReplacements(&header,0,&mapping,table,NO));
     header.cpusubtype=CPU_SUBTYPE_ARM64_ALL;
     header.filetype=MH_DYLIB;
-    assert(!StoreNativeWitnessReplacements(&header,0,&mapping,table));
+    assert(!StoreNativeWitnessReplacements(&header,0,&mapping,table,NO));
     header.filetype=MH_EXECUTE;
     mapping.refreshReads[0].callWords[4]=0xd63f091f; // BLRAAZ is not a plain ARM64 reader.
-    assert(!StoreNativeWitnessReplacements(&header,0,&mapping,table));
+    assert(!StoreNativeWitnessReplacements(&header,0,&mapping,table,NO));
     mapping.refreshReads[0].callWords[4]=0xd63f0100;
     mapping.bridgeWords[2]=0xd61f091f;
-    assert(!StoreNativeWitnessReplacements(&header,0,&mapping,table));
+    assert(!StoreNativeWitnessReplacements(&header,0,&mapping,table,NO));
     assert(!memcmp(table,snapshot,sizeof(table)) && !memcmp(originals,snapshot,sizeof(snapshot)));
     mapping.bridgeWords[2]=0xd61f0100;
     table[0x28/8] ^= UINT64_C(1) << 56;
     uintptr_t encodedTable[23]; memcpy(encodedTable,table,sizeof(table));
-    assert(!StoreNativeWitnessReplacements(&header,0,&mapping,table));
+    assert(!StoreNativeWitnessReplacements(&header,0,&mapping,table,NO));
     assert(!memcmp(table,encodedTable,sizeof(table)) && !memcmp(originals,snapshot,sizeof(snapshot)));
 }
 

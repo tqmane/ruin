@@ -106,6 +106,18 @@ Unsent</string>
 	<string>Log In as Secondary Device (iPad)</string>
 	<key>iPad扱いのサブ端末モード</key>
 	<string>Secondary Device Mode (iPad)</string>
+	<key>media.historyFooter</key>
+	<string>Retention must be enabled before unsend to privately save text delivered to this device and locally downloaded media (verified in 1-on-1 and group chats; OpenChat is unverified). Retained media open with a normal tap in chat, while the long-press menu is supplementary. Original files not downloaded before unsend cannot be recovered, and saved thumbnails are preview only. The read-receipt sheet displays names and timestamps recorded on this device, preserving earlier known read times.</string>
+	<key>media.previewOnly</key>
+	<string>Preview Only</string>
+	<key>media.retainedTitle</key>
+	<string>Retained Media</string>
+	<key>media.settingFooter</key>
+	<string>This setting must be enabled before a message is unsent. Only media downloaded prior to unsend will be preserved; missing original files cannot be recovered, and saved thumbnails are for preview only.</string>
+	<key>media.settingTitle</key>
+	<string>Retain Unsent Text and Media</string>
+	<key>menu.retainedMedia</key>
+	<string>Saved Media</string>
 	<key>「%@」と「%@」を同時に非表示にできません。</key>
 	<string>Cannot hide "%@" and "%@" simultaneously.</string>
 	<key>「%@」の表示名をこの端末だけ変更します。空欄で解除し、旧表示名ルールもこのIDには適用しません。</key>

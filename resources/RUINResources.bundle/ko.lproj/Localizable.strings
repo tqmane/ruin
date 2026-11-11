@@ -106,6 +106,18 @@
 	<string>iPad 방식으로 보조 기기 로그인</string>
 	<key>iPad扱いのサブ端末モード</key>
 	<string>iPad 방식 보조 기기 모드</string>
+	<key>media.historyFooter</key>
+	<string>메시지가 보내기 취소되기 전에 이 설정을 켜 두어야 이 기기에 수신된 텍스트와 로컬에 다운로드된 미디어가 안전하게 보존됩니다(1:1 및 그룹 대화에서 검증됨, 오픈채팅 미검증). 보존된 미디어는 대화방에서 일반 탭으로 열 수 있으며, 길게 누르기 메뉴는 보조 기능입니다. 보내기 취소 전에 다운로드되지 않은 원본 파일은 복구할 수 없으며, 저장된 섬네일은 미리보기 전용입니다. 읽은 사람 목록에는 이 기기에 기록된 이름과 일시가 표시되며, 이전에 확인된 읽은 일시가 유지됩니다.</string>
+	<key>media.previewOnly</key>
+	<string>미리보기 전용</string>
+	<key>media.retainedTitle</key>
+	<string>보존된 미디어</string>
+	<key>media.settingFooter</key>
+	<string>메시지가 보내기 취소되기 전에 이 설정을 켜 두어야 합니다. 보내기 취소 시점에 이미 다운로드된 미디어만 보존되며, 다운로드되지 않은 원본 파일은 복구할 수 없습니다. 저장된 섬네일은 미리보기로만 제공됩니다.</string>
+	<key>media.settingTitle</key>
+	<string>보내기 취소된 텍스트 및 미디어 보존</string>
+	<key>menu.retainedMedia</key>
+	<string>저장된 미디어</string>
 	<key>「%@」と「%@」を同時に非表示にできません。</key>
 	<string>"%@"와(과) "%@"을(를) 동시에 숨길 수 없습니다.</string>
 	<key>「%@」の表示名をこの端末だけ変更します。空欄で解除し、旧表示名ルールもこのIDには適用しません。</key>

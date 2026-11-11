@@ -36,6 +36,22 @@
 + (id)SILENTLY_UNSENT;
 @end
 
+// Object-returning media accessors present on the 26.17.0 message classes.
+// The adapter checks each method encoding and accepts only local file URLs.
+@protocol RUINMessagingMediaFields <NSObject>
+- (id)imageFileURL;
+- (id)audioFileURL;
+- (id)attachedFileURL;
+- (id)thumbnailFileURL;
+- (id)livePhotoFileURL;
+- (id)cacheableImagePathURL;
+@end
+
+@protocol RUINMessagingCacheableAsset <NSObject>
+- (id)cacheKey;
+- (id)originURL;
+@end
+
 // These names are compile-time aliases, bound to the actual runtime Class in
 // each guarded %init. No alias classes are registered in the target process.
 @interface RUINReplyTalk : NSManagedObject <RUINMessagingMessageFields>
@@ -69,6 +85,8 @@
 - (void)setContentMetadata:(id)metadata;
 - (void)read:(id)protocol;
 @end
+
+@interface RUINMediaTalk : NSManagedObject <RUINMessagingMediaFields> @end
 @interface RUINBoundaryExistingAccessor : NSManagedObject
 - (long long)readUpToMessageIDSynced;
 @end
@@ -78,6 +96,10 @@
 
 #if TARGET_OS_IPHONE
 #import <UIKit/UIKit.h>
+@interface RUINRetainedVideoController : UIViewController
+@property(nonatomic, strong) NSTimer *ruin_retainedVideoTimer;
+@end
+
 
 @protocol RUINMessagingLegacyMenuController <NSObject>
 + (id)sharedMenuController;

@@ -1,5 +1,9 @@
 #import <Foundation/Foundation.h>
 #import <CoreGraphics/CoreGraphics.h>
+#import <mach-o/dyld.h>
+
+#define _dyld_register_func_for_add_image RUINTestRegisterFuncForAddImage
+void RUINTestRegisterFuncForAddImage(void (*callback)(const struct mach_header *, intptr_t));
 
 typedef NS_ENUM(NSInteger, UIUserInterfaceIdiom) { UIUserInterfaceIdiomPhone, UIUserInterfaceIdiomPad };
 typedef NS_ENUM(NSInteger, UIGestureRecognizerState) {
@@ -10,12 +14,16 @@ typedef NS_ENUM(NSInteger, UIGestureRecognizerState) {
 };
 typedef NS_ENUM(NSInteger, UIAlertControllerStyle) { UIAlertControllerStyleActionSheet, UIAlertControllerStyleAlert };
 typedef NS_ENUM(NSInteger, UIAlertActionStyle) { UIAlertActionStyleDefault, UIAlertActionStyleCancel };
+typedef NS_ENUM(NSInteger, UISceneActivationState) {
+    UISceneActivationStateUnattached, UISceneActivationStateForegroundActive,
+    UISceneActivationStateForegroundInactive, UISceneActivationStateBackground
+};
 typedef NSUInteger UIControlEvents;
 enum { UIControlEventTouchUpInside = 1 << 6 };
 typedef uint64_t UIAccessibilityTraits;
 enum { UIAccessibilityTraitButton = 1, UIAccessibilityTraitNotEnabled = 1 << 8 };
 
-@class UIView, UIWindow, UIGestureRecognizer, UITouch, UIAlertAction, UIPopoverPresentationController;
+@class UIView, UIWindow, UIWindowScene, UIScene, UIApplication, UIViewController, UIGestureRecognizer, UITouch, UIAlertAction, UIPopoverPresentationController;
 @protocol UIGestureRecognizerDelegate <NSObject>
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)recognizer shouldReceiveTouch:(UITouch *)touch;
 @end
@@ -42,7 +50,10 @@ enum { UIAccessibilityTraitButton = 1, UIAccessibilityTraitNotEnabled = 1 << 8 }
 @property(nonatomic, strong) NSMutableArray<UIGestureRecognizer *> *gestureRecognizers;
 - (void)addGestureRecognizer:(UIGestureRecognizer *)recognizer;
 @end
-@interface UIWindow : UIView @end
+@interface UIWindow : UIView
+@property(nonatomic, weak) UIWindowScene *windowScene;
+@property(nonatomic, strong) UIViewController *rootViewController;
+@end
 @interface UIAccessibilityElement : NSObject <UIAccessibilityIdentification>
 @property(nonatomic, copy) NSString *accessibilityIdentifier;
 @end
@@ -55,11 +66,22 @@ enum { UIAccessibilityTraitButton = 1, UIAccessibilityTraitNotEnabled = 1 << 8 }
 @property(nonatomic, strong) UIView *view;
 @property(nonatomic, readonly) UIView *viewIfLoaded;
 @property(nonatomic, strong) UIViewController *presentedViewController;
+@property(nonatomic, copy) NSArray<UIViewController *> *childViewControllers;
 @property(nonatomic) NSUInteger loads, appearances, disappearances;
 - (void)viewDidLoad;
 - (void)viewDidAppear:(_Bool)animated;
 - (void)viewDidDisappear:(_Bool)animated;
 - (void)presentViewController:(UIViewController *)controller animated:(BOOL)animated completion:(void (^)(void))completion;
+@end
+@interface UIScene : NSObject
+@property(nonatomic) UISceneActivationState activationState;
+@end
+@interface UIWindowScene : UIScene
+@property(nonatomic, copy) NSArray<UIWindow *> *windows;
+@end
+@interface UIApplication : NSObject
+@property(nonatomic, copy) NSSet<UIScene *> *connectedScenes;
++ (instancetype)sharedApplication;
 @end
 @interface UIGestureRecognizer : NSObject
 @property(nonatomic, weak) id target;
@@ -94,6 +116,7 @@ enum { UIAccessibilityTraitButton = 1, UIAccessibilityTraitNotEnabled = 1 << 8 }
 + (instancetype)actionWithTitle:(NSString *)title style:(UIAlertActionStyle)style handler:(void (^)(UIAlertAction *))handler;
 @end
 @interface UIAlertController : UIViewController
+@property(nonatomic, copy) NSString *title;
 @property(nonatomic, strong) NSMutableArray<UIAlertAction *> *actions;
 @property(nonatomic, strong) UIPopoverPresentationController *popoverPresentationController;
 + (instancetype)alertControllerWithTitle:(NSString *)title message:(NSString *)message preferredStyle:(UIAlertControllerStyle)style;
