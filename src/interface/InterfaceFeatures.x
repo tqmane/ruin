@@ -1312,6 +1312,11 @@ static UIImage *RUINSettingsTabFallbackImage(UITabBarController *controller,
     UIImage *image = [UIImage imageNamed:name inBundle:NSBundle.mainBundle
         compatibleWithTraitCollection:controller.traitCollection];
     if (!image) return nil;
+    if (!selected) {
+        UIColor *color = controller.tabBar.unselectedItemTintColor ?:
+            controller.tabBar.standardAppearance.stackedLayoutAppearance.normal.iconColor ?: UIColor.secondaryLabelColor;
+        return [image imageWithTintColor:color renderingMode:UIImageRenderingModeAlwaysOriginal];
+    }
     UIControlState state = selected ? UIControlStateSelected : UIControlStateNormal;
     UIColor *color = [item titleTextAttributesForState:state][NSForegroundColorAttributeName];
     if (!color) {
@@ -1342,7 +1347,7 @@ static void RUINRepairSettingsTabIcons(UITabBarController *controller)
             }
         }
         if (missingSelectedImage) {
-            UIImage *image = RUINSettingsTabFallbackImage(controller, item, @"navi_icon_setting_pressed", YES);
+            UIImage *image = RUINSettingsTabFallbackImage(controller, item, @"navi_icon_setting_normal", YES);
             if (image) {
                 item.selectedImage = image;
                 atomic_fetch_add(&gSettingsTabIconRepairs, 1);
