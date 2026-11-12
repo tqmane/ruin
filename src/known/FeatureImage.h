@@ -12,8 +12,9 @@ typedef struct {
 } RUINFeatureImage;
 
 FOUNDATION_EXPORT BOOL RUINResolveFeatureImage(const RUINHostIdentity *host,
-    const void *originalImplementation, RUINFeatureImage *result);
+    Class nativeClass, RUINFeatureImage *result);
 FOUNDATION_EXPORT void RUINReleaseFeatureImage(RUINFeatureImage *image);
+FOUNDATION_EXPORT NSString *RUINFeatureImageResolutionStatus(void);
 FOUNDATION_EXPORT BOOL RUINFeatureImageMatches(const RUINFeatureImage *image,
     const RUINHostIdentity *host);
 FOUNDATION_EXPORT BOOL RUINReadFeatureImageBytes(const RUINFeatureImage *image,
@@ -22,7 +23,7 @@ FOUNDATION_EXPORT BOOL RUINVerifyFeatureInstructions(const RUINFeatureImage *ima
     const RUINInstructionAnchor *anchors, size_t count);
 
 // The runtime supplies both canonical paths from independent owners: the bundle
-// executable and dladdr(original LINE implementation). Only an LC conversion
+// executable and the original Objective-C class image. Only an LC conversion
 // shape may differ from the process executable path.
 FOUNDATION_EXPORT BOOL RUINResolveFeatureImageFromCandidates(const RUINHostIdentity *host,
     const char *bundleExecutable, const char *processExecutable, const char *ownerExecutable,
