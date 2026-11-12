@@ -1,6 +1,7 @@
 #import "FeatureImage.h"
 #import <dlfcn.h>
 #import <mach-o/dyld.h>
+#import <mach-o/dyld_images.h>
 #import <mach/mach.h>
 #include <limits.h>
 #include <stdlib.h>
@@ -166,6 +167,25 @@ static char *CopyImageName(const char *name) {
     return NULL;
 }
 
+static BOOL IsProcessMain(const void *header) {
+    // LC virtualizes dyld indexes and can rewrite MH_DYLIB to MH_EXECUTE. Only
+    // the kernel's process image list proves the no-dlopen, process-lifetime case.
+    task_dyld_info_data_t task = {0};
+    mach_msg_type_number_t count = TASK_DYLD_INFO_COUNT;
+    if (task_info(mach_task_self(), TASK_DYLD_INFO, (task_info_t)&task, &count) != KERN_SUCCESS)
+        return NO;
+    struct { uint32_t version, count; const struct dyld_image_info *images; } info;
+    struct dyld_image_info first;
+    return task.all_image_info_format == TASK_DYLD_ALL_IMAGE_INFO_64 && task.all_image_info_size >= sizeof(info) &&
+        CopyReadable((uintptr_t)task.all_image_info_addr, &info, sizeof(info)) &&
+        info.version && info.count && info.images &&
+        CopyReadable((uintptr_t)info.images, &first, sizeof(first)) && first.imageLoadAddress == header;
+}
+
+#if defined(RUIN_HOST_CHECK)
+BOOL RUINFeatureImageIsProcessMainForTesting(const void *header) { return IsProcessMain(header); }
+#endif
+
 BOOL RUINResolveFeatureImage(const RUINHostIdentity *host, const void *implementation,
     RUINFeatureImage *result) {
     if (!result) return NO;
@@ -193,7 +213,7 @@ BOOL RUINResolveFeatureImage(const RUINHostIdentity *host, const void *implement
     // library. Converted guests require a retained, already-loaded handle.
     void *reference = converted ? dlopen(bundle, RTLD_LAZY | RTLD_NOLOAD) : NULL;
     if ((converted && !reference) || (!converted &&
-        (header.filetype != MH_EXECUTE || !SamePath(bundle, process)))) {
+        (header.filetype != MH_EXECUTE || !SamePath(bundle, process) || !IsProcessMain(owner.dli_fbase)))) {
         free(process); return NO;
     }
     uint64_t generation = atomic_load_explicit(&imageGeneration, memory_order_acquire);

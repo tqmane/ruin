@@ -1,11 +1,14 @@
 #import "FeatureImage.h"
 #import "VersionMapping.h"
 #import <mach/mach.h>
+#import <mach-o/dyld.h>
 #include <assert.h>
 #include <fcntl.h>
 #include <limits.h>
 #include <stdio.h>
 #include <unistd.h>
+
+BOOL RUINFeatureImageIsProcessMainForTesting(const void *header);
 
 typedef struct {
     struct mach_header_64 header;
@@ -43,6 +46,8 @@ int main(void) { @autoreleasepool {
     snprintf(alias,sizeof(alias),"%s/current",dir); assert(!symlink(line,alias));
     TestImage guest, other; MakeImage(&guest,&version->host,MH_DYLIB);
     MakeImage(&other,&version->host,MH_DYLIB);
+    assert(RUINFeatureImageIsProcessMainForTesting(_dyld_get_image_header(0)));
+    assert(!RUINFeatureImageIsProcessMainForTesting(&guest.header));
     RUINDyldImageCandidate candidates[2] = {{&guest.header,0,line},{&guest.header,0,alias}};
     RUINFeatureImage image;
 #define RESOLVE(n) RUINResolveFeatureImageFromCandidates(&version->host,line,host,line, &guest.header,candidates,n,&image)
