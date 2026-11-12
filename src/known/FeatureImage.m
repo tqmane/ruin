@@ -1,5 +1,6 @@
 #import "FeatureImage.h"
 #import <dlfcn.h>
+#import <objc/runtime.h>
 #import <mach-o/dyld.h>
 #import <mach-o/dyld_images.h>
 #import <mach/mach.h>
@@ -7,6 +8,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdatomic.h>
+
+static _Atomic(const char *) resolutionStatus = "notAttempted";
+NSString *RUINFeatureImageResolutionStatus(void) { return @(atomic_load(&resolutionStatus)); }
 
 static BOOL CopyReadable(uintptr_t address, void *output, size_t length) {
     if (!address || !output || !length || address > UINTPTR_MAX - length) return NO;
@@ -186,54 +190,56 @@ static BOOL IsProcessMain(const void *header) {
 BOOL RUINFeatureImageIsProcessMainForTesting(const void *header) { return IsProcessMain(header); }
 #endif
 
-BOOL RUINResolveFeatureImage(const RUINHostIdentity *host, const void *implementation,
+BOOL RUINResolveFeatureImage(const RUINHostIdentity *host, Class nativeClass,
     RUINFeatureImage *result) {
     if (!result) return NO;
     memset(result, 0, sizeof(*result));
-    Dl_info owner = {0};
+    // A method IMP can belong to an inspection/third-party hook. Objective-C's
+    // class image identity remains the native owner after such replacement.
+    const char *ownerPath = nativeClass ? class_getImageName(nativeClass) : NULL;
     const char *bundle = NSBundle.mainBundle.executablePath.fileSystemRepresentation;
-    if (!implementation || !bundle || !dladdr(implementation, &owner) || !owner.dli_fbase ||
-        !SamePath(bundle, owner.dli_fname)) return NO;
+    atomic_store(&resolutionStatus, "nativeClassOwnerUnavailable");
+    if (!bundle || !ownerPath || !SamePath(bundle, ownerPath)) return NO;
     static dispatch_once_t observers;
     dispatch_once(&observers, ^{
         _dyld_register_func_for_add_image(ImageListChanged);
         _dyld_register_func_for_remove_image(ImageListChanged);
     });
-    // NOLOAD never loads a substitute. Holding this reference keeps the image
-    // alive during verification, publication, and subsequent pass-through calls.
     uint32_t pathSize = 0;
     _NSGetExecutablePath(NULL, &pathSize);
     char *process = pathSize && pathSize <= 1024 * 1024 ? malloc(pathSize) : NULL;
     BOOL pathValid = process && !_NSGetExecutablePath(process, &pathSize);
-    struct mach_header_64 header; uint8_t uuid[16]; BOOL converted = NO;
-    if (!pathValid || !CopyCommands(owner.dli_fbase, &header, uuid, &converted)) {
-        free(process); return NO;
-    }
-    // A real process main has process lifetime and cannot be dlopened as a
-    // library. Converted guests require a retained, already-loaded handle.
-    void *reference = converted ? dlopen(bundle, RTLD_LAZY | RTLD_NOLOAD) : NULL;
-    if ((converted && !reference) || (!converted &&
-        (header.filetype != MH_EXECUTE || !SamePath(bundle, process) || !IsProcessMain(owner.dli_fbase)))) {
-        free(process); return NO;
-    }
+    // NOLOAD never loads a substitute. A genuine process executable may have no
+    // dlopen handle; only the kernel image-list proof permits that lifetime case.
+    void *reference = dlopen(bundle, RTLD_LAZY | RTLD_NOLOAD);
     uint64_t generation = atomic_load_explicit(&imageGeneration, memory_order_acquire);
     uint32_t count = _dyld_image_count();
     RUINDyldImageCandidate *candidates = count ? calloc(count, sizeof(*candidates)) : NULL;
     BOOL complete = pathValid && candidates;
+    const struct mach_header_64 *ownerHeader = NULL;
     for (uint32_t i = 0; complete && i < count; i++) {
-        const char *name = _dyld_get_image_name(i);
         candidates[i] = (RUINDyldImageCandidate){
             .header=(const void *)_dyld_get_image_header(i), .slide=_dyld_get_image_vmaddr_slide(i),
-            .imageName=CopyImageName(name)};
+            .imageName=CopyImageName(_dyld_get_image_name(i))};
         if (!candidates[i].imageName) complete = NO;
+        else if (!ownerHeader && SamePath(ownerPath, candidates[i].imageName)) ownerHeader = candidates[i].header;
     }
     BOOL resolved = complete && count == _dyld_image_count() &&
         generation == atomic_load_explicit(&imageGeneration, memory_order_acquire) &&
-        RUINResolveFeatureImageFromCandidates(host, bundle, process, owner.dli_fname,
-            owner.dli_fbase, candidates, count, result);
+        RUINResolveFeatureImageFromCandidates(host, bundle, process, ownerPath,
+            ownerHeader, candidates, count, result);
     for (uint32_t i = 0; i < count && candidates; i++) free((void *)candidates[i].imageName);
     free(candidates); free(process);
-    if (!resolved) { if (reference) dlclose(reference); return NO; }
+    atomic_store(&resolutionStatus, resolved ? "resolved" : complete ? "imageCandidateRejected" : "imageSnapshotUnavailable");
+    if (resolved && !reference && (result->convertedExecutable || !IsProcessMain(result->image.header))) {
+        atomic_store(&resolutionStatus, "imageLifetimeUnproven");
+        resolved = NO;
+    }
+    if (!resolved) {
+        if (reference) dlclose(reference);
+        memset(result, 0, sizeof(*result));
+        return NO;
+    }
     result->loaderReference = reference;
     return YES;
 }

@@ -2,6 +2,8 @@
 #import "VersionMapping.h"
 #import <mach/mach.h>
 #import <mach-o/dyld.h>
+#import <objc/runtime.h>
+#import <dlfcn.h>
 #include <assert.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -9,6 +11,42 @@
 #include <unistd.h>
 
 BOOL RUINFeatureImageIsProcessMainForTesting(const void *header);
+
+@interface FeatureImageOwner : NSObject
+@end
+@implementation FeatureImageOwner
+- (NSString *)description { return @"owner"; }
+@end
+
+static void CheckHookIndependentClassOwner(void) {
+    const struct mach_header_64 *header = (const void *)_dyld_get_image_header(0);
+    if (header->cputype != CPU_TYPE_ARM64 || header->cpusubtype != CPU_SUBTYPE_ARM64_ALL) return;
+    const uint8_t *cursor = (const void *)(header + 1);
+    NSString *uuid = nil;
+    for (uint32_t i = 0; i < header->ncmds; i++) {
+        const struct load_command *command = (const void *)cursor;
+        if (command->cmd == LC_UUID)
+            uuid = [[NSUUID alloc] initWithUUIDBytes:((const struct uuid_command *)command)->uuid].UUIDString;
+        cursor += command->cmdsize;
+    }
+    assert(uuid);
+    RUINHostIdentity host = {.uuid=uuid.UTF8String};
+    RUINFeatureImage image;
+    assert(RUINResolveFeatureImage(&host, FeatureImageOwner.class, &image));
+    assert(image.image.header == header && RUINFeatureImageMatches(&image, &host));
+    RUINReleaseFeatureImage(&image);
+    Method method = class_getInstanceMethod(FeatureImageOwner.class, @selector(description));
+    IMP original = method_getImplementation(method);
+    IMP replacement = class_getMethodImplementation(NSObject.class, @selector(description));
+    Dl_info native = {0}, foreign = {0};
+    assert(dladdr((const void *)original, &native) && dladdr((const void *)replacement, &foreign));
+    assert(native.dli_fbase != foreign.dli_fbase);
+    method_setImplementation(method, replacement); // Host-only stand-in for a Logos inspection hook.
+    assert(RUINResolveFeatureImage(&host, FeatureImageOwner.class, &image));
+    assert(image.image.header == header);
+    RUINReleaseFeatureImage(&image);
+    method_setImplementation(method, original);
+}
 
 typedef struct {
     struct mach_header_64 header;
@@ -36,6 +74,7 @@ static void MakeImage(TestImage *image, const RUINHostIdentity *host, uint32_t f
     strcpy(image->text.segname, "__TEXT");
 }
 int main(void) { @autoreleasepool {
+    CheckHookIndependentClassOwner();
     const RUINVersionMapping *version = RUINMappingForInfo(@{@"CFBundleIdentifier":@"jp.naver.line",
         @"CFBundleShortVersionString":@"26.17.0", @"CFBundleVersion":@"2026.1103.1841"});
     assert(version);

@@ -340,6 +340,7 @@ NSDictionary<NSString *, id> *RUINNativeMuteSendDiagnostics(void)
         @"muteGateFunctionProven":@(atomic_load(&adapterABIConfirmed)),
         @"muteGateFunctionABIProven":@(atomic_load(&adapterABIConfirmed)),
         @"installationAttempts":@(atomic_load(&installAttempts)),
+        @"nativeImageResolution":RUINFeatureImageResolutionStatus(),
         @"rollbackSlotsComplete":@(atomic_load(&rollbackSlotsComplete)),
         @"rollbackProtectionComplete":@(atomic_load(&rollbackProtectionComplete)),
         @"hookInstalled":@(atomic_load(&adapterReady)),
@@ -394,11 +395,9 @@ static void RUINAttemptNativeMuteInstall(void) {
     }
     Class cls = objc_getClass(kNativeMuteSendClass);
     SEL selector = sel_registerName(kNativeMuteSendSelector);
-    // Require an owned method, rather than an inherited or guessed implementation.
-    unsigned count = 0; Method method = NULL;
-    Method *methods = cls ? class_copyMethodList(cls, &count) : NULL;
-    for (unsigned i = 0; i < count; i++) if (method_getName(methods[i]) == selector) method = methods[i];
-    free(methods);
+    // Resolve inherited/lazily realized methods too. The implementation must
+    // still belong to the exact verified LINE image before any write is allowed.
+    Method method = cls ? class_getInstanceMethod(cls, selector) : NULL;
     const char *encoding = method ? method_getTypeEncoding(method) : NULL;
     if (encoding && strcmp(encoding, kNativeMuteSendEncoding)) {
         atomic_store(&adapterStatus, AdapterUnsupportedABI);
@@ -406,10 +405,8 @@ static void RUINAttemptNativeMuteInstall(void) {
         return;
     }
     RUINFeatureImage image = {0};
-    const void *implementation = method ? (const void *)RUINNativeFunctionPointerRaw(
-        (const void *)method_getImplementation(method)) : NULL;
     if (!encoding ||
-        !RUINResolveFeatureImage(&version->host, implementation, &image)) {
+        !RUINResolveFeatureImage(&version->host, cls, &image)) {
         atomic_store(&adapterStatus, AdapterPending);
         if (attempt < 8) {
             installQueued = YES;
