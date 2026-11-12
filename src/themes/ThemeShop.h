@@ -1,4 +1,6 @@
 #import <Foundation/Foundation.h>
+#import "FeatureImage.h"
+#import "VersionMapping.h"
 
 @class UIViewController;
 
@@ -21,6 +23,9 @@ FOUNDATION_EXPORT BOOL RUINDispatchOwnedThemeRoute(int32_t kind, BOOL (^dispatch
 /** Install the exact-build stylesheet persistence adapter at dylib startup. */
 FOUNDATION_EXPORT void RUINInstallThemePersistenceAdapter(void);
 FOUNDATION_EXPORT NSDictionary<NSString *, id> *RUINThemePersistenceDiagnostics(void);
+// Borrowed, exact-build theme image. The shared owner keeps it pinned; callers
+// still verify their own feature anchors and must not release the loader handle.
+FOUNDATION_EXPORT const RUINVersionMapping * _Nullable RUINCopyVerifiedThemeImage(RUINFeatureImage *image);
 
 /** Fixed capability/status codes and request counters; no account or product data. */
 FOUNDATION_EXPORT NSDictionary<NSString *, id> *RUINThemeShopDiagnostics(void);

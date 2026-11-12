@@ -1,5 +1,6 @@
 #import "NativeThemeLocalPolicy.h"
 #import "NativeThemeReceipt.h"
+#import "ThemeShop.h"
 #import "../known/ThemeMappings.h"
 #import "../known/KnownMappings.h"
 #import "../known/VersionMapping.h"
@@ -23,15 +24,22 @@ static const RUINThemeLocalPolicyMapping *RUINVerifiedLocalPolicyMapping(void)
 {
 #if defined(RUIN_HOST_CHECK)
     const RUINVersionMapping *versionMapping = RUINMappingForInfo(NSBundle.mainBundle.infoDictionary);
-#else
-    const RUINVersionMapping *versionMapping = RUINCurrentMapping();
-#endif
     const RUINThemeLocalPolicyMapping *mapping = versionMapping
         ? &versionMapping->themes.localPolicy : NULL;
     if (!mapping || mapping->status != RUINMappingStatusVerified) return NULL;
     RUINMainExecutableImage image;
     if (!RUINResolveMainExecutableImage(&image)) return NULL;
     return RUINVerifyInstructions(image.header, image.slide, mapping->anchors, mapping->anchorCount) ? mapping : NULL;
+#else
+    RUINFeatureImage image = {0};
+    const RUINVersionMapping *versionMapping = RUINCopyVerifiedThemeImage(&image);
+    const RUINThemeLocalPolicyMapping *mapping = versionMapping
+        ? &versionMapping->themes.localPolicy : NULL;
+    if (!mapping || mapping->status != RUINMappingStatusVerified ||
+        !RUINFeatureImageMatches(&image, &versionMapping->host) ||
+        !RUINVerifyFeatureInstructions(&image, mapping->anchors, mapping->anchorCount)) return NULL;
+    return mapping;
+#endif
 }
 
 BOOL RUINNativeThemeRevocationFetchPCsMatch(const uintptr_t *PCs, NSUInteger count)
@@ -229,19 +237,21 @@ void RUINProjectNativeLocalThemeObjects(NSArray *objects, NSManagedObjectContext
 
 NSDictionary *RUINNativeThemeLocalPolicyDiagnostics(void)
 {
+    const RUINThemeLocalPolicyMapping *verifiedMapping = RUINVerifiedLocalPolicyMapping();
 #if defined(RUIN_HOST_CHECK)
     const RUINVersionMapping *versionMapping = RUINMappingForInfo(NSBundle.mainBundle.infoDictionary);
-#else
-    const RUINVersionMapping *versionMapping = RUINCurrentMapping();
-#endif
     const RUINThemeMappings *mapping = versionMapping ? &versionMapping->themes : NULL;
+    NSString *mappingStatus = mapping && mapping->localPolicy.status == RUINMappingStatusVerified
+        ? @"verified" : versionMapping ? @"unported_for_host" : @"unknown_host";
+#else
+    NSString *mappingStatus = verifiedMapping ? @"verified" : @"unknown_host";
+#endif
     return @{@"scans":@(atomic_load(&gLocalScans)), @"localPackages":@(atomic_load(&gLocalMatches)),
         @"predicateLeavesAdapted":@(atomic_load(&gPredicateRewrites)),
         @"objectsProjected":@(atomic_load(&gProjectedObjects)),
         @"readonlyObjectsProjected":@(atomic_load(&gReadonlyProjectedObjects)),
         @"serverRevocationScansIsolated":@(atomic_load(&gRevocationScansIsolated)),
-        @"serverRevocationMappingVerified":@(RUINVerifiedLocalPolicyMapping() != NULL),
-        @"serverRevocationMappingStatus":mapping && mapping->localPolicy.status == RUINMappingStatusVerified
-            ? @"verified" : versionMapping ? @"unported_for_host" : @"unknown_host",
+        @"serverRevocationMappingVerified":@(verifiedMapping != NULL),
+        @"serverRevocationMappingStatus":mappingStatus,
         @"contextSavePerformed":@NO};
 }

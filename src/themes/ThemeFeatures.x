@@ -2,6 +2,7 @@
 
 #import "TargetMetadata.h"
 #import "ThemePrivateAPI.h"
+#import "ThemeShop.h"
 #import "ThemeFeatures.h"
 #import "SwiftFields.h"
 #import "ThemeVersion.h"
@@ -1074,7 +1075,8 @@ NSDictionary<NSString *, id> *RUINThemeDiagnostics(void)
 #if defined(RUIN_HOST_CHECK)
     const RUINVersionMapping *versionMapping = RUINMappingForInfo(info);
 #else
-    const RUINVersionMapping *versionMapping = RUINCurrentMapping();
+    RUINFeatureImage themeImage;
+    const RUINVersionMapping *versionMapping = RUINCopyVerifiedThemeImage(&themeImage);
 #endif
     const RUINThemeFeatureAddressesMapping *featureAddresses = versionMapping
         ? &versionMapping->themes.featureAddresses : NULL;

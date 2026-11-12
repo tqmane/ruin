@@ -8,6 +8,7 @@
 #import "../known/VersionMapping.h"
 #if !defined(RUIN_THEMESHOP_HOST_CHECK)
 #import "ThemeRouteScope.h"
+#import "FeatureImage.h"
 #endif
 
 #import <objc/runtime.h>
@@ -201,6 +202,9 @@ static BOOL RUINThemeShopFrameUsesPlainMode(uintptr_t frame)
 }
 #else
 static intptr_t gThemeShopSlide;
+static RUINFeatureImage gThemeShopImage;
+static const RUINVersionMapping *gThemeShopImageVersion;
+static atomic_bool gThemeShopImageReady;
 static NSMutableArray *gThemeRouteObservations;
 static BOOL RUINThemeRouteObserverEnabled(void) {
     return [NSProcessInfo.processInfo.environment[@"RUIN_ENABLE_THEME_ROUTE_OBSERVER"] isEqual:@"1"];
@@ -345,18 +349,41 @@ static const RUINThemeMappings *RUINThemeShopMappingForInfo(NSDictionary *info)
     const RUINThemeMappings *mapping = versionMapping ? &versionMapping->themes : NULL;
     if (!mapping || mapping->shopNavigation.status != RUINMappingStatusVerified) return NULL;
 #if !defined(RUIN_THEMESHOP_HOST_CHECK)
-    if (RUINCurrentMapping() != versionMapping) return NULL;
-    RUINMainExecutableImage image;
-    if (!RUINResolveMainExecutableImage(&image)) return NULL;
-    const struct mach_header_64 *header = image.header;
-    intptr_t slide = image.slide;
+    // Preserve the existing native/sideload verifier and routing path.
+    RUINMainExecutableImage nativeImage;
+    if (!gThemeShopImageVersion && RUINCurrentMapping() == versionMapping &&
+        RUINResolveMainExecutableImage(&nativeImage)) {
+        char URL[sizeof("line://shop/theme")];
+        if (!RUINVerifyInstructions(nativeImage.header, nativeImage.slide, mapping->shopNavigation.anchors,
+                mapping->shopNavigation.anchorCount) ||
+            !RUINReadImageBytes(nativeImage.header, nativeImage.slide, mapping->shopNavigation.themeURLString,
+                URL, sizeof(URL), "__TEXT") || memcmp(URL, RUINThemeShopURLString.UTF8String, sizeof(URL))) return NULL;
+        gThemeShopSlide = nativeImage.slide;
+        return mapping;
+    }
+    if (gThemeShopImageVersion) {
+        return gThemeShopImageVersion == versionMapping &&
+            RUINFeatureImageMatches(&gThemeShopImage, &versionMapping->host) ? mapping : NULL;
+    }
+    RUINFeatureImage image = {0};
+    Class owner = objc_getClass(RUINThemeShopDelegateClass);
+    if (!RUINResolveFeatureImage(&versionMapping->host, owner, &image)) return NULL;
     char actualURL[sizeof("line://shop/theme")];
-    if (!RUINVerifyInstructions(header, slide, mapping->shopNavigation.anchors,
+    if (!RUINVerifyFeatureInstructions(&image, mapping->shopNavigation.anchors,
             mapping->shopNavigation.anchorCount) ||
-        !RUINReadImageBytes(header, slide, mapping->shopNavigation.themeURLString,
+        !RUINReadFeatureImageBytes(&image, mapping->shopNavigation.themeURLString,
             actualURL, sizeof(actualURL), "__TEXT") ||
-        memcmp(actualURL, RUINThemeShopURLString.UTF8String, sizeof(actualURL))) return NULL;
-    gThemeShopSlide = slide;
+        memcmp(actualURL, RUINThemeShopURLString.UTF8String, sizeof(actualURL))) {
+        RUINReleaseFeatureImage(&image);
+        return NULL;
+    }
+    // Keep the native code alive while the scoped defaults adapter can reach it.
+    gThemeShopImage = image;
+    gThemeShopImageVersion = versionMapping;
+    gThemeShopSlide = image.image.slide;
+    atomic_store_explicit(&gThemeShopImageReady, true, memory_order_release);
+    extern void RUINInstallThemeFeatures(void);
+    dispatch_async(dispatch_get_main_queue(), ^{ RUINInstallThemeFeatures(); });
 #endif
     return mapping;
 }
@@ -365,11 +392,17 @@ static const RUINThemeMappings *RUINThemeShopMappingForInfo(NSDictionary *info)
 static BOOL RUINThemeShopVerifyEligibility(const RUINThemeMappings *mapping)
 {
     if (!mapping || mapping->shopEligibility.nativeReadAdapterStatus != RUINMappingStatusVerified) return NO;
-    const RUINVersionMapping *versionMapping = RUINCurrentMapping();
+    if (!gThemeShopImageVersion) {
+        const RUINVersionMapping *nativeVersion = RUINCurrentMapping();
+        RUINMainExecutableImage nativeImage;
+        if (nativeVersion && &nativeVersion->themes == mapping && RUINResolveMainExecutableImage(&nativeImage))
+            return RUINVerifyInstructions(nativeImage.header, nativeImage.slide, mapping->shopEligibility.anchors,
+                mapping->shopEligibility.anchorCount);
+    }
+    const RUINVersionMapping *versionMapping = gThemeShopImageVersion;
     if (!versionMapping || &versionMapping->themes != mapping) return NO;
-    RUINMainExecutableImage image;
-    if (!RUINResolveMainExecutableImage(&image)) return NO;
-    return RUINVerifyInstructions(image.header, image.slide, mapping->shopEligibility.anchors,
+    return RUINFeatureImageMatches(&gThemeShopImage, &versionMapping->host) &&
+        RUINVerifyFeatureInstructions(&gThemeShopImage, mapping->shopEligibility.anchors,
             mapping->shopEligibility.anchorCount);
 }
 #endif
@@ -420,12 +453,61 @@ static BOOL RUINThemeShopTargetMatches(NSDictionary *info)
     return RUINTargetMetadataMatchesInfo(info);
 }
 
-void RUINInstallThemePersistenceAdapter(void)
-{
 #if !defined(RUIN_THEMESHOP_HOST_CHECK)
+static void RUINInstallThemePersistenceOnMain(void) {
     gThemeShopMappings = RUINThemeShopMappingForInfo(NSBundle.mainBundle.infoDictionary);
     if (gThemeShopMappings)
         RUINThemeShopInstallGate();
+}
+#endif
+
+const RUINVersionMapping *RUINCopyVerifiedThemeImage(RUINFeatureImage *image)
+{
+    if (!image) return NULL;
+    memset(image, 0, sizeof(*image));
+#if !defined(RUIN_THEMESHOP_HOST_CHECK)
+    if (!atomic_load_explicit(&gThemeShopImageReady, memory_order_acquire)) {
+        const RUINVersionMapping *nativeVersion = RUINCurrentMapping();
+        RUINMainExecutableImage nativeImage;
+        if (nativeVersion && RUINResolveMainExecutableImage(&nativeImage)) {
+            *image = (RUINFeatureImage){.image=nativeImage, .fileType=MH_EXECUTE};
+            if (RUINFeatureImageMatches(image, &nativeVersion->host)) return nativeVersion;
+            memset(image, 0, sizeof(*image));
+        }
+    }
+    if (!atomic_load_explicit(&gThemeShopImageReady, memory_order_acquire)) return NULL;
+    const RUINVersionMapping *version = gThemeShopImageVersion;
+    if (RUINMappingForInfo(NSBundle.mainBundle.infoDictionary) != version ||
+        !RUINFeatureImageMatches(&gThemeShopImage, &version->host)) return NULL;
+    *image = gThemeShopImage;
+    image->loaderReference = NULL; // Borrow the owner's process-lifetime pin.
+    return version;
+#else
+    return NULL;
+#endif
+}
+void RUINInstallThemePersistenceAdapter(void)
+{
+#if !defined(RUIN_THEMESHOP_HOST_CHECK)
+    if (!NSThread.isMainThread) {
+        dispatch_async(dispatch_get_main_queue(), ^{ RUINInstallThemePersistenceAdapter(); });
+        return;
+    }
+    RUINMainExecutableImage mainImage;
+    if (!gThemeShopImageVersion && !RUINResolveMainExecutableImage(&mainImage)) {
+        // A guest may still be running its image initializers. Pin/verify it
+        // after returning to the main loop rather than reopening it under dyld.
+        static BOOL queued;
+        if (!queued) {
+            queued = YES;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                queued = NO;
+                RUINInstallThemePersistenceOnMain();
+            });
+        }
+        return;
+    }
+    RUINInstallThemePersistenceOnMain();
 #endif
 }
 
@@ -574,6 +656,8 @@ NSDictionary<NSString *, id> *RUINThemeShopDiagnostics(void)
         @"storedRoleModifiedByAdapter": @NO
     } mutableCopy];
 #if !defined(RUIN_THEMESHOP_HOST_CHECK)
+    result[@"nativeImageResolved"] = @(gThemeShopImageVersion != NULL);
+    result[@"verifiedGuestImage"] = @(gThemeShopImageVersion && gThemeShopImage.convertedExecutable);
     @synchronized (NSUserDefaults.class) {
         result[@"taskScopeObservations"] = [gThemeRouteObservations copy] ?: @[];
     }
