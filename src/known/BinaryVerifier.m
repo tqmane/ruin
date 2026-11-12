@@ -69,15 +69,18 @@ BOOL RUINResolveMainExecutableImageFromCandidates(const char *executablePath,
     for (size_t i = 0; i < count; i++) {
         const RUINDyldImageCandidate *candidate = &candidates[i];
         uint8_t candidateUUID[16];
-        if (!ImageUUID(candidate->header, candidateUUID)) continue;
         char *candidatePath = CanonicalImagePath(candidate->imageName);
         if (!candidatePath) continue;
         BOOL sameImage = !strcmp(expectedPath, candidatePath);
         free(candidatePath);
         if (!sameImage) continue;
+        if (!ImageUUID(candidate->header, candidateUUID)) { ambiguous = YES; break; }
         if (match) {
-            ambiguous = YES;
-            break;
+            if (match->header != candidate->header || match->slide != candidate->slide ||
+                memcmp(matchUUID, candidateUUID, sizeof(matchUUID))) {
+                ambiguous = YES; break;
+            }
+            continue; // Multiple dyld indexes can alias the same loaded guest.
         }
         match = candidate;
         matchIndex = i;
@@ -121,7 +124,7 @@ static BOOL SameMainExecutableImage(const RUINMainExecutableImage *left,
     const RUINMainExecutableImage *right)
 {
     return left->header == right->header && left->slide == right->slide &&
-        left->imageIndex == right->imageIndex && left->cpuType == right->cpuType &&
+        left->cpuType == right->cpuType &&
         left->cpuSubtype == right->cpuSubtype && !memcmp(left->uuid, right->uuid, sizeof(left->uuid));
 }
 

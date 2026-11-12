@@ -4,15 +4,14 @@
 #import "../core/Features.h"
 #import "LegacyMessagingConfiguration.h"
 #import "VersionMapping.h"
+#import "FeatureImage.h"
 #import "../core/NativeFunctionPointer.h"
 
 #import <objc/runtime.h>
 #import <mach/machine.h>
 #import <stdatomic.h>
 #import <string.h>
-#if !defined(RUIN_NATIVE_MUTE_SEND_HOST_CHECK)
 #import <mach/mach.h>
-#endif
 
 static const char * const kNativeMuteSendClass = "_TtC15LineMessagingUI12ChatInputBar";
 static const char * const kNativeMuteSendSelector = "longPressDidActivate:";
@@ -35,8 +34,11 @@ static atomic_int nativeSetting = ATOMIC_VAR_INIT(-1), effectiveSetting = ATOMIC
 static atomic_uint_fast64_t configurationReads, projectedConfigurationReads, otherConfigurationReads;
 static atomic_int nativeConfiguration = ATOMIC_VAR_INIT(-1), effectiveConfiguration = ATOMIC_VAR_INIT(-1);
 enum { AdapterPending, AdapterUnsupportedHost, AdapterUnsupportedABI, AdapterVerificationFailed,
-    AdapterProtectionFailed, AdapterCollision, AdapterProtectionRestoreFailed, AdapterInstalled };
+    AdapterProtectionFailed, AdapterCollision, AdapterProtectionRestoreFailed, AdapterRollbackIncomplete, AdapterInstalled };
 static atomic_int adapterStatus;
+static atomic_uint installAttempts;
+static atomic_bool rollbackSlotsComplete = ATOMIC_VAR_INIT(true);
+static atomic_bool rollbackProtectionComplete = ATOMIC_VAR_INIT(true);
 #if defined(RUIN_NATIVE_MUTE_SEND_HOST_CHECK)
 static BOOL testOptionEnabled;
 static uintptr_t testCallerPC;
@@ -52,8 +54,9 @@ static BOOL RUINMuteOptionEnabled(void) {
 }
 
 static BOOL RUINMuteWitnessABISupported(const struct mach_header_64 *header,
-    const RUINNativeMuteSendMapping *mapping) {
-    return header && header->magic == MH_MAGIC_64 && header->filetype == MH_EXECUTE &&
+    const RUINNativeMuteSendMapping *mapping, BOOL verifiedGuest) {
+    return header && header->magic == MH_MAGIC_64 &&
+        (header->filetype == MH_EXECUTE || (verifiedGuest && header->filetype == MH_DYLIB)) &&
         header->cputype == CPU_TYPE_ARM64 && header->cpusubtype == CPU_SUBTYPE_ARM64_ALL &&
         mapping && mapping->status == RUINMappingStatusVerified &&
         mapping->witnessTableVA && !(mapping->witnessTableVA % sizeof(uintptr_t)) &&
@@ -134,8 +137,8 @@ static BOOL RUINMuteConfigurationWitnessMatches(const RUINNativeMuteSendMapping 
 }
 
 static BOOL RUINStoreMuteConfigurationWitness(const struct mach_header_64 *header,
-    const RUINNativeMuteSendMapping *mapping, intptr_t slide, uintptr_t *table) {
-    if (!RUINMuteWitnessABISupported(header, mapping) ||
+    const RUINNativeMuteSendMapping *mapping, intptr_t slide, uintptr_t *table, BOOL verifiedGuest) {
+    if (!RUINMuteWitnessABISupported(header, mapping, verifiedGuest) ||
         !RUINMuteConfigurationWitnessMatches(mapping, slide, table)) return NO;
     uintptr_t expected = slide + mapping->configurationGetterVA;
     atomic_store_explicit(&originalConfigurationGetter, expected, memory_order_release);
@@ -146,16 +149,16 @@ static BOOL RUINStoreMuteConfigurationWitness(const struct mach_header_64 *heade
         __ATOMIC_RELEASE, __ATOMIC_RELAXED);
 }
 
-static void RUINRestoreMuteConfigurationWitness(uintptr_t *table) {
+static BOOL RUINRestoreMuteConfigurationWitness(uintptr_t *table) {
     atomic_store_explicit(&adapterReady, false, memory_order_release);
     uintptr_t replacement = RUINNativeFunctionPointerRaw((const void *)RUINMuteConfigurationGate);
-    __atomic_compare_exchange_n(&table[2], &replacement, atomic_load(&originalConfigurationGetter), NO,
-        __ATOMIC_RELEASE, __ATOMIC_RELAXED);
+    return __atomic_compare_exchange_n(&table[2], &replacement, atomic_load(&originalConfigurationGetter), NO,
+        __ATOMIC_RELEASE, __ATOMIC_RELAXED) || replacement == atomic_load(&originalConfigurationGetter);
 }
 
 static BOOL RUINStoreMuteWitness(const struct mach_header_64 *header,
-    const RUINNativeMuteSendMapping *mapping, intptr_t slide, uintptr_t *table) {
-    if (!RUINMuteWitnessABISupported(header, mapping) || !RUINMuteWitnessMatches(mapping, slide, table))
+    const RUINNativeMuteSendMapping *mapping, intptr_t slide, uintptr_t *table, BOOL verifiedGuest) {
+    if (!RUINMuteWitnessABISupported(header, mapping, verifiedGuest) || !RUINMuteWitnessMatches(mapping, slide, table))
         return NO;
     uintptr_t expected = (uintptr_t)(slide + mapping->getterVA);
     atomic_store_explicit(&originalGetter, expected, memory_order_release);
@@ -166,43 +169,103 @@ static BOOL RUINStoreMuteWitness(const struct mach_header_64 *header,
         __ATOMIC_RELEASE, __ATOMIC_RELAXED);
 }
 
-static void RUINRestoreMuteWitness(uintptr_t *table) {
+static BOOL RUINRestoreMuteWitness(uintptr_t *table) {
     atomic_store_explicit(&adapterReady, false, memory_order_release);
     uintptr_t replacement = RUINNativeFunctionPointerRaw((const void *)RUINMuteSettingGate);
-    __atomic_compare_exchange_n(&table[1], &replacement, atomic_load(&originalGetter), NO,
-        __ATOMIC_RELEASE, __ATOMIC_RELAXED);
+    return __atomic_compare_exchange_n(&table[1], &replacement, atomic_load(&originalGetter), NO,
+        __ATOMIC_RELEASE, __ATOMIC_RELAXED) || replacement == atomic_load(&originalGetter);
 }
 
-#if !defined(RUIN_NATIVE_MUTE_SEND_HOST_CHECK)
-static int RUINInstallMuteTable(uintptr_t *table, size_t tableBytes,
-    BOOL (^store)(void), void (^restore)(void)) {
-    vm_address_t page = (vm_address_t)table & ~((vm_address_t)vm_page_size - 1);
-    if (tableBytes > vm_page_size || (uintptr_t)table - page > vm_page_size - tableBytes)
-        return AdapterProtectionFailed;
-    vm_address_t region = page;
-    vm_size_t size = 0;
+// Page operations are shared by the device adapter and its fault-injection fixture.
+#if defined(RUIN_NATIVE_MUTE_SEND_HOST_CHECK)
+static unsigned testProtectionCalls, testProtectionFailure;
+static uint32_t testProtectionFailureMask;
+static BOOL testProtectionQueryFailure;
+static uintptr_t *testCollisionTable;
+#endif
+static BOOL RUINMutePageProtection(vm_address_t page, vm_prot_t *protection) {
+#if defined(RUIN_NATIVE_MUTE_SEND_HOST_CHECK)
+    (void)page;
+    *protection = VM_PROT_READ;
+    return !testProtectionQueryFailure;
+#else
+    vm_address_t region = page; vm_size_t size = 0;
     vm_region_basic_info_data_64_t info;
     mach_msg_type_number_t count = VM_REGION_BASIC_INFO_COUNT_64;
     mach_port_t object = MACH_PORT_NULL;
     kern_return_t result = vm_region_64(mach_task_self(), &region, &size, VM_REGION_BASIC_INFO_64,
         (vm_region_info_t)&info, &count, &object);
     if (object != MACH_PORT_NULL) mach_port_deallocate(mach_task_self(), object);
-    if (result != KERN_SUCCESS || region > page || region + size < page + vm_page_size ||
-        vm_protect(mach_task_self(), page, vm_page_size, FALSE,
-            VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY) != KERN_SUCCESS)
+    if (result != KERN_SUCCESS || region > page || size < page - region ||
+        size - (page - region) < vm_page_size || !(info.protection & VM_PROT_READ)) return NO;
+    *protection = info.protection;
+    return YES;
+#endif
+}
+static BOOL RUINMuteProtectPage(vm_address_t page, vm_prot_t protection) {
+#if defined(RUIN_NATIVE_MUTE_SEND_HOST_CHECK)
+    (void)page; (void)protection;
+    ++testProtectionCalls;
+    if (testProtectionCalls == 3 && testCollisionTable) testCollisionTable[2]++;
+    return testProtectionCalls != testProtectionFailure &&
+        !(testProtectionCalls < 32 && (testProtectionFailureMask & (1u << testProtectionCalls)));
+#else
+    return vm_protect(mach_task_self(), page, vm_page_size, FALSE, protection) == KERN_SUCCESS;
+#endif
+}
+
+static int RUINInstallMuteTable(uintptr_t *table, size_t tableBytes,
+    BOOL (^store)(void), BOOL (^restore)(void)) {
+    vm_address_t page = (vm_address_t)table & ~((vm_address_t)vm_page_size - 1);
+    vm_prot_t protection;
+    if (tableBytes > vm_page_size || (uintptr_t)table - page > vm_page_size - tableBytes ||
+        !RUINMutePageProtection(page, &protection) ||
+        !RUINMuteProtectPage(page, VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY))
         return AdapterProtectionFailed;
-    if (!store()) {
-        vm_protect(mach_task_self(), page, vm_page_size, FALSE, info.protection);
-        return AdapterCollision;
+    BOOL stored = store();
+    if (RUINMuteProtectPage(page, protection)) return stored ? AdapterInstalled : AdapterCollision;
+    BOOL slotsRestored = !stored || restore();
+    BOOL protectionRestored = RUINMuteProtectPage(page, protection);
+    atomic_store(&rollbackSlotsComplete, atomic_load(&rollbackSlotsComplete) && slotsRestored);
+    atomic_store(&rollbackProtectionComplete, atomic_load(&rollbackProtectionComplete) && protectionRestored);
+    return slotsRestored && protectionRestored ? AdapterProtectionRestoreFailed : AdapterRollbackIncomplete;
+}
+
+static int RUINInstallMutePair(const struct mach_header_64 *header,
+    const RUINNativeMuteSendMapping *mapping, intptr_t slide,
+    uintptr_t *table, uintptr_t *configurationTable, BOOL verifiedGuest) {
+    atomic_store_explicit(&adapterReady, false, memory_order_release);
+    atomic_store(&rollbackSlotsComplete, true);
+    atomic_store(&rollbackProtectionComplete, true);
+    // Capture both original call paths before the first replacement is visible.
+    if (!RUINMuteWitnessABISupported(header, mapping, verifiedGuest) ||
+        !RUINMuteWitnessMatches(mapping, slide, table) ||
+        !RUINMuteConfigurationWitnessMatches(mapping, slide, configurationTable)) return AdapterCollision;
+    atomic_store(&originalGetter, slide + mapping->getterVA);
+    atomic_store(&originalConfigurationGetter, slide + mapping->configurationGetterVA);
+    policyReturnPC = slide + mapping->policyReturnVA; witnessTable = (uintptr_t)table;
+    configurationReturnPC = slide + mapping->configurationReturnVA;
+    configurationWitnessTable = (uintptr_t)configurationTable;
+    int result = RUINInstallMuteTable(table, 2 * sizeof(*table), ^BOOL{
+        return RUINStoreMuteWitness(header, mapping, slide, table, verifiedGuest);
+    }, ^BOOL{ return RUINRestoreMuteWitness(table); });
+    if (result != AdapterInstalled) return result;
+    result = RUINInstallMuteTable(configurationTable, 3 * sizeof(*configurationTable), ^BOOL{
+        return RUINStoreMuteConfigurationWitness(header, mapping, slide, configurationTable, verifiedGuest);
+    }, ^BOOL{ return RUINRestoreMuteConfigurationWitness(configurationTable); });
+    if (result != AdapterInstalled) {
+        int rollback = RUINInstallMuteTable(table, 2 * sizeof(*table), ^BOOL{
+            return RUINRestoreMuteWitness(table);
+        }, ^BOOL{ return table[1] == atomic_load(&originalGetter); });
+        if (rollback != AdapterInstalled && rollback != AdapterProtectionRestoreFailed) {
+            atomic_store(&rollbackSlotsComplete, table[1] == atomic_load(&originalGetter));
+            return AdapterRollbackIncomplete;
+        }
+        return result;
     }
-    if (vm_protect(mach_task_self(), page, vm_page_size, FALSE, info.protection) != KERN_SUCCESS) {
-        restore();
-        vm_protect(mach_task_self(), page, vm_page_size, FALSE, info.protection);
-        return AdapterProtectionRestoreFailed;
-    }
+    atomic_store_explicit(&adapterReady, true, memory_order_release);
     return AdapterInstalled;
 }
-#endif
 
 static NSString *RUINMuteAdapterStatus(void) {
     switch (atomic_load(&adapterStatus)) {
@@ -212,6 +275,7 @@ static NSString *RUINMuteAdapterStatus(void) {
         case AdapterProtectionFailed: return @"nativeWitnessProtectionFailed";
         case AdapterCollision: return @"nativeWitnessChanged";
         case AdapterProtectionRestoreFailed: return @"nativeWitnessProtectionRestoreFailed";
+        case AdapterRollbackIncomplete: return @"nativeWitnessRollbackIncomplete";
         case AdapterInstalled: return @"nativeMuteReadAdaptersInstalled";
         default: return @"pending";
     }
@@ -275,6 +339,9 @@ NSDictionary<NSString *, id> *RUINNativeMuteSendDiagnostics(void)
         @"rawFeatureKeyProvenAsDefaultsKey":@NO,
         @"muteGateFunctionProven":@(atomic_load(&adapterABIConfirmed)),
         @"muteGateFunctionABIProven":@(atomic_load(&adapterABIConfirmed)),
+        @"installationAttempts":@(atomic_load(&installAttempts)),
+        @"rollbackSlotsComplete":@(atomic_load(&rollbackSlotsComplete)),
+        @"rollbackProtectionComplete":@(atomic_load(&rollbackProtectionComplete)),
         @"hookInstalled":@(atomic_load(&adapterReady)),
         @"configurationDecoderInstalled":@(decoderInstalled),
         @"nativeGeneralSettingAdapterStatus":RUINMuteAdapterStatus(),
@@ -311,53 +378,87 @@ void RUINInstallNativeMuteSend(void)
     RUINInstallNativeMuteSettingAdapter();
 }
 
-void RUINInstallNativeMuteSettingAdapter(void)
-{
 #if !defined(RUIN_NATIVE_MUTE_SEND_HOST_CHECK)
-    const RUINVersionMapping *version = RUINCurrentMapping();
-    RUINMainExecutableImage image = {0};
-    if (!version || !RUINResolveMainExecutableImage(&image) ||
-        version->messaging.nativeMuteSend.status != RUINMappingStatusVerified) {
+static BOOL installQueued, installFinished;
+static RUINFeatureImage installedImage;
+
+static void RUINAttemptNativeMuteInstall(void) {
+    installQueued = NO;
+    if (installFinished) return;
+    unsigned attempt = atomic_fetch_add(&installAttempts, 1) + 1;
+    const RUINVersionMapping *version = RUINMappingForInfo(NSBundle.mainBundle.infoDictionary);
+    if (!version || version->messaging.nativeMuteSend.status != RUINMappingStatusVerified) {
         atomic_store(&adapterStatus, AdapterUnsupportedHost);
+        installFinished = YES;
         return;
     }
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        const RUINNativeMuteSendMapping *mapping = &version->messaging.nativeMuteSend;
-        if (!RUINMuteWitnessABISupported(image.header, mapping)) {
-            atomic_store(&adapterStatus, AdapterUnsupportedABI); return;
+    Class cls = objc_getClass(kNativeMuteSendClass);
+    SEL selector = sel_registerName(kNativeMuteSendSelector);
+    // Require an owned method, rather than an inherited or guessed implementation.
+    unsigned count = 0; Method method = NULL;
+    Method *methods = cls ? class_copyMethodList(cls, &count) : NULL;
+    for (unsigned i = 0; i < count; i++) if (method_getName(methods[i]) == selector) method = methods[i];
+    free(methods);
+    const char *encoding = method ? method_getTypeEncoding(method) : NULL;
+    if (encoding && strcmp(encoding, kNativeMuteSendEncoding)) {
+        atomic_store(&adapterStatus, AdapterUnsupportedABI);
+        installFinished = YES;
+        return;
+    }
+    RUINFeatureImage image = {0};
+    const void *implementation = method ? (const void *)RUINNativeFunctionPointerRaw(
+        (const void *)method_getImplementation(method)) : NULL;
+    if (!encoding ||
+        !RUINResolveFeatureImage(&version->host, implementation, &image)) {
+        atomic_store(&adapterStatus, AdapterPending);
+        if (attempt < 8) {
+            installQueued = YES;
+            double delay = MIN(4.0, 0.25 * (1u << (attempt - 1)));
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)),
+                dispatch_get_main_queue(), ^{ RUINAttemptNativeMuteInstall(); });
+        } else {
+            atomic_store(&adapterStatus, AdapterUnsupportedHost);
+            installFinished = YES;
         }
+        return;
+    }
+    const RUINNativeMuteSendMapping *mapping = &version->messaging.nativeMuteSend;
+    BOOL guest = image.convertedExecutable;
+    if (!RUINMuteWitnessABISupported(image.image.header, mapping, guest)) {
+        atomic_store(&adapterStatus, AdapterUnsupportedABI);
+    } else {
         uintptr_t snapshot[2], configurationSnapshot[3];
-        if (!RUINVerifyHostImage(&version->host, image.header) ||
-            !RUINVerifyInstructions(image.header, image.slide, mapping->anchors, mapping->anchorCount) ||
-            !RUINReadImageBytes(image.header, image.slide, mapping->witnessTableVA,
-                snapshot, sizeof(snapshot), "__DATA_CONST") ||
-            !RUINMuteWitnessMatches(mapping, image.slide, snapshot) ||
-            !RUINReadImageBytes(image.header, image.slide, mapping->configurationWitnessTableVA,
+        if (!RUINVerifyFeatureInstructions(&image, mapping->anchors, mapping->anchorCount) ||
+            !RUINReadFeatureImageBytes(&image, mapping->witnessTableVA, snapshot, sizeof(snapshot), "__DATA_CONST") ||
+            !RUINMuteWitnessMatches(mapping, image.image.slide, snapshot) ||
+            !RUINReadFeatureImageBytes(&image, mapping->configurationWitnessTableVA,
                 configurationSnapshot, sizeof(configurationSnapshot), "__DATA") ||
-            !RUINMuteConfigurationWitnessMatches(mapping, image.slide, configurationSnapshot)) {
-            atomic_store(&adapterStatus, AdapterVerificationFailed); return;
+            !RUINMuteConfigurationWitnessMatches(mapping, image.image.slide, configurationSnapshot) ||
+            !RUINFeatureImageMatches(&image, &version->host)) {
+            atomic_store(&adapterStatus, AdapterVerificationFailed);
+        } else {
+            atomic_store(&adapterABIConfirmed, true);
+            // Keep originals alive even if a failed rollback leaves a pass-through gate reachable.
+            installedImage = image;
+            memset(&image, 0, sizeof(image));
+            int result = RUINInstallMutePair(installedImage.image.header, mapping, installedImage.image.slide,
+                (void *)(installedImage.image.slide + mapping->witnessTableVA),
+                (void *)(installedImage.image.slide + mapping->configurationWitnessTableVA), guest);
+            atomic_store(&adapterStatus, result);
         }
-        atomic_store(&adapterABIConfirmed, true);
-        uintptr_t *table = (void *)(image.slide + mapping->witnessTableVA);
-        int result = RUINInstallMuteTable(table, sizeof(snapshot), ^BOOL{
-            return RUINStoreMuteWitness(image.header, mapping, image.slide, table);
-        }, ^{ RUINRestoreMuteWitness(table); });
-        if (result != AdapterInstalled) { atomic_store(&adapterStatus, result); return; }
-        uintptr_t *configurationTable = (void *)(image.slide + mapping->configurationWitnessTableVA);
-        result = RUINInstallMuteTable(configurationTable, sizeof(configurationSnapshot), ^BOOL{
-            return RUINStoreMuteConfigurationWitness(image.header, mapping, image.slide, configurationTable);
-        }, ^{ RUINRestoreMuteConfigurationWitness(configurationTable); });
-        if (result != AdapterInstalled) {
-            // Keep a failed pair pass-through and restore the first binding.
-            RUINInstallMuteTable(table, sizeof(snapshot), ^BOOL{
-                RUINRestoreMuteWitness(table);
-                return table[1] == atomic_load(&originalGetter);
-            }, ^{});
-            atomic_store(&adapterStatus, result); return;
+    }
+    RUINReleaseFeatureImage(&image);
+    installFinished = YES; // A fingerprint, collision or protection failure is permanent for this image.
+}
+#endif
+
+void RUINInstallNativeMuteSettingAdapter(void) {
+#if !defined(RUIN_NATIVE_MUTE_SEND_HOST_CHECK)
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (!installQueued && !installFinished) {
+            installQueued = YES;
+            RUINAttemptNativeMuteInstall();
         }
-        atomic_store(&adapterStatus, AdapterInstalled);
-        atomic_store_explicit(&adapterReady, true, memory_order_release);
     });
 #endif
 }
@@ -423,18 +524,18 @@ int main(int argc, const char **argv) { @autoreleasepool {
     RUINNativeMuteSendMapping mapping = *mapped;
     uintptr_t table[2] = {mapping.conformanceVA, RUINNativeFunctionPointerRaw((const void *)TestMuteGetter)};
     mapping.getterVA = table[1];
-    assert(RUINMuteWitnessABISupported(&header, &mapping));
+    assert(RUINMuteWitnessABISupported(&header, &mapping, NO));
     header.cpusubtype = CPU_SUBTYPE_ARM64E;
-    assert(!RUINStoreMuteWitness(&header, &mapping, 0, table));
+    assert(!RUINStoreMuteWitness(&header, &mapping, 0, table, NO));
     header.cpusubtype = CPU_SUBTYPE_ARM64_ALL;
     header.filetype = MH_DYLIB;
-    assert(!RUINStoreMuteWitness(&header, &mapping, 0, table));
+    assert(!RUINStoreMuteWitness(&header, &mapping, 0, table, NO));
     header.filetype = MH_EXECUTE;
     table[0]++;
-    assert(!RUINStoreMuteWitness(&header, &mapping, 0, table));
+    assert(!RUINStoreMuteWitness(&header, &mapping, 0, table, NO));
     table[0]--;
-    assert(RUINStoreMuteWitness(&header, &mapping, 0, table));
-    assert(!RUINStoreMuteWitness(&header, &mapping, 0, table)); // Never capture our own gate as original.
+    assert(RUINStoreMuteWitness(&header, &mapping, 0, table, NO));
+    assert(!RUINStoreMuteWitness(&header, &mapping, 0, table, NO)); // Never capture our own gate as original.
     RUINMuteSettingGetter getter = (RUINMuteSettingGetter)RUINNativeFunctionPointerForCall(table[1]);
     int metadata = 42, context = 17;
     testCallerPC = mapping.policyReturnVA;
@@ -465,10 +566,10 @@ int main(int argc, const char **argv) { @autoreleasepool {
         RUINNativeFunctionPointerRaw((const void *)TestMuteConfigurationGetter)};
     mapping.configurationGetterVA = configurationTable[2];
     configurationTable[1]++;
-    assert(!RUINStoreMuteConfigurationWitness(&header, &mapping, 0, configurationTable));
+    assert(!RUINStoreMuteConfigurationWitness(&header, &mapping, 0, configurationTable, NO));
     configurationTable[1]--;
-    assert(RUINStoreMuteConfigurationWitness(&header, &mapping, 0, configurationTable));
-    assert(!RUINStoreMuteConfigurationWitness(&header, &mapping, 0, configurationTable));
+    assert(RUINStoreMuteConfigurationWitness(&header, &mapping, 0, configurationTable, NO));
+    assert(!RUINStoreMuteConfigurationWitness(&header, &mapping, 0, configurationTable, NO));
     RUINMuteConfigurationGetter configurationGetter = (RUINMuteConfigurationGetter)
         RUINNativeFunctionPointerForCall(configurationTable[2]);
     int configuration = 58;
@@ -502,6 +603,52 @@ int main(int argc, const char **argv) { @autoreleasepool {
     assert(configurationTable[2] == mapping.configurationGetterVA);
     RUINRestoreMuteWitness(table);
     assert(table[1] == mapping.getterVA && !atomic_load(&adapterReady));
+    // Exercise the production two-table publisher, including failures after the
+    // first gate is reachable. A half-installed pair must always pass through.
+    for (unsigned failure = 0; failure <= 4; failure++) {
+        table[1] = mapping.getterVA; configurationTable[2] = mapping.configurationGetterVA;
+        testProtectionCalls = 0; testProtectionFailure = failure;
+        int status = RUINInstallMutePair(&header, &mapping, 0, table, configurationTable, NO);
+        assert(status == (failure ? (failure == 1 || failure == 3 ? AdapterProtectionFailed :
+            AdapterProtectionRestoreFailed) : AdapterInstalled));
+        assert(atomic_load(&adapterReady) == !failure);
+        if (failure) {
+            assert(table[1] == mapping.getterVA && configurationTable[2] == mapping.configurationGetterVA);
+            assert(atomic_load(&rollbackSlotsComplete) && atomic_load(&rollbackProtectionComplete));
+        } else {
+            assert(RUINRestoreMuteWitness(table)); assert(RUINRestoreMuteConfigurationWitness(configurationTable));
+        }
+    }
+    testProtectionCalls = 0; testProtectionFailure = 0;
+    testCollisionTable = configurationTable;
+    assert(RUINInstallMutePair(&header,&mapping,0,table,configurationTable,NO) == AdapterCollision);
+    assert(table[1] == mapping.getterVA && configurationTable[2] == mapping.configurationGetterVA + 1);
+    assert(!atomic_load(&adapterReady)); // A foreign replacement is never overwritten during rollback.
+    configurationTable[2]--; testCollisionTable = NULL;
+    testProtectionCalls = 0; testProtectionFailure = 3;
+    testProtectionFailureMask = 1u << 4; // Second install fails, then first rollback cannot make its page writable.
+    assert(RUINInstallMutePair(&header,&mapping,0,table,configurationTable,NO) == AdapterRollbackIncomplete);
+    assert(!atomic_load(&adapterReady) && !atomic_load(&rollbackSlotsComplete));
+    assert(atomic_load(&rollbackProtectionComplete));
+    testNativeValue = 0; testOptionEnabled = YES;
+    assert(getter(&metadata,table,&context) == 0); // Leftover gate retains its original.
+    assert(RUINRestoreMuteWitness(table));
+    testProtectionCalls = 0; testProtectionFailure = 0; testProtectionFailureMask = 0;
+    testProtectionCalls = 0; testProtectionFailureMask = (1u << 4) | (1u << 5);
+    assert(RUINInstallMutePair(&header,&mapping,0,table,configurationTable,NO) == AdapterRollbackIncomplete);
+    assert(!atomic_load(&adapterReady) && !atomic_load(&rollbackProtectionComplete));
+    assert(table[1] == mapping.getterVA && configurationTable[2] == mapping.configurationGetterVA);
+    testProtectionCalls = 0; testProtectionFailureMask = 0;
+    header.filetype = MH_DYLIB;
+    assert(RUINInstallMutePair(&header,&mapping,0,table,configurationTable,NO) == AdapterCollision);
+    assert(RUINInstallMutePair(&header,&mapping,0,table,configurationTable,YES) == AdapterInstalled);
+    assert(RUINRestoreMuteWitness(table)); assert(RUINRestoreMuteConfigurationWitness(configurationTable));
+    header.filetype = MH_EXECUTE;
+    configurationTable[2]++;
+    assert(RUINInstallMutePair(&header,&mapping,0,table,configurationTable,NO) == AdapterCollision);
+    assert(table[1] == mapping.getterVA && !atomic_load(&adapterReady));
+    configurationTable[2]--;
+    table[1]++; assert(!RUINRestoreMuteWitness(table)); table[1]--;
     puts("PASS native mute settings/config: scalar and indirect Bool ABI/context, original-once, exact caller/conformance, ON/OFF, return-buffer bounds, native state preserved, unsupported ABI/collision rejected");
 } return 0; }
 #endif
