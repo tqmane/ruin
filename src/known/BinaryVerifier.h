@@ -26,7 +26,7 @@ typedef struct {
 } RUINMainExecutableImage;
 
 FOUNDATION_EXPORT BOOL RUINVerifyHostImage(const RUINHostIdentity *host, const struct mach_header_64 *header);
-// Testable path/image selector. It requires a unique canonical-path MH_EXECUTE, not a specific CPU subtype.
+// Requires one canonical-path MH_EXECUTE instance; identical dyld aliases count once.
 FOUNDATION_EXPORT BOOL RUINResolveMainExecutableImageFromCandidates(const char *executablePath,
     const RUINDyldImageCandidate *candidates, size_t count, RUINMainExecutableImage *result);
 FOUNDATION_EXPORT BOOL RUINResolveMainExecutableImage(RUINMainExecutableImage *result);

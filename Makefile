@@ -60,6 +60,7 @@ HOST_FIXTURES := \
 	build/check_bundle_identity \
 	build/check_known_mappings \
 	build/check_main_image_resolver \
+	build/check_feature_image \
 	build/check_keychain \
 	build/check_sideload \
 	build/check_app_group_storage \
@@ -115,6 +116,7 @@ check-host: check-portable check-mapping-manifest $(HOST_FIXTURES)
 	./build/check_bundle_identity
 	./build/check_known_mappings
 	./build/check_main_image_resolver
+	./build/check_feature_image
 	./build/check_keychain
 	./build/check_sideload
 	./build/check_app_group_storage
@@ -168,6 +170,7 @@ check-host: check-portable check-mapping-manifest $(HOST_FIXTURES)
 	./build/check_legacy_messaging_configuration
 	python3 tests/check_secondary_login.py
 	python3 tests/check_native_mute_send.py
+	python3 tests/check_confirmations.py
 	python3 tests/check_retained_video_cache.py
 	python3 tests/check_theme_archive.py
 
@@ -516,3 +519,7 @@ build/check_native_tab_availability: $(call source,src/interface/NativeTabAvaila
 build/check_retained_media_store: tests/check_retained_media_store.m src/messaging/RetainedMediaStore.m
 	mkdir -p build
 	$(HOST_CC) -fobjc-arc -fblocks $(HOST_WARNINGS) $(CPPFLAGS) tests/check_retained_media_store.m src/messaging/RetainedMediaStore.m -framework Foundation -framework ImageIO -framework UniformTypeIdentifiers -o $@
+
+build/check_feature_image: tests/check_feature_image.m
+	mkdir -p build
+	$(HOST_CC) -fobjc-arc -fblocks $(HOST_WARNINGS) $(CPPFLAGS) $< -framework Foundation -o $@

@@ -106,6 +106,19 @@ int main(void)
             arm64Main.imageIndex == 0 && arm64Main.cpuSubtype == CPU_SUBTYPE_ARM64_ALL);
         assert(RUINMappingForImageInRegistryForTesting(info, arm64Main.header, variants, 2) == &arm64Mapping);
 
+        const RUINDyldImageCandidate aliases[] = {
+            {&arm64Image.header, 0x222000, executable},
+            {&arm64Image.header, 0x222000, symlinkPath}
+        };
+        assert(RUINResolveMainExecutableImageFromCandidates(symlinkPath, aliases, 2, &mainImage));
+        assert(mainImage.header == arm64Main.header && mainImage.slide == arm64Main.slide);
+        TestImage malformed = arm64Image;
+        malformed.uuid.cmdsize--;
+        const RUINDyldImageCandidate invalidAlias[] = {
+            aliases[0], {&malformed.header, 0x222000, executable}
+        };
+        assert(!RUINResolveMainExecutableImageFromCandidates(symlinkPath, invalidAlias, 2, &mainImage));
+
         const RUINDyldImageCandidate ambiguous[] = {
             {&arm64eImage.header, 0x333000, executable},
             {&duplicateImage.header, 0x444000, symlinkPath}

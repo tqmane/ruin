@@ -76,6 +76,16 @@ struct RUINConfirmationHook {
     atomic_uint_fast64_t prompts;
     atomic_uint_fast64_t approved;
     atomic_uint_fast64_t cancelled;
+    atomic_uint_fast64_t decisionApproved;
+    atomic_uint_fast64_t decisionCancelled;
+    atomic_uint_fast64_t originalEntered;
+    atomic_uint_fast64_t originalReturned;
+    atomic_uint_fast64_t originalMissing;
+    atomic_uint_fast64_t aborted;
+    atomic_uint_fast64_t staleCallbacks;
+    atomic_uint_fast64_t dismissalObservations;
+    atomic_uint_fast64_t dismissalCompleted;
+    atomic_uint_fast64_t dismissalTimeouts;
     atomic_uint_fast64_t staleContext;
     atomic_uint_fast64_t missingContext;
     atomic_uint_fast64_t suppressedWhilePending;
@@ -83,6 +93,12 @@ struct RUINConfirmationHook {
 };
 
 @interface RUINConfirmationPending : NSObject
+{
+@public
+    RUINConfirmationLifecycle lifecycle;
+    RUINConfirmationDecision decision;
+    BOOL originalPermitConsumed;
+}
 @property(nonatomic, assign) RUINConfirmationHook *hook;
 @property(nonatomic, strong) id target;
 @property(nonatomic, strong, nullable) id argument0;
@@ -93,7 +109,7 @@ struct RUINConfirmationHook {
 @property(nonatomic, strong) UIWindow *window;
 @property(nonatomic, strong) UIViewController *anchorController;
 @property(nonatomic, strong) UIViewController *presenter;
-@property(nonatomic, weak, nullable) UIAlertController *alert;
+@property(nonatomic, strong, nullable) UIAlertController *alert;
 @property(nonatomic, strong, nullable) UIViewController *threadController;
 @property(nonatomic, copy, nullable) NSString *threadMID;
 @property(nonatomic, strong, nullable) id contextOwner;
@@ -104,8 +120,8 @@ struct RUINConfirmationHook {
 @property(nonatomic, copy) NSString *message;
 @property(nonatomic, copy) NSString *approveTitle;
 @property(nonatomic) BOOL cameraToggleMustTurnOn;
-@property(nonatomic) BOOL resolved;
-@property(nonatomic) BOOL originalInvoked;
+@property(nonatomic) uint64_t ownerTicket;
+@property(nonatomic) NSTimeInterval dismissalDeadline;
 @property(nonatomic) NSInteger memberCount;
 @end
 
@@ -133,6 +149,16 @@ static void RUINHandleHook(RUINConfirmationHook *hook, id self, SEL selector, id
     .prompts = ATOMIC_VAR_INIT(0), \
     .approved = ATOMIC_VAR_INIT(0), \
     .cancelled = ATOMIC_VAR_INIT(0), \
+    .decisionApproved = ATOMIC_VAR_INIT(0), \
+    .decisionCancelled = ATOMIC_VAR_INIT(0), \
+    .originalEntered = ATOMIC_VAR_INIT(0), \
+    .originalReturned = ATOMIC_VAR_INIT(0), \
+    .originalMissing = ATOMIC_VAR_INIT(0), \
+    .aborted = ATOMIC_VAR_INIT(0), \
+    .staleCallbacks = ATOMIC_VAR_INIT(0), \
+    .dismissalObservations = ATOMIC_VAR_INIT(0), \
+    .dismissalCompleted = ATOMIC_VAR_INIT(0), \
+    .dismissalTimeouts = ATOMIC_VAR_INIT(0), \
     .staleContext = ATOMIC_VAR_INIT(0), \
     .missingContext = ATOMIC_VAR_INIT(0), \
     .suppressedWhilePending = ATOMIC_VAR_INIT(0), \
@@ -229,7 +255,13 @@ static RUINConfirmationHook * const gHooks[] = {
 static os_unfair_lock gInstallLock = OS_UNFAIR_LOCK_INIT;
 static os_unfair_lock gPendingLock = OS_UNFAIR_LOCK_INIT;
 static RUINConfirmationPending *gPendingConfirmation;
-static _Thread_local unsigned int gApprovedInvocationDepth;
+static RUINConfirmationOwnerTickets gPendingOwnerTickets;
+typedef struct {
+    __unsafe_unretained RUINConfirmationPending *pending;
+    uint64_t ticket;
+    BOOL consumed;
+} RUINConfirmationSendPermit;
+static _Thread_local RUINConfirmationSendPermit *gApprovedSendPermit;
 static atomic_int gSendButtonIvarState = ATOMIC_VAR_INIT(0);
 static atomic_uint_fast64_t gMissingSendThreshold = ATOMIC_VAR_INIT(0);
 static atomic_uint_fast64_t gUnknownSendContext = ATOMIC_VAR_INIT(0);
@@ -739,25 +771,28 @@ static BOOL RUINThreadStillMatches(RUINConfirmationPending *pending)
     return mid && [mid isEqualToString:pending.threadMID];
 }
 
-static BOOL RUINCameraSenderIsOffStateButton(id target, id sender)
+static RUINConfirmationActionClass RUINCameraSenderClassification(id target, id sender)
 {
     RUINConfirmationHook *hook = NULL;
     Class freeVideo = objc_getClass("_TtC11NCXFreeCall22NCFVideoViewController");
     Class groupVideo = objc_getClass("_TtC12NCXGroupCall22NCGVideoViewController");
     if ((freeVideo && [target isKindOfClass:freeVideo])) hook = &gFreeVideoCameraHook;
     else if ((groupVideo && [target isKindOfClass:groupVideo])) hook = &gGroupVideoCameraHook;
-    if (!hook || !sender) return NO;
+    if (!hook || !sender) return RUINConfirmationActionUnknownProtected;
 
     id offButtons = RUINObjectGetter(target, hook->className, "videoOffButtons");
     id onButtons = RUINObjectGetter(target, hook->className, "videoOnButtons");
-    if (![offButtons isKindOfClass:NSArray.class] || ![onButtons isKindOfClass:NSArray.class]) return NO;
-    return [(NSArray *)offButtons containsObject:sender] && ![(NSArray *)onButtons containsObject:sender];
+    if (![offButtons isKindOfClass:NSArray.class] || ![onButtons isKindOfClass:NSArray.class])
+        return RUINConfirmationActionUnknownProtected;
+    return RUINConfirmationClassifyCameraButtons(
+        [(NSArray *)offButtons containsObject:sender],
+        [(NSArray *)onButtons containsObject:sender]);
 }
 
 static BOOL RUINCameraStillTurnsOn(RUINConfirmationPending *pending)
 {
     if (!pending.cameraToggleMustTurnOn) return YES;
-    return RUINCameraSenderIsOffStateButton(pending.target, pending.argument0);
+    return RUINCameraSenderClassification(pending.target, pending.argument0) == RUINConfirmationActionProtected;
 }
 
 static BOOL RUINValidatePendingContext(RUINConfirmationPending *pending)
@@ -800,7 +835,8 @@ static BOOL RUINSenderMatchesHook(RUINConfirmationHook *hook, id target, id send
 static BOOL RUINIsComposerSendControl(id control, id actionTarget, SEL action)
 {
     Class inputClass = objc_getClass(RUINChatInputBarClass);
-    if (!inputClass || ![control isKindOfClass:UIControl.class]) return NO;
+    BOOL isControl = [control isKindOfClass:UIControl.class];
+    if (!inputClass || !isControl) return RUINConfirmationIsComposerControl(isControl, NO, NO, NO);
     UIView *composer = nil;
     for (UIView *view = (UIView *)control; view; view = view.superview) {
         if ([view isKindOfClass:inputClass]) {
@@ -808,19 +844,18 @@ static BOOL RUINIsComposerSendControl(id control, id actionTarget, SEL action)
             break;
         }
     }
-    if (!composer) return NO;
+    if (!composer) return RUINConfirmationIsComposerControl(YES, NO, NO, NO);
 
-    if ([actionTarget isKindOfClass:inputClass] && action == sel_registerName("send:"))
-        return YES;
+    BOOL targetsInputBarSend = [actionTarget isKindOfClass:inputClass] && action == sel_registerName("send:");
+    if (targetsInputBarSend) return RUINConfirmationIsComposerControl(YES, YES, YES, NO);
 
     id sendButton = RUINObjectIvar(composer, RUINChatInputBarClass, "$__lazy_storage_$_sendButton");
     if (sendButton == control) {
         atomic_store(&gSendButtonIvarState, 1);
-        return YES;
     }
     if (!sendButton && atomic_load(&gSendButtonIvarState) == 0)
         atomic_store(&gSendButtonIvarState, -1);
-    return NO;
+    return RUINConfirmationIsComposerControl(YES, YES, NO, sendButton == control);
 }
 
 static NSString *RUINPreferenceKey(RUINConfirmationKind kind)
@@ -868,26 +903,6 @@ static BOOL RUINMinimumMemberCount(NSInteger *minimum)
     return YES;
 }
 
-static void RUINInvokeOriginal(RUINConfirmationPending *pending)
-{
-    if (!pending.original || pending.originalInvoked) return;
-    pending.originalInvoked = YES;
-    gApprovedInvocationDepth++;
-    @try {
-        if (pending.hook->shape == RUINInvocationControlAction) {
-            ((void (*)(id, SEL, SEL, id, id))pending.original)(pending.target, pending.selector,
-                pending.dispatchedAction, pending.argument0, pending.argument1);
-        } else if (pending.hook->shape == RUINInvocationTwoObjects) {
-            ((void (*)(id, SEL, id, id))pending.original)(pending.target, pending.selector,
-                pending.argument0, pending.argument1);
-        } else {
-            ((void (*)(id, SEL, id))pending.original)(pending.target, pending.selector, pending.argument0);
-        }
-    } @finally {
-        gApprovedInvocationDepth--;
-    }
-}
-
 static void RUINCallOriginalDirect(RUINConfirmationHook *hook, id self, SEL selector, id argument0, id argument1, SEL dispatchedAction)
 {
     IMP original = atomic_load_explicit(&hook->original, memory_order_acquire);
@@ -900,54 +915,249 @@ static void RUINCallOriginalDirect(RUINConfirmationHook *hook, id self, SEL sele
         ((void (*)(id, SEL, id))original)(self, selector, argument0);
 }
 
-static void RUINClearPending(RUINConfirmationPending *pending)
+static BOOL RUINPendingIsCurrentLocked(RUINConfirmationPending *pending, uint64_t ticket)
+{
+    return pending && ticket == pending.ownerTicket && gPendingConfirmation == pending &&
+        RUINConfirmationOwnsTicket(&gPendingOwnerTickets, ticket);
+}
+
+static BOOL RUINPendingIsCurrent(RUINConfirmationPending *pending, uint64_t ticket)
 {
     os_unfair_lock_lock(&gPendingLock);
-    if (gPendingConfirmation == pending) gPendingConfirmation = nil;
+    BOOL current = RUINPendingIsCurrentLocked(pending, ticket);
     os_unfair_lock_unlock(&gPendingLock);
+    return current;
 }
 
-static BOOL RUINAlertIsCurrent(RUINConfirmationPending *pending)
+static BOOL RUINHasPendingConfirmation(void)
+{
+    os_unfair_lock_lock(&gPendingLock);
+    BOOL pending = gPendingConfirmation != nil && gPendingOwnerTickets.active != 0;
+    os_unfair_lock_unlock(&gPendingLock);
+    return pending;
+}
+
+static void RUINRecordStaleCallback(RUINConfirmationPending *pending)
+{
+    atomic_fetch_add_explicit(&pending.hook->staleCallbacks, 1, memory_order_relaxed);
+}
+
+static BOOL RUINReleasePending(RUINConfirmationPending *pending, uint64_t ticket)
+{
+    os_unfair_lock_lock(&gPendingLock);
+    BOOL released = RUINPendingIsCurrentLocked(pending, ticket);
+    if (released) {
+        gPendingConfirmation = nil;
+        released = RUINConfirmationReleaseTicket(&gPendingOwnerTickets, ticket);
+    }
+    os_unfair_lock_unlock(&gPendingLock);
+    if (released) pending.alert = nil;
+    if (!released) RUINRecordStaleCallback(pending);
+    return released;
+}
+
+static void RUINAbortPending(RUINConfirmationPending *pending, uint64_t ticket, BOOL staleContext)
+{
+    BOOL current = NO;
+    BOOL aborted = NO;
+    os_unfair_lock_lock(&gPendingLock);
+    current = RUINPendingIsCurrentLocked(pending, ticket);
+    if (current) {
+        if (pending->lifecycle != RUINConfirmationLifecycleCancelled)
+            aborted = RUINConfirmationAbort(&pending->lifecycle);
+        gPendingConfirmation = nil;
+        if (!RUINConfirmationReleaseTicket(&gPendingOwnerTickets, ticket)) current = NO;
+    }
+    os_unfair_lock_unlock(&gPendingLock);
+    if (!current) {
+        RUINRecordStaleCallback(pending);
+        return;
+    }
+    pending.alert = nil;
+    if (aborted) atomic_fetch_add_explicit(&pending.hook->aborted, 1, memory_order_relaxed);
+    if (staleContext) atomic_fetch_add_explicit(&pending.hook->staleContext, 1, memory_order_relaxed);
+}
+
+static void RUINObserveDismissal(RUINConfirmationPending *pending, uint64_t ticket);
+
+static void RUINScheduleDismissalObservation(RUINConfirmationPending *pending, uint64_t ticket)
+{
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 16 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+        RUINObserveDismissal(pending, ticket);
+    });
+}
+
+static void RUINInvokeApprovedOriginal(RUINConfirmationPending *pending, uint64_t ticket,
+    RUINConfirmationDismissalState dismissal)
+{
+    if (dismissal != RUINConfirmationDismissalComplete) {
+        RUINRecordStaleCallback(pending);
+        return;
+    }
+    BOOL began = NO;
+    BOOL missingOriginal = NO;
+    os_unfair_lock_lock(&gPendingLock);
+    if (RUINPendingIsCurrentLocked(pending, ticket)) {
+        if (!pending.original) {
+            missingOriginal = RUINConfirmationAbort(&pending->lifecycle);
+            if (missingOriginal) {
+                gPendingConfirmation = nil;
+                if (!RUINConfirmationReleaseTicket(&gPendingOwnerTickets, ticket)) missingOriginal = NO;
+            }
+        } else {
+            began = RUINConfirmationBeginInvocationAfterDismissal(&pending->lifecycle, dismissal,
+                YES, &pending->originalPermitConsumed);
+        }
+    }
+    os_unfair_lock_unlock(&gPendingLock);
+    if (missingOriginal) {
+        pending.alert = nil;
+        atomic_fetch_add_explicit(&pending.hook->originalMissing, 1, memory_order_relaxed);
+        atomic_fetch_add_explicit(&pending.hook->aborted, 1, memory_order_relaxed);
+        return;
+    }
+    if (!began) {
+        RUINRecordStaleCallback(pending);
+        return;
+    }
+
+    atomic_fetch_add_explicit(&pending.hook->originalEntered, 1, memory_order_relaxed);
+    atomic_fetch_add_explicit(&pending.hook->approved, 1, memory_order_relaxed);
+    RUINConfirmationSendPermit *previousPermit = gApprovedSendPermit;
+    RUINConfirmationSendPermit permit = {
+        .pending = pending.hook == &gControlSendActionHook ? pending : nil,
+        .ticket = pending.hook == &gControlSendActionHook ? ticket : 0,
+        .consumed = NO
+    };
+    gApprovedSendPermit = &permit;
+    BOOL returned = NO;
+    @try {
+        if (pending.hook->shape == RUINInvocationControlAction) {
+            ((void (*)(id, SEL, SEL, id, id))pending.original)(pending.target, pending.selector,
+                pending.dispatchedAction, pending.argument0, pending.argument1);
+        } else if (pending.hook->shape == RUINInvocationTwoObjects) {
+            ((void (*)(id, SEL, id, id))pending.original)(pending.target, pending.selector,
+                pending.argument0, pending.argument1);
+        } else {
+            ((void (*)(id, SEL, id))pending.original)(pending.target, pending.selector, pending.argument0);
+        }
+        returned = YES;
+    } @finally {
+        gApprovedSendPermit = previousPermit;
+        BOOL completed = NO;
+        os_unfair_lock_lock(&gPendingLock);
+        if (RUINPendingIsCurrentLocked(pending, ticket) &&
+            RUINConfirmationFinishInvocation(&pending->lifecycle, returned)) {
+            gPendingConfirmation = nil;
+            completed = RUINConfirmationReleaseTicket(&gPendingOwnerTickets, ticket);
+        }
+        os_unfair_lock_unlock(&gPendingLock);
+        if (!completed) {
+            RUINRecordStaleCallback(pending);
+        } else {
+            pending.alert = nil;
+            if (returned)
+                atomic_fetch_add_explicit(&pending.hook->originalReturned, 1, memory_order_relaxed);
+            else
+                atomic_fetch_add_explicit(&pending.hook->aborted, 1, memory_order_relaxed);
+        }
+    }
+}
+
+static void RUINObserveDismissal(RUINConfirmationPending *pending, uint64_t ticket)
 {
     UIAlertController *alert = pending.alert;
-    return alert && pending.presenter.presentedViewController == alert && alert.presentingViewController == pending.presenter;
-}
+    BOOL current = NO;
+    RUINConfirmationLifecycle lifecycle = RUINConfirmationLifecycleAborted;
+    RUINConfirmationDecision decision = RUINConfirmationDecisionNone;
+    os_unfair_lock_lock(&gPendingLock);
+    current = RUINPendingIsCurrentLocked(pending, ticket);
+    if (current) {
+        lifecycle = pending->lifecycle;
+        decision = pending->decision;
+    }
+    os_unfair_lock_unlock(&gPendingLock);
+    if (!current || (lifecycle != RUINConfirmationLifecycleWaitingForDismissal &&
+                     lifecycle != RUINConfirmationLifecycleCancelled)) {
+        RUINRecordStaleCallback(pending);
+        return;
+    }
+    atomic_fetch_add_explicit(&pending.hook->dismissalObservations, 1, memory_order_relaxed);
+    if (!alert) {
+        RUINAbortPending(pending, ticket, YES);
+        return;
+    }
 
-static void RUINApprovedAfterDismissal(RUINConfirmationPending *pending)
-{
-    if (!RUINValidatePendingContext(pending)) {
-        atomic_fetch_add_explicit(&pending.hook->staleContext, 1, memory_order_relaxed);
-        RUINClearPending(pending);
+    UIViewController *presented = pending.presenter.presentedViewController;
+    if (presented && presented != alert) {
+        RUINAbortPending(pending, ticket, YES);
         return;
     }
-    if (pending.presenter.presentedViewController) {
-        atomic_fetch_add_explicit(&pending.hook->staleContext, 1, memory_order_relaxed);
-        RUINClearPending(pending);
+    BOOL timedOut = NSProcessInfo.processInfo.systemUptime >= pending.dismissalDeadline;
+    RUINConfirmationDismissalState dismissal = RUINConfirmationObserveDismissal(
+        presented == alert, alert.isBeingDismissed,
+        alert.isViewLoaded && alert.view.window != nil,
+        presented != nil && presented != alert, timedOut);
+    if (dismissal == RUINConfirmationDismissalOtherModal) {
+        RUINAbortPending(pending, ticket, YES);
         return;
     }
-    RUINInvokeOriginal(pending);
-    atomic_fetch_add_explicit(&pending.hook->approved, 1, memory_order_relaxed);
-    RUINClearPending(pending);
+    if (dismissal == RUINConfirmationDismissalWaiting) {
+        if (timedOut) {
+            atomic_fetch_add_explicit(&pending.hook->dismissalTimeouts, 1, memory_order_relaxed);
+            RUINAbortPending(pending, ticket, NO);
+        } else {
+            RUINScheduleDismissalObservation(pending, ticket);
+        }
+        return;
+    }
+    if (dismissal == RUINConfirmationDismissalTimedOut) {
+        atomic_fetch_add_explicit(&pending.hook->dismissalTimeouts, 1, memory_order_relaxed);
+        RUINAbortPending(pending, ticket, NO);
+        return;
+    }
+
+    atomic_fetch_add_explicit(&pending.hook->dismissalCompleted, 1, memory_order_relaxed);
+    if (decision == RUINConfirmationDecisionCancel) {
+        RUINReleasePending(pending, ticket);
+        return;
+    }
+    if (decision != RUINConfirmationDecisionApprove || !RUINValidatePendingContext(pending) ||
+        pending.presenter.presentedViewController) {
+        RUINAbortPending(pending, ticket, YES);
+        return;
+    }
+    RUINInvokeApprovedOriginal(pending, ticket, dismissal);
 }
 
 static void RUINResolve(RUINConfirmationPending *pending, BOOL approved)
 {
-    if (pending.resolved) return;
-    pending.resolved = YES;
-    if (!approved) {
+    BOOL recorded = NO;
+    uint64_t ticket = pending.ownerTicket;
+    os_unfair_lock_lock(&gPendingLock);
+    if (RUINPendingIsCurrentLocked(pending, ticket))
+        recorded = RUINConfirmationRecordDecision(&pending->lifecycle, &pending->decision, approved);
+    os_unfair_lock_unlock(&gPendingLock);
+    if (!recorded) {
+        RUINRecordStaleCallback(pending);
+        return;
+    }
+    if (approved) {
+        atomic_fetch_add_explicit(&pending.hook->decisionApproved, 1, memory_order_relaxed);
+    } else {
+        atomic_fetch_add_explicit(&pending.hook->decisionCancelled, 1, memory_order_relaxed);
         atomic_fetch_add_explicit(&pending.hook->cancelled, 1, memory_order_relaxed);
-        RUINClearPending(pending);
+    }
+    if (!RUINValidatePendingContext(pending)) {
+        RUINAbortPending(pending, ticket, YES);
         return;
     }
-    UIAlertController *alert = pending.alert;
-    if (!alert || !RUINAlertIsCurrent(pending) || !RUINValidatePendingContext(pending)) {
-        atomic_fetch_add_explicit(&pending.hook->staleContext, 1, memory_order_relaxed);
-        RUINClearPending(pending);
+    if (!pending.alert) {
+        RUINAbortPending(pending, ticket, YES);
         return;
     }
-    [alert dismissViewControllerAnimated:YES completion:^{
-        RUINApprovedAfterDismissal(pending);
-    }];
+    pending.dismissalDeadline = NSProcessInfo.processInfo.systemUptime + 2.0;
+    RUINScheduleDismissalObservation(pending, ticket);
 }
 
 static BOOL RUINShowConfirmation(RUINConfirmationPending *pending)
@@ -955,11 +1165,21 @@ static BOOL RUINShowConfirmation(RUINConfirmationPending *pending)
     if (![NSThread isMainThread] || !RUINValidatePendingContext(pending) || pending.presenter.presentedViewController)
         return NO;
     os_unfair_lock_lock(&gPendingLock);
-    if (gPendingConfirmation) {
+    if (gPendingConfirmation || gPendingOwnerTickets.active) {
         atomic_fetch_add_explicit(&pending.hook->suppressedWhilePending, 1, memory_order_relaxed);
         os_unfair_lock_unlock(&gPendingLock);
         return NO;
     }
+    uint64_t ticket = RUINConfirmationIssueOwnerTicket(&gPendingOwnerTickets);
+    if (!ticket) {
+        atomic_fetch_add_explicit(&pending.hook->missingContext, 1, memory_order_relaxed);
+        os_unfair_lock_unlock(&gPendingLock);
+        return NO;
+    }
+    pending.ownerTicket = ticket;
+    pending->lifecycle = RUINConfirmationLifecycleAwaitingDecision;
+    pending->decision = RUINConfirmationDecisionNone;
+    pending->originalPermitConsumed = NO;
     gPendingConfirmation = pending;
     os_unfair_lock_unlock(&gPendingLock);
 
@@ -973,14 +1193,19 @@ static BOOL RUINShowConfirmation(RUINConfirmationPending *pending)
     }]];
     UIAlertActionStyle style = pending.hook->kind == RUINConfirmationDisconnect ? UIAlertActionStyleDestructive : UIAlertActionStyleDefault;
     [alert addAction:[UIAlertAction actionWithTitle:pending.approveTitle style:style handler:^(__unused UIAlertAction *action) {
-        pending.alert = weakAlert;
         RUINResolve(pending, YES);
     }]];
     [pending.presenter presentViewController:alert animated:YES completion:^{
-        if (pending.presenter.presentedViewController != weakAlert || !RUINValidatePendingContext(pending)) {
-            atomic_fetch_add_explicit(&pending.hook->staleContext, 1, memory_order_relaxed);
-            RUINClearPending(pending);
+        if (!RUINPendingIsCurrent(pending, ticket)) {
+            RUINRecordStaleCallback(pending);
+            return;
         }
+        os_unfair_lock_lock(&gPendingLock);
+        BOOL awaitingDecision = pending->lifecycle == RUINConfirmationLifecycleAwaitingDecision;
+        os_unfair_lock_unlock(&gPendingLock);
+        if (awaitingDecision && (pending.presenter.presentedViewController != weakAlert ||
+                                 !RUINValidatePendingContext(pending)))
+            RUINAbortPending(pending, ticket, YES);
     }];
     atomic_fetch_add_explicit(&pending.hook->prompts, 1, memory_order_relaxed);
     return YES;
@@ -1026,51 +1251,85 @@ static BOOL RUINShouldConfirmSend(RUINConfirmationHook *hook, id target, RUINCon
     return YES;
 }
 
+static BOOL RUINIsApprovedSendReentry(RUINConfirmationHook *hook, id self, SEL selector, id argument0)
+{
+    RUINConfirmationSendPermit *permit = gApprovedSendPermit;
+    RUINConfirmationPending *pending = permit ? permit->pending : nil;
+    if (!pending) return NO;
+    Class inputClass = objc_getClass(RUINChatInputBarClass);
+    if (!inputClass || ![pending.argument0 isKindOfClass:inputClass]) return NO;
+
+    os_unfair_lock_lock(&gPendingLock);
+    BOOL invoking = RUINPendingIsCurrentLocked(pending, permit->ticket) &&
+        pending->lifecycle == RUINConfirmationLifecycleInvoking;
+    os_unfair_lock_unlock(&gPendingLock);
+    if (!invoking) return NO;
+
+    return RUINConfirmationConsumeSendReentry(&permit->consumed,
+        permit->ticket, pending.ownerTicket,
+        pending.hook == &gControlSendActionHook, hook == &gChatInputSendHook,
+        (__bridge const void *)pending.argument0, (__bridge const void *)pending.target,
+        (const void *)pending.dispatchedAction, (__bridge const void *)self,
+        (__bridge const void *)argument0, (const void *)selector,
+        (const void *)sel_registerName("send:"));
+}
+
+static RUINConfirmationActionClass RUINClassifyHookAction(RUINConfirmationHook *hook,
+    id self, id argument0, SEL dispatchedAction)
+{
+    BOOL requiresBoundary = (hook->flags & RUINHookComposerControlBoundary) != 0;
+    BOOL boundaryMatched = !requiresBoundary || RUINIsComposerSendControl(self, argument0, dispatchedAction);
+    BOOL requiresSender = hook->senderIvar || hook->senderArrayGetter || hook->senderContainerGetter;
+    BOOL senderMatched = !requiresSender || RUINSenderMatchesHook(hook, self, argument0);
+    if ((requiresBoundary && !boundaryMatched) || (requiresSender && !senderMatched)) {
+        if ((requiresBoundary && !boundaryMatched) || hook->senderArrayGetter || hook->senderContainerGetter)
+            atomic_fetch_add_explicit(&hook->unclassifiedSender, 1, memory_order_relaxed);
+    }
+
+    BOOL cameraToggle = (hook->flags & RUINHookCameraToggle) != 0;
+    RUINConfirmationActionClass cameraAction = cameraToggle ?
+        RUINCameraSenderClassification(self, argument0) : RUINConfirmationActionProtected;
+    RUINConfirmationActionClass actionClass = RUINConfirmationClassifyAction(
+        requiresBoundary, boundaryMatched, requiresSender, senderMatched, cameraToggle,
+        cameraAction == RUINConfirmationActionProtected,
+        cameraAction == RUINConfirmationActionPassThrough);
+    if (cameraToggle && actionClass == RUINConfirmationActionUnknownProtected) {
+        atomic_fetch_add_explicit(&gUnknownCameraState, 1, memory_order_relaxed);
+        atomic_fetch_add_explicit(&hook->missingContext, 1, memory_order_relaxed);
+    }
+    return actionClass;
+}
+
 static void RUINHandleHook(RUINConfirmationHook *hook, id self, SEL selector, id argument0, id argument1, SEL dispatchedAction)
 {
     atomic_fetch_add_explicit(&hook->calls, 1, memory_order_relaxed);
     BOOL enabled = RUINFeatureEnabled(hook->kind);
-    os_unfair_lock_lock(&gPendingLock);
-    BOOL alreadyPending = gPendingConfirmation != nil;
-    os_unfair_lock_unlock(&gPendingLock);
-    RUINConfirmationGateDisposition gate = RUINConfirmationGate(enabled, gApprovedInvocationDepth > 0, alreadyPending);
+    RUINConfirmationGateDisposition gate = RUINConfirmationGate(enabled, NO, YES);
     if (gate == RUINConfirmationGateInvokeOriginal) {
         RUINCallOriginalDirect(hook, self, selector, argument0, argument1, dispatchedAction);
-        return;
-    }
-    if (gate == RUINConfirmationGateSuppress) {
-        atomic_fetch_add_explicit(&hook->suppressedWhilePending, 1, memory_order_relaxed);
         return;
     }
     if (![NSThread isMainThread]) {
         atomic_fetch_add_explicit(&hook->missingContext, 1, memory_order_relaxed);
         return;
     }
-
-    if (hook->flags & RUINHookComposerControlBoundary) {
-        if (!RUINIsComposerSendControl(self, argument0, dispatchedAction)) {
-            atomic_fetch_add_explicit(&hook->unclassifiedSender, 1, memory_order_relaxed);
-            RUINCallOriginalDirect(hook, self, selector, argument0, argument1, dispatchedAction);
-            return;
-        }
-    } else if (hook->senderIvar || hook->senderArrayGetter || hook->senderContainerGetter) {
-        if (!RUINSenderMatchesHook(hook, self, argument0)) {
-            if (hook->senderArrayGetter || hook->senderContainerGetter)
-                atomic_fetch_add_explicit(&hook->unclassifiedSender, 1, memory_order_relaxed);
-            RUINCallOriginalDirect(hook, self, selector, argument0, argument1, dispatchedAction);
-            return;
-        }
+    BOOL approvedReentry = RUINIsApprovedSendReentry(hook, self, selector, argument0);
+    gate = RUINConfirmationGate(enabled, approvedReentry, YES);
+    if (gate == RUINConfirmationGateInvokeOriginal) {
+        RUINCallOriginalDirect(hook, self, selector, argument0, argument1, dispatchedAction);
+        return;
     }
 
-    // The verified off-state control is the only toggle that turns the camera on.
-    if ((hook->flags & RUINHookCameraToggle) && !RUINCameraSenderIsOffStateButton(self, argument0)) {
-        id onButtons = RUINObjectGetter(self, hook->className, "videoOnButtons");
-        if ([onButtons isKindOfClass:NSArray.class] && [(NSArray *)onButtons containsObject:argument0]) {
-            RUINCallOriginalDirect(hook, self, selector, argument0, argument1, dispatchedAction);
-            return;
-        }
-        atomic_fetch_add_explicit(&gUnknownCameraState, 1, memory_order_relaxed);
-        atomic_fetch_add_explicit(&hook->missingContext, 1, memory_order_relaxed);
+    RUINConfirmationActionClass actionClass = RUINClassifyHookAction(hook, self, argument0, dispatchedAction);
+    BOOL alreadyPending = RUINHasPendingConfirmation();
+    gate = RUINConfirmationClassifiedGate(actionClass, alreadyPending);
+    if (gate == RUINConfirmationGateInvokeOriginal) {
+        RUINCallOriginalDirect(hook, self, selector, argument0, argument1, dispatchedAction);
+        return;
+    }
+    if (gate == RUINConfirmationGateSuppress) {
+        if (alreadyPending && actionClass == RUINConfirmationActionProtected)
+            atomic_fetch_add_explicit(&hook->suppressedWhilePending, 1, memory_order_relaxed);
         return;
     }
 
@@ -1127,6 +1386,16 @@ static NSDictionary *RUINHookDiagnostics(RUINConfirmationHook *hook)
         @"prompts": @(atomic_load(&hook->prompts)),
         @"approved": @(atomic_load(&hook->approved)),
         @"cancelled": @(atomic_load(&hook->cancelled)),
+        @"decisionApproved": @(atomic_load(&hook->decisionApproved)),
+        @"decisionCancelled": @(atomic_load(&hook->decisionCancelled)),
+        @"originalEntered": @(atomic_load(&hook->originalEntered)),
+        @"originalReturned": @(atomic_load(&hook->originalReturned)),
+        @"originalMissing": @(atomic_load(&hook->originalMissing)),
+        @"aborted": @(atomic_load(&hook->aborted)),
+        @"staleCallbacks": @(atomic_load(&hook->staleCallbacks)),
+        @"dismissalObservations": @(atomic_load(&hook->dismissalObservations)),
+        @"dismissalCompleted": @(atomic_load(&hook->dismissalCompleted)),
+        @"dismissalTimeouts": @(atomic_load(&hook->dismissalTimeouts)),
         @"staleContext": @(atomic_load(&hook->staleContext)),
         @"missingContext": @(atomic_load(&hook->missingContext)),
         @"suppressedWhilePending": @(atomic_load(&hook->suppressedWhilePending)),
