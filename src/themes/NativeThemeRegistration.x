@@ -3,10 +3,11 @@
 #import "TargetMetadata.h"
 #import "NativeThemeRegistration.h"
 #import "NativeThemeLocalPolicy.h"
-#import "BinaryVerifier.h"
+#import "ThemeShop.h"
 #import "ThemeAccountNamespace.h"
 #if !defined(RUIN_NATIVE_THEME_REGISTRATION_HOST_CHECK)
 #import "RuntimeInspector.h"
+#import <dlfcn.h>
 #import <execinfo.h>
 #import <mach-o/dyld.h>
 #endif
@@ -299,16 +300,28 @@ static BOOL RUINNativeServerRevocationFetch(void)
 #if defined(RUIN_NATIVE_THEME_REGISTRATION_HOST_CHECK)
     return NO;
 #else
-    RUINMainExecutableImage image;
-    if (!RUINResolveMainExecutableImage(&image)) return NO;
+    RUINFeatureImage image = {0};
+    const RUINVersionMapping *mapping = RUINCopyVerifiedThemeImage(&image);
+    if (!mapping || !RUINFeatureImageMatches(&image, &mapping->host)) return NO;
     void *frames[24];
     int count = backtrace(frames, 24);
-    uintptr_t base = (uintptr_t)image.header;
-    intptr_t slide = image.slide;
     uintptr_t PCs[2]; NSUInteger found = 0;
     for (int i = 0; i < count && found < 2; i++) {
-        uintptr_t pc = (uintptr_t)frames[i];
-        if (pc >= base && pc < base + 0x9400000) PCs[found++] = pc - slide;
+        uintptr_t pc = (uintptr_t)frames[i], address;
+        Dl_info info;
+        if (!dladdr((const void *)pc, &info) || info.dli_fbase != (void *)image.image.header) continue;
+        intptr_t slide = image.image.slide;
+        if (slide >= 0) {
+            if (pc < (uintptr_t)slide) continue;
+            address = pc - (uintptr_t)slide;
+        } else {
+            uintptr_t magnitude = (uintptr_t)(-(slide + 1)) + 1;
+            if (pc > UINTPTR_MAX - magnitude) continue;
+            address = pc + magnitude;
+        }
+        uint32_t instruction;
+        if (RUINReadFeatureImageBytes(&image, address, &instruction, sizeof(instruction), "__TEXT"))
+            PCs[found++] = address;
     }
     return RUINNativeThemeRevocationFetchPCsMatch(PCs, found);
 #endif

@@ -77,9 +77,10 @@ static atomic_uint_fast64_t sFontReplacements;
 static _Thread_local BOOL sReplacingFont;
 
 static UIFont *RUINReplaceTextFont(UIFont *original, void *caller) {
+    if (!original || sReplacingFont || !RUINLocalFontIsRegistered()) return original;
     Dl_info image;
     RUINMainExecutableImage mainImage;
-    if (!original || sReplacingFont || !RUINResolveMainExecutableImage(&mainImage) ||
+    if (!RUINResolveMainExecutableImage(&mainImage) ||
         !dladdr(caller, &image) || image.dli_fbase != (const void *)mainImage.header) return original;
     sReplacingFont = YES;
     UIFont *replacement = RUINLocalFontAtSize(original.pointSize);

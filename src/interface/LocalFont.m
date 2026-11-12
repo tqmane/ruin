@@ -160,6 +160,11 @@ void RUINInstallLocalFont(void) {
     });
 }
 
+BOOL RUINLocalFontIsRegistered(void) {
+    RUINInstallLocalFont();
+    @synchronized (RUINLocalFontLock()) { return sRegistered && sName != nil; }
+}
+
 NSString *RUINLocalFontName(void) {
     RUINInstallLocalFont();
     @synchronized (RUINLocalFontLock()) { return sName; }

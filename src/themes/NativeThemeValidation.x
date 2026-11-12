@@ -67,20 +67,26 @@ void RUINInstallNativeThemeValidation(void)
 #if defined(RUIN_NATIVE_THEME_VALIDATION_HOST_CHECK)
     const RUINVersionMapping *versionMapping = RUINMappingForInfo(NSBundle.mainBundle.infoDictionary);
 #else
-    const RUINVersionMapping *versionMapping = RUINCurrentMapping();
+    RUINFeatureImage themeImage;
+    const RUINVersionMapping *versionMapping = RUINCopyVerifiedThemeImage(&themeImage);
 #endif
     const RUINThemeMappings *mapping = versionMapping ? &versionMapping->themes : NULL;
     if (!mapping || mapping->validation.status != RUINMappingStatusVerified) return;
+    char logString[sizeof("validateTheme result:")];
+#if defined(RUIN_NATIVE_THEME_VALIDATION_HOST_CHECK)
     RUINMainExecutableImage image;
     if (!RUINResolveMainExecutableImage(&image)) return;
-    const struct mach_header_64 *header = image.header;
     intptr_t slide = image.slide;
-    char logString[sizeof("validateTheme result:")];
-    if (!RUINVerifyInstructions(header, slide, mapping->validation.anchors,
-            mapping->validation.anchorCount) ||
-        !RUINReadImageBytes(header, slide, mapping->validation.resultLogString,
-            logString, sizeof(logString), "__TEXT") ||
-        memcmp(logString, "validateTheme result:", sizeof(logString))) return;
+    BOOL verified = RUINVerifyInstructions(image.header, slide, mapping->validation.anchors,
+        mapping->validation.anchorCount) && RUINReadImageBytes(image.header, slide,
+        mapping->validation.resultLogString, logString, sizeof(logString), "__TEXT");
+#else
+    intptr_t slide = themeImage.image.slide;
+    BOOL verified = RUINVerifyFeatureInstructions(&themeImage, mapping->validation.anchors,
+        mapping->validation.anchorCount) && RUINReadFeatureImageBytes(&themeImage,
+        mapping->validation.resultLogString, logString, sizeof(logString), "__TEXT");
+#endif
+    if (!verified || memcmp(logString, "validateTheme result:", sizeof(logString))) return;
     Class cls = NSClassFromString(@"LineShopProductValidationResult");
     Method method = cls ? class_getInstanceMethod(cls, @selector(isValidated)) : NULL;
     if (!method || strcmp(method_getTypeEncoding(method), "B16@0:8") ||
@@ -98,7 +104,8 @@ NSDictionary *RUINNativeThemeValidationDiagnostics(void)
     const RUINVersionMapping *versionMapping = RUINMappingForInfo(NSBundle.mainBundle.infoDictionary);
     NSDictionary *persistence = @{@"installed": @NO};
 #else
-    const RUINVersionMapping *versionMapping = RUINCurrentMapping();
+    RUINFeatureImage themeImage;
+    const RUINVersionMapping *versionMapping = RUINCopyVerifiedThemeImage(&themeImage);
     NSDictionary *persistence = RUINThemePersistenceDiagnostics();
 #endif
     const RUINThemeMappings *mapping = versionMapping ? &versionMapping->themes : NULL;
