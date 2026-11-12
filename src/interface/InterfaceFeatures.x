@@ -79,6 +79,7 @@ static void RUINSetViewControllers(id self, SEL selector, NSArray *controllers);
 static void RUINSetViewControllersAnimated(id self, SEL selector, NSArray *controllers, BOOL animated);
 static void RUINStyledTabsViewDidLoad(id self, SEL selector);
 static void RUINStyledTabsViewDidAppear(id self, SEL selector, BOOL animated);
+static void RUINRepairSettingsTabIcons(UITabBarController *controller);
 static void RUINForceHidden(RUINViewTarget *target, id self, SEL selector, BOOL hidden);
 static void RUINViewDidMoveToWindow(RUINViewTarget *target, id self, SEL selector);
 static void RUINVoiceButtonLayout(id self, SEL selector);
@@ -99,6 +100,8 @@ static RUINMethodHook gTabsViewDidLoadHook = RUIN_HOOK(
 static RUINMethodHook gTabsViewDidAppearHook = RUIN_HOOK(
     "_TtC22LineSharedUIComponents22StyledTabBarController", "viewDidAppear:",
     "v20@0:8B16");
+static BOOL gSettingsTabIconHookInstalled;
+static atomic_uint_fast64_t gSettingsTabIconRepairs;
 static RUINMethodHook gVoiceButtonLayoutHook = RUIN_HOOK(
     "_TtC15LineMessagingUI18ChatInputBarButton", "layoutSubviews",
     "v16@0:8");
@@ -302,6 +305,15 @@ static BOOL RUINKeepNativeMenusForLaunch(void) {
     IMP original = (IMP)&%orig;
     if (original) atomic_store_explicit(&gTabsViewDidAppearHook.original, original, memory_order_release);
     RUINStyledTabsViewDidAppear(self, _cmd, animated);
+}
+%end
+%end
+
+%group RUINInterfaceSettingsTabIcons
+%hook RUINInterfaceSettingsTabIconsTarget
+- (void)viewDidLayoutSubviews {
+    %orig;
+    RUINRepairSettingsTabIcons((UITabBarController *)self);
 }
 %end
 %end
@@ -1006,6 +1018,13 @@ static void RUINInstallHooks(void)
         }
     }
     Class tabClass = objc_getClass(gSetControllersHook.className);
+    if (!gSettingsTabIconHookInstalled && [tabClass isSubclassOfClass:UITabBarController.class]) {
+        Method layout = class_getInstanceMethod(tabClass, @selector(viewDidLayoutSubviews));
+        if (layout && !strcmp(method_getTypeEncoding(layout), "v16@0:8")) {
+            %init(RUINInterfaceSettingsTabIcons, RUINInterfaceSettingsTabIconsTarget=tabClass);
+            gSettingsTabIconHookInstalled = YES;
+        }
+    }
     RUINMethodHook *tabHooks[] = {
         &gSetControllersHook, &gSetControllersAnimatedHook,
         &gTabsViewDidLoadHook, &gTabsViewDidAppearHook
@@ -1287,6 +1306,51 @@ static RUINTabKind RUINKindForTabController(UIViewController *controller)
     return RUINKindForTitle(content.tabBarItem.title ?: content.title ?: @"");
 }
 
+static UIImage *RUINSettingsTabFallbackImage(UITabBarController *controller,
+    UITabBarItem *item, NSString *name, BOOL selected)
+{
+    UIImage *image = [UIImage imageNamed:name inBundle:NSBundle.mainBundle
+        compatibleWithTraitCollection:controller.traitCollection];
+    if (!image) return nil;
+    UIControlState state = selected ? UIControlStateSelected : UIControlStateNormal;
+    UIColor *color = [item titleTextAttributesForState:state][NSForegroundColorAttributeName];
+    if (!color) {
+        UITabBarItemAppearance *appearance = controller.tabBar.standardAppearance.stackedLayoutAppearance;
+        color = (selected ? appearance.selected : appearance.normal).titleTextAttributes[NSForegroundColorAttributeName];
+    }
+    if (!color) color = selected ? controller.tabBar.tintColor : controller.tabBar.unselectedItemTintColor;
+    // Theme labels can differ from UIKit's default blue icon tint.
+    return color ? [image imageWithTintColor:color renderingMode:UIImageRenderingModeAlwaysOriginal] :
+        [image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+}
+
+static void RUINRepairSettingsTabIcons(UITabBarController *controller)
+{
+    if (!NSThread.isMainThread || !atomic_load(&gTargetMatches) || !controller.viewIfLoaded.window) return;
+    for (UIViewController *child in controller.viewControllers) {
+        if (RUINKindForTabController(child) != RUINTabSettingsKind) continue;
+        UITabBarItem *item = child.tabBarItem;
+        BOOL missingImage = item.image == nil;
+        BOOL missingSelectedImage = item.selectedImage == nil;
+        // Some theme/menu combinations leave both native images nil. Keep the
+        // same tab item and any supplied images; use LINE's own 30-point assets.
+        if (missingImage) {
+            UIImage *image = RUINSettingsTabFallbackImage(controller, item, @"navi_icon_setting_normal", NO);
+            if (image) {
+                item.image = image;
+                atomic_fetch_add(&gSettingsTabIconRepairs, 1);
+            }
+        }
+        if (missingSelectedImage) {
+            UIImage *image = RUINSettingsTabFallbackImage(controller, item, @"navi_icon_setting_pressed", YES);
+            if (image) {
+                item.selectedImage = image;
+                atomic_fetch_add(&gSettingsTabIconRepairs, 1);
+            }
+        }
+    }
+}
+
 static BOOL RUINShouldHideTab(RUINTabKind kind)
 {
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
@@ -1405,6 +1469,7 @@ static void RUINApplyStartupSelection(UITabBarController *controller, NSArray *c
 
 static void RUINApplyRequestedControllers(UITabBarController *controller, BOOL allowStartup)
 {
+    RUINRepairSettingsTabIcons(controller);
     // LINE's own navigation/notification code indexes the original controller
     // array. Never remove or reorder it: filter only UIKit's compact tab UI.
     NSArray *native = [controller.viewControllers copy] ?: @[];
@@ -1732,6 +1797,8 @@ NSDictionary *RUINInterfaceDiagnostics(void)
             @"viewDidAppear": RUINTargetStatusName(atomic_load(&gTabsViewDidAppearHook.status)),
             @"reloadPath": @"existing_native_tab_view_only",
             @"customTabViewsAdded": @NO,
+            @"settingsIconLayoutHookInstalled":@(gSettingsTabIconHookInstalled),
+            @"settingsIconRepairs":@(atomic_load(&gSettingsTabIconRepairs)),
             @"visibilityStatus": @(atomic_load(&gTabVisibilityStatus)),
             @"nativeControllerCount": @(atomic_load(&gNativeTabCount)),
             @"publicUITabCount": @(atomic_load(&gUIKitTabCount)),
