@@ -465,8 +465,13 @@ int main(int argc, const char *argv[]) {
         struct stat rootStatus;
         assert(stat(archiveRoot.fileSystemRepresentation, &rootStatus) == 0 && (rootStatus.st_mode & 0777) == 0700);
 
+        assert(![store hasAnyScopes]);
         TestNoCreateReads(store, archiveRoot);
+        assert(![store hasAnyScopes]);
         TestNativeThumbnailExtension(store, allowedRoot);
+        assert([store hasAnyScopes]);
+        RUINRetainedMediaStore *reopened = [[RUINRetainedMediaStore alloc] initWithDirectoryURL:archiveRoot error:&error];
+        assert(reopened && !error && [reopened hasAnyScopes]);
         NSDictionary *baseKey = MessageKey(@"raw-store-sentinel", @"talk", @"raw-chat-sentinel", @"123456789");
         TestNamespacesAndDuplicates(store, allowedRoot, baseKey);
         TestMalformedMetadata(store, MessageKey(@"metadata-store", @"square", @"metadata-chat", @"81"));

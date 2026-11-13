@@ -454,10 +454,18 @@ static BOOL RUINThemeShopTargetMatches(NSDictionary *info)
 }
 
 #if !defined(RUIN_THEMESHOP_HOST_CHECK)
+static atomic_bool gThemePersistenceSettled;
+static os_unfair_lock gThemeShopImageLock = OS_UNFAIR_LOCK_INIT;
+
 static void RUINInstallThemePersistenceOnMain(void) {
     gThemeShopMappings = RUINThemeShopMappingForInfo(NSBundle.mainBundle.infoDictionary);
-    if (gThemeShopMappings)
+    if (gThemeShopMappings) {
         RUINThemeShopInstallGate();
+        if (gThemeShopImageVersion || RUINCurrentMapping())
+            atomic_store_explicit(&gThemePersistenceSettled, YES, memory_order_release);
+    } else {
+        atomic_store_explicit(&gThemePersistenceSettled, YES, memory_order_release);
+    }
 }
 #endif
 
@@ -470,15 +478,24 @@ const RUINVersionMapping *RUINCopyVerifiedThemeImage(RUINFeatureImage *image)
         const RUINVersionMapping *nativeVersion = RUINCurrentMapping();
         RUINMainExecutableImage nativeImage;
         if (nativeVersion && RUINResolveMainExecutableImage(&nativeImage)) {
-            *image = (RUINFeatureImage){.image=nativeImage, .fileType=MH_EXECUTE};
-            if (RUINFeatureImageMatches(image, &nativeVersion->host)) return nativeVersion;
-            memset(image, 0, sizeof(*image));
+            RUINFeatureImage candidate = {.image=nativeImage, .fileType=MH_EXECUTE};
+            if (RUINFeatureImageMatches(&candidate, &nativeVersion->host)) {
+                os_unfair_lock_lock(&gThemeShopImageLock);
+                if (!atomic_load_explicit(&gThemeShopImageReady, memory_order_acquire)) {
+                    gThemeShopImage = candidate;
+                    gThemeShopImageVersion = nativeVersion;
+                    atomic_store_explicit(&gThemeShopImageReady, YES, memory_order_release);
+                }
+                os_unfair_lock_unlock(&gThemeShopImageLock);
+                *image = candidate;
+                return nativeVersion;
+            }
+            return NULL;
         }
     }
     if (!atomic_load_explicit(&gThemeShopImageReady, memory_order_acquire)) return NULL;
     const RUINVersionMapping *version = gThemeShopImageVersion;
-    if (RUINMappingForInfo(NSBundle.mainBundle.infoDictionary) != version ||
-        !RUINFeatureImageMatches(&gThemeShopImage, &version->host)) return NULL;
+    if (!version || RUINMappingForInfo(NSBundle.mainBundle.infoDictionary) != version) return NULL;
     *image = gThemeShopImage;
     image->loaderReference = NULL; // Borrow the owner's process-lifetime pin.
     return version;
@@ -489,10 +506,12 @@ const RUINVersionMapping *RUINCopyVerifiedThemeImage(RUINFeatureImage *image)
 void RUINInstallThemePersistenceAdapter(void)
 {
 #if !defined(RUIN_THEMESHOP_HOST_CHECK)
+    if (atomic_load_explicit(&gThemePersistenceSettled, memory_order_acquire)) return;
     if (!NSThread.isMainThread) {
         dispatch_async(dispatch_get_main_queue(), ^{ RUINInstallThemePersistenceAdapter(); });
         return;
     }
+    if (atomic_load_explicit(&gThemePersistenceSettled, memory_order_acquire)) return;
     RUINMainExecutableImage mainImage;
     if (!gThemeShopImageVersion && !RUINResolveMainExecutableImage(&mainImage)) {
         // A guest may still be running its image initializers. Pin/verify it

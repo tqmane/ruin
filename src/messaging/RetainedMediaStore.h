@@ -16,6 +16,7 @@ NS_ASSUME_NONNULL_BEGIN
                role:(NSString *)role
          completion:(void (^ _Nullable)(BOOL success))completion;
 - (BOOL)markUnsentForKey:(NSDictionary *)key;
+- (BOOL)hasAnyScopes;
 - (BOOL)isUnsentForKey:(NSDictionary *)key;
 - (NSArray<NSDictionary<NSString *, id> *> *)itemsForKey:(NSDictionary *)key;
 // Monotonic operation counts only; contains no paths or message identifiers.

@@ -33,8 +33,28 @@
  */
 
 static BOOL UITargetMatches(void) {
+#if defined(RUIN_HOST_CHECK) && RUIN_HOST_CHECK
     return RUINTargetMetadataMatchesInfo(NSBundle.mainBundle.infoDictionary);
+#else
+    static BOOL matched = NO;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        matched = RUINTargetMetadataMatchesInfo(NSBundle.mainBundle.infoDictionary);
+    });
+    return matched;
+#endif
 }
+
+#if TARGET_OS_IPHONE
+static Class UIResolveCachedClass(atomic_uintptr_t *slot, const char *name) {
+    Class cls = (__bridge Class)(const void *)atomic_load_explicit(slot, memory_order_acquire);
+    if (!cls && name) {
+        cls = objc_getClass(name);
+        if (cls) atomic_store_explicit(slot, (uintptr_t)(__bridge const void *)cls, memory_order_release);
+    }
+    return cls;
+}
+#endif
 #if TARGET_OS_IPHONE
 static atomic_bool UIOptionEnabled, UIRefreshQueued, UIScanRequested;
 static BOOL UIEnabled(void) { return atomic_load_explicit(&UIOptionEnabled, memory_order_relaxed); }
@@ -363,7 +383,9 @@ static void UIRequestArchiveItems(UICollectionViewCell *cell, RUINUnsendMarkerRe
 }
 static void UIRefreshCellImpl(UICollectionViewCell *cell) {
     atomic_fetch_add(&UICellRefreshes, 1);
-    if (![cell isKindOfClass:objc_getClass(UICellClass)]) return;
+    static atomic_uintptr_t cellClassPtr, videoCellClassPtr, videoCellV2ClassPtr, modelClassPtr, bubbleClassPtr, statusClassPtr;
+    Class baseCellClass = UIResolveCachedClass(&cellClassPtr, UICellClass);
+    if (!baseCellClass || ![cell isKindOfClass:baseCellClass]) return;
     if (!UICells) UICells = [NSHashTable weakObjectsHashTable]; [UICells addObject:cell];
     RUINUnsendMarkerRecord *record = UIRecord(cell);
     if (!UIEnabled() || !cell.window || cell.hidden || cell.alpha <= 0.01 || UIApplication.sharedApplication.applicationState != UIApplicationStateActive) {
@@ -371,13 +393,15 @@ static void UIRefreshCellImpl(UICollectionViewCell *cell) {
     }
     @try {
         id model = UIField(cell, "messageViewModel");
-        BOOL videoCell = [cell isKindOfClass:NSClassFromString(@"_TtC17LineMessagingUIV220ChatVideoMessageCell")] ||
-            [cell isKindOfClass:NSClassFromString(@"_TtC17LineMessagingUIV222ChatVideoMessageCellV2")];
+        Class videoCellClass = UIResolveCachedClass(&videoCellClassPtr, "_TtC17LineMessagingUIV220ChatVideoMessageCell");
+        Class videoCellV2Class = UIResolveCachedClass(&videoCellV2ClassPtr, "_TtC17LineMessagingUIV222ChatVideoMessageCellV2");
+        BOOL videoCell = (videoCellClass && [cell isKindOfClass:videoCellClass]) ||
+            (videoCellV2Class && [cell isKindOfClass:videoCellV2Class]);
         if (model && (!UIHasModelProbe || (videoCell && !UIHasVideoModelProbe))) {
             UIObserveMetadata(cell); UIHasModelProbe = YES;
             if (videoCell) UIHasVideoModelProbe = YES;
         }
-        Class modelClass = objc_getClass(UIModelClass);
+        Class modelClass = UIResolveCachedClass(&modelClassPtr, UIModelClass);
         if (!modelClass || ![model isKindOfClass:modelClass] || !UIMayBind(record, model)) { UIRemoveBadge(cell); return; }
         NSString *server = UIServerNumber(UIField(model, "messageIdentifier.server.value"));
         UIViewController *owner = UIOwnerController(cell); NSManagedObject *chat = UIOwnerChat(owner);
@@ -419,8 +443,10 @@ static void UIRefreshCellImpl(UICollectionViewCell *cell) {
         if (!mediaItems.count && !RUINUnsendOperationHasRetainedMarker(record.key)) { UIRemoveBadge(cell); return; }
         atomic_fetch_add(&UIMarkerMatches, 1);
         UIView *bubble = UIField(cell, "contentContainerView"), *status = UIField(cell, "messageStatusView");
-        if (object_getClass(bubble) != objc_getClass("_TtC17LineMessagingUIV224ChatMessageContainerView") ||
-            ![status isKindOfClass:NSClassFromString(@"_TtC17LineMessagingUIV221ChatMessageStatusView")] ||
+        Class expectedBubbleClass = UIResolveCachedClass(&bubbleClassPtr, "_TtC17LineMessagingUIV224ChatMessageContainerView");
+        Class expectedStatusClass = UIResolveCachedClass(&statusClassPtr, "_TtC17LineMessagingUIV221ChatMessageStatusView");
+        if (!expectedBubbleClass || object_getClass(bubble) != expectedBubbleClass ||
+            !expectedStatusClass || ![status isKindOfClass:expectedStatusClass] ||
             ![bubble isDescendantOfView:cell.contentView] || ![status isDescendantOfView:cell.contentView] || status.hidden) { UIRemoveBadge(cell); return; }
         BOOL retainedMedia = mediaItems.count && UIUpdateMedia(cell, bubble, record.key, mediaItems);
         UILabel *badge = objc_getAssociatedObject(cell, &UIBadgeKey);

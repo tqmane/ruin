@@ -32,6 +32,11 @@ static BOOL autoQROpened;
 static atomic_ulong appIdiomRequests, enabledIdiomQueries, LINEIdiomQueries;
 static atomic_ulong unscopedLINEQueries, backgroundLINEQueries, otherImageQueries;
 static const void *verifiedLoginGuestImage;
+static _Atomic uintptr_t lineMainTextStart;
+static _Atomic uintptr_t lineMainTextSize;
+static _Atomic uintptr_t lineGuestTextStart;
+static _Atomic uintptr_t lineGuestTextSize;
+static atomic_bool lineMainRangeTried = ATOMIC_VAR_INIT(false);
 static char gestureKey;
 static NSString *lastLoginScreen;
 static __weak UIViewController *loginProjectionOwner;
@@ -79,7 +84,7 @@ static void RUINRememberLoginGuestImage(Class welcome) {
     if (!implementation || !dladdr(implementation, &owner)) return;
     const struct mach_header_64 *header = owner.dli_fbase;
     const RUINVersionMapping *mapping = RUINMappingForInfo(NSBundle.mainBundle.infoDictionary);
-    if (!mapping || strcmp(mapping->host.version, "26.17.0") || !header ||
+    if (!mapping || !mapping->host.uuid[0] || !header ||
         header->magic != MH_MAGIC_64 || header->filetype != MH_DYLIB || header->cputype != CPU_TYPE_ARM64 ||
         header->ncmds > 4096 || header->sizeofcmds > 1024 * 1024) return;
     NSUUID *expected = [[NSUUID alloc] initWithUUIDString:@(mapping->host.uuid)];
@@ -91,18 +96,42 @@ static void RUINRememberLoginGuestImage(Class welcome) {
         if (command->cmdsize < sizeof(*command) || command->cmdsize > (size_t)(end - cursor)) return;
         if (command->cmd == LC_UUID && command->cmdsize >= sizeof(struct uuid_command) && expected &&
             !memcmp(((const struct uuid_command *)command)->uuid, UUID, sizeof(UUID))) {
-            verifiedLoginGuestImage = header; return;
+            verifiedLoginGuestImage = header;
+            uintptr_t start = 0, size = 0;
+            if (RUINImageExecutableTextRange(header, &start, &size)) {
+                atomic_store_explicit(&lineGuestTextSize, size, memory_order_relaxed);
+                atomic_store_explicit(&lineGuestTextStart, start, memory_order_release);
+            }
+            return;
         }
         cursor += command->cmdsize;
     }
 }
 
 static BOOL RUINLoginCallerIsLINE(void *caller) {
-    Dl_info info;
-    if (!dladdr(caller, &info)) return NO;
-    RUINMainExecutableImage image;
-    return (RUINResolveMainExecutableImage(&image) && info.dli_fbase == (const void *)image.header) ||
-        (verifiedLoginGuestImage && info.dli_fbase == verifiedLoginGuestImage);
+    uintptr_t addr = (uintptr_t)caller;
+    uintptr_t mainStart = atomic_load_explicit(&lineMainTextStart, memory_order_acquire);
+    uintptr_t mainSize = atomic_load_explicit(&lineMainTextSize, memory_order_relaxed);
+    if (mainStart && addr - mainStart < mainSize) return YES;
+
+    uintptr_t guestStart = atomic_load_explicit(&lineGuestTextStart, memory_order_acquire);
+    uintptr_t guestSize = atomic_load_explicit(&lineGuestTextSize, memory_order_relaxed);
+    if (guestStart && addr - guestStart < guestSize) return YES;
+
+    if (!mainStart && !atomic_load_explicit(&lineMainRangeTried, memory_order_acquire)) {
+        RUINMainExecutableImage image;
+        if (RUINResolveMainExecutableImage(&image)) {
+            uintptr_t start = 0, size = 0;
+            if (RUINImageExecutableTextRange(image.header, &start, &size)) {
+                atomic_store_explicit(&lineMainTextSize, size, memory_order_relaxed);
+                atomic_store_explicit(&lineMainTextStart, start, memory_order_release);
+                if (addr - start < size) return YES;
+            }
+        } else {
+            atomic_store_explicit(&lineMainRangeTried, true, memory_order_release);
+        }
+    }
+    return NO;
 }
 
 %group RUINSecondaryDeviceRole
@@ -436,6 +465,7 @@ static BOOL RUINSecondaryMethodMatches(Class cls, const char *name, const char *
 }
 
 static void RUINSecondaryLoginImageAdded(__unused const struct mach_header *header, __unused intptr_t slide) {
+    atomic_store_explicit(&lineMainRangeTried, false, memory_order_release);
     if (atomic_load(&welcomeHooksReady) || atomic_load(&secondaryLoginRetryCount) >= 8) return;
     bool expected = false;
     if (!atomic_compare_exchange_strong(&secondaryLoginRetryScheduled, &expected, true)) return;
@@ -448,6 +478,7 @@ static void RUINSecondaryLoginImageAdded(__unused const struct mach_header *head
 }
 
 void RUINInstallSecondaryLogin(void) {
+    atomic_store_explicit(&lineMainRangeTried, false, memory_order_release);
     if (!RUINSecondaryLoginTargetMatches()) return;
     static dispatch_once_t imageCallbackOnce;
     dispatch_once(&imageCallbackOnce, ^{

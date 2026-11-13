@@ -88,9 +88,68 @@ static void UpdateBackgroundTask(void) {
     });
 }
 
+static BOOL TargetMatches(void) {
+#if defined(RUIN_HOST_CHECK) && RUIN_HOST_CHECK
+    return RUINTargetMetadataMatchesInfo(NSBundle.mainBundle.infoDictionary);
+#else
+    static BOOL matched = NO;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        matched = RUINTargetMetadataMatchesInfo(NSBundle.mainBundle.infoDictionary);
+    });
+    return matched;
+#endif
+}
+
 static BOOL Enabled(void) {
-    return RUINTargetMetadataMatchesInfo(NSBundle.mainBundle.infoDictionary) &&
+    return TargetMatches() &&
         [NSUserDefaults.standardUserDefaults boolForKey:RUINKeepUnsentMessagesKey];
+}
+
+static NSURL *SharedGroupContainerURL(void) {
+#if defined(RUIN_HOST_CHECK) && RUIN_HOST_CHECK
+    return [NSFileManager.defaultManager containerURLForSecurityApplicationGroupIdentifier:@"group.com.linecorp.line"];
+#else
+    static os_unfair_lock lock = OS_UNFAIR_LOCK_INIT;
+    static NSURL *cachedURL;
+    os_unfair_lock_lock(&lock);
+    NSURL *cached = cachedURL;
+    os_unfair_lock_unlock(&lock);
+    if (cached) return cached;
+    NSURL *resolved = [NSFileManager.defaultManager containerURLForSecurityApplicationGroupIdentifier:@"group.com.linecorp.line"];
+    if (resolved) {
+        os_unfair_lock_lock(&lock);
+        if (!cachedURL) cachedURL = [resolved copy];
+        cached = cachedURL;
+        os_unfair_lock_unlock(&lock);
+    }
+    return cached ?: resolved;
+#endif
+}
+
+static NSURL *UserDirectoryURL(NSSearchPathDirectory directory) {
+#if defined(RUIN_HOST_CHECK) && RUIN_HOST_CHECK
+    return [NSFileManager.defaultManager URLsForDirectory:directory inDomains:NSUserDomainMask].firstObject;
+#else
+    static os_unfair_lock lock = OS_UNFAIR_LOCK_INIT;
+    static NSURL *supportURL, *cachesURL;
+    NSURL *__strong *slot = directory == NSApplicationSupportDirectory ? &supportURL :
+        directory == NSCachesDirectory ? &cachesURL : NULL;
+    if (slot) {
+        os_unfair_lock_lock(&lock);
+        NSURL *cached = *slot;
+        os_unfair_lock_unlock(&lock);
+        if (cached) return cached;
+    }
+    NSURL *resolved = [NSFileManager.defaultManager URLsForDirectory:directory inDomains:NSUserDomainMask].firstObject;
+    if (resolved && slot) {
+        os_unfair_lock_lock(&lock);
+        if (!*slot) *slot = [resolved copy];
+        resolved = *slot;
+        os_unfair_lock_unlock(&lock);
+    }
+    return resolved;
+#endif
 }
 
 static NSDictionary *ArchiveKey(NSDictionary *key) {
@@ -106,15 +165,19 @@ static NSDictionary *ArchiveKey(NSDictionary *key) {
 
 static RUINRetainedMediaStore *Store(BOOL create) {
     @synchronized (RUINRetainedMediaStore.class) {
-        if (!mediaStore) {
-            NSURL *support = [NSFileManager.defaultManager URLsForDirectory:NSApplicationSupportDirectory
-                inDomains:NSUserDomainMask].firstObject;
+        static BOOL mediaStoreMissing = NO;
+        if (create) mediaStoreMissing = NO;
+        if (!mediaStore && (create || !mediaStoreMissing)) {
+            NSURL *support = UserDirectoryURL(NSApplicationSupportDirectory);
             NSURL *directory = [[support URLByAppendingPathComponent:@"RUIN" isDirectory:YES]
                 URLByAppendingPathComponent:@"RetainedMedia" isDirectory:YES];
             BOOL isDirectory = NO;
             if (directory && (create || ([NSFileManager.defaultManager fileExistsAtPath:directory.path
-                isDirectory:&isDirectory] && isDirectory)))
+                isDirectory:&isDirectory] && isDirectory))) {
                 mediaStore = [[RUINRetainedMediaStore alloc] initWithDirectoryURL:directory error:NULL];
+            } else if (!create) {
+                mediaStoreMissing = YES;
+            }
         }
         return mediaStore;
     }
@@ -148,7 +211,7 @@ static NSDictionary *Scope(NSManagedObject *message) {
     id mid = [lineAccountDefaults objectForKey:@"mid"];
     if (![mid isKindOfClass:NSString.class] || [mid length] != 33 || ![mid hasPrefix:@"u"] ||
         ![@[[@"P_" stringByAppendingString:mid], [@"S_" stringByAppendingString:mid]] containsObject:accountName]) return nil;
-    NSURL *group = [NSFileManager.defaultManager containerURLForSecurityApplicationGroupIdentifier:@"group.com.linecorp.line"];
+    NSURL *group = SharedGroupContainerURL();
     NSURL *account = [[group URLByAppendingPathComponent:@"Library/Application Support/PrivateStore" isDirectory:YES]
         URLByAppendingPathComponent:accountName isDirectory:YES];
     NSURL *expectedStore = [account URLByAppendingPathComponent:@"Messages/Line.sqlite" isDirectory:NO];
@@ -163,8 +226,7 @@ static NSDictionary *Scope(NSManagedObject *message) {
         [accounts addObject:[[group URLByAppendingPathComponent:subpath isDirectory:YES]
             URLByAppendingPathComponent:accountName isDirectory:YES]];
     for (NSNumber *directory in @[@(NSApplicationSupportDirectory), @(NSCachesDirectory)]) {
-        NSURL *local = [NSFileManager.defaultManager URLsForDirectory:directory.unsignedIntegerValue
-            inDomains:NSUserDomainMask].firstObject;
+        NSURL *local = UserDirectoryURL(directory.unsignedIntegerValue);
         if (local) [accounts addObject:[[local URLByAppendingPathComponent:@"PrivateStore" isDirectory:YES]
             URLByAppendingPathComponent:accountName isDirectory:YES]];
     }
@@ -472,7 +534,7 @@ void RUINObserveRetainedVideoURL(id value, NSDictionary *messageKey, NSURL *URL)
         if (![scope[@"key"] isEqual:key] || [scope[@"contentType"] integerValue] != 2) { atomic_fetch_add(&videoRejected, 1); return; }
         if (!URL.isFileURL) { atomic_fetch_add(&remoteSources, 1); return; }
         NSMutableArray *roots = [scope[@"roots"] mutableCopy];
-        NSURL *caches = [NSFileManager.defaultManager URLsForDirectory:NSCachesDirectory inDomains:NSUserDomainMask].firstObject;
+        NSURL *caches = UserDirectoryURL(NSCachesDirectory);
         if (caches) [roots addObject:[caches URLByAppendingPathComponent:@"CacheableVideo" isDirectory:YES]];
         [roots addObject:[NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES]];
         NSMutableDictionary *videoScope = [scope mutableCopy]; videoScope[@"roots"] = [roots copy];
@@ -485,6 +547,7 @@ NSArray<NSDictionary *> *RUINRetainedMediaItems(NSDictionary *messageKey) {
     if (!Enabled()) return @[];
     NSDictionary *key = ArchiveKey(messageKey);
     RUINRetainedMediaStore *store = key.count ? Store(NO) : nil;
+    if (![store hasAnyScopes]) return @[];
     return [store isUnsentForKey:key] ? [store itemsForKey:key] : @[];
 }
 

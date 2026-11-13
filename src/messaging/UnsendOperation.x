@@ -54,7 +54,16 @@ static _Thread_local uintptr_t testParam1Caller;
 #endif
 
 static BOOL TargetMatches(void) {
+#if defined(RUIN_HOST_CHECK) && RUIN_HOST_CHECK
     return RUINTargetMetadataMatchesInfo(NSBundle.mainBundle.infoDictionary);
+#else
+    static BOOL matched = NO;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        matched = RUINTargetMetadataMatchesInfo(NSBundle.mainBundle.infoDictionary);
+    });
+    return matched;
+#endif
 }
 static BOOL Enabled(void) {
     return atomic_load(&codeVerified) && TargetMatches() &&

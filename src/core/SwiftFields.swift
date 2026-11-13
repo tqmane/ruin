@@ -32,11 +32,12 @@ private func ruinPathComponents(_ cString: UnsafePointer<CChar>?) -> [String]? {
 
 private func ruinUnwrapOptionals(_ value: Any) -> Any? {
     var current = value
-    while Mirror(reflecting: current).displayStyle == .optional {
-        guard let wrapped = Mirror(reflecting: current).children.first else { return nil }
+    while true {
+        let mirror = Mirror(reflecting: current)
+        guard mirror.displayStyle == .optional else { return current }
+        guard let wrapped = mirror.children.first else { return nil }
         current = wrapped.value
     }
-    return current
 }
 
 private func ruinChild(named name: String, in value: Any) -> Any? {
@@ -304,21 +305,47 @@ public func RUINCopySwiftEnumCaseName(_ object: AnyObject?,
     return Unmanaged.passRetained(name as NSString)
 }
 
+private let ruinReadControllerLock = NSLock()
+private var ruinReadControllerClassID: ObjectIdentifier?
+private var ruinReadControllerEnabledOffset: Int = 0
+private var ruinReadControllerMinSize: Int = 0
+
 @_cdecl("RUINWriteReadControllerEnabled")
 public func RUINWriteReadControllerEnabled(_ object: AnyObject?, _ enabled: Int32) -> Int32 {
     guard let object, enabled == 0 || enabled == 1,
-          let cls = object_getClass(object),
-          cls === NSClassFromString("_TtC15LineMessagingUI24ChatMarkAsReadController"),
+          let cls = object_getClass(object) else { return -1 }
+    let clsID = ObjectIdentifier(cls)
+    ruinReadControllerLock.lock()
+    let cachedOffset = ruinReadControllerClassID == clsID &&
+        ruinReadControllerMinSize == class_getInstanceSize(cls) ? ruinReadControllerEnabledOffset : -1
+    ruinReadControllerLock.unlock()
+
+    if cachedOffset > 0 {
+        let location = Unmanaged.passUnretained(object).toOpaque().advanced(by: cachedOffset)
+        let previous = location.load(as: UInt8.self)
+        guard previous < 2 else { return -1 }
+        location.storeBytes(of: UInt8(enabled), as: UInt8.self)
+        return Int32(previous)
+    }
+
+    guard cls === NSClassFromString("_TtC15LineMessagingUI24ChatMarkAsReadController"),
           let ivar = class_getInstanceVariable(cls, "isEnabled"),
           let value = ruinChild(named: "isEnabled", in: object),
           type(of: value) == Bool.self, let boolean = value as? Bool else { return -1 }
     let offset = ivar_getOffset(ivar)
+    let instanceSize = class_getInstanceSize(cls)
     guard offset >= MemoryLayout<UnsafeRawPointer>.size,
-          offset < class_getInstanceSize(cls) else { return -1 }
+          offset < instanceSize else { return -1 }
     let location = Unmanaged.passUnretained(object).toOpaque().advanced(by: offset)
     let previous = location.load(as: UInt8.self)
     guard previous < 2, (previous == 1) == boolean else { return -1 }
     location.storeBytes(of: UInt8(enabled), as: UInt8.self)
+
+    ruinReadControllerLock.lock()
+    ruinReadControllerClassID = clsID
+    ruinReadControllerEnabledOffset = offset
+    ruinReadControllerMinSize = instanceSize
+    ruinReadControllerLock.unlock()
     return Int32(previous)
 }
 

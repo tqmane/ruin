@@ -59,10 +59,11 @@ const RUINVersionMapping *RUINMappingForInfo(NSDictionary *info)
 
 const RUINVersionMapping *RUINCurrentMapping(void)
 {
-    // Do not cache a miss: BundleIdentity can call during early initialization.
-    NSDictionary *info = NSBundle.mainBundle.infoDictionary;
+    // Do not permanently cache a miss: BundleIdentity can call during early initialization.
+    // Check the resolved main image first so LiveContainer miss-caching avoids querying Info.plist.
     RUINMainExecutableImage image;
     if (!RUINResolveMainExecutableImage(&image)) return NULL;
+    NSDictionary *info = NSBundle.mainBundle.infoDictionary;
     return RUINResolveMapping(info, image.header, YES, kVersions, sizeof(kVersions) / sizeof(*kVersions));
 }
 

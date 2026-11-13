@@ -1059,31 +1059,38 @@ static BOOL RUINIsHideGroupEnabled(RUINHideGroup group)
     return NO;
 }
 
+static atomic_bool gAnyHideEffectApplied = ATOMIC_VAR_INIT(false);
+
 static BOOL RUINShouldHideView(RUINViewTarget *target, id view)
 {
     if (!RUINIsHideGroupEnabled(target->group)) return NO;
     if (target->group != RUINHideGroupVoiceInput) return YES;
     // The class, stored field and payloadless enum are pinned to LINE26.16.
     // No image/title matching: the other composer buttons use this class too.
-    if (![RUINCopySwiftFieldTypeName(view, "kind") isEqualToString:@"LineMessagingUIV2.ChatInputBarButtonKind"])
-        return NO;
+    static Class sVerifiedVoiceButtonClass;
+    Class viewClass = object_getClass(view);
+    if (viewClass != sVerifiedVoiceButtonClass) {
+        if (![RUINCopySwiftFieldTypeName(view, "kind") isEqualToString:@"LineMessagingUIV2.ChatInputBarButtonKind"])
+            return NO;
+        sVerifiedVoiceButtonClass = viewClass;
+    }
     return [RUINCopySwiftEnumCaseName(view, "kind") isEqualToString:@"audio"];
 }
 
-static void RUINHideView(UIView *view)
+static void RUINHideViewWithTarget(UIView *view, RUINViewTarget *target)
 {
+    atomic_store_explicit(&gAnyHideEffectApplied, true, memory_order_relaxed);
     if (!objc_getAssociatedObject(view, &gOriginalHiddenStateKey))
         objc_setAssociatedObject(view, &gOriginalHiddenStateKey, @(view.hidden), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     gInternalHiddenUpdateDepth++;
     view.hidden = YES;
     gInternalHiddenUpdateDepth--;
-    RUINViewTarget *target = RUINViewTargetForObject(view);
     if (target && target->group == RUINHideGroupAgentI) {
         [view invalidateIntrinsicContentSize]; [view.superview setNeedsLayout];
     }
 }
 
-static void RUINRestoreView(UIView *view)
+static void RUINRestoreViewWithTarget(UIView *view, RUINViewTarget *target)
 {
     NSNumber *original = objc_getAssociatedObject(view, &gOriginalHiddenStateKey);
     if (!original) return;
@@ -1091,7 +1098,6 @@ static void RUINRestoreView(UIView *view)
     view.hidden = original.boolValue;
     gInternalHiddenUpdateDepth--;
     objc_setAssociatedObject(view, &gOriginalHiddenStateKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    RUINViewTarget *target = RUINViewTargetForObject(view);
     if (target && target->group == RUINHideGroupAgentI) {
         [view invalidateIntrinsicContentSize]; [view.superview setNeedsLayout];
     }
@@ -1125,8 +1131,8 @@ static void RUINViewDidMoveToWindow(RUINViewTarget *target, id self, SEL selecto
     atomic_fetch_add_explicit(&target->didMoveToWindow.calls, 1, memory_order_relaxed);
     IMP original = atomic_load_explicit(&target->didMoveToWindow.original, memory_order_acquire);
     if (original) ((void (*)(id, SEL))original)(self, selector);
-    if (RUINShouldHideView(target, self)) RUINHideView((UIView *)self);
-    else RUINRestoreView((UIView *)self);
+    if (RUINShouldHideView(target, self)) RUINHideViewWithTarget((UIView *)self, target);
+    else RUINRestoreViewWithTarget((UIView *)self, target);
 }
 
 static void RUINVoiceButtonLayout(id self, SEL selector)
@@ -1134,16 +1140,18 @@ static void RUINVoiceButtonLayout(id self, SEL selector)
     atomic_fetch_add(&gVoiceButtonLayoutHook.calls, 1);
     IMP original = atomic_load(&gVoiceButtonLayoutHook.original);
     if (original) ((void (*)(id, SEL))original)(self, selector);
+    if (!atomic_load_explicit(&gHideVoiceInputEnabled, memory_order_relaxed) &&
+        !objc_getAssociatedObject(self, &gOriginalHiddenStateKey)) return;
     RUINViewTarget *target = RUINViewTargetForObject(self);
     if (!target || target->group != RUINHideGroupVoiceInput) return;
     // Native composer updates can change .audio into .send after setHidden:.
     // Recheck the settled role and restore LINE's requested visibility.
     if (RUINShouldHideView(target, self)) {
-        if (![(UIView *)self isHidden]) RUINHideView(self);
+        if (![(UIView *)self isHidden]) RUINHideViewWithTarget(self, target);
     } else {
         if (objc_getAssociatedObject(self, &gOriginalHiddenStateKey))
             atomic_fetch_add(&gVoiceKindRestorations, 1);
-        RUINRestoreView(self);
+        RUINRestoreViewWithTarget(self, target);
     }
 }
 
@@ -1151,14 +1159,19 @@ static void RUINRefreshViewTree(UIView *view)
 {
     RUINViewTarget *target = RUINViewTargetForObject(view);
     if (target) {
-        if (RUINShouldHideView(target, view)) RUINHideView(view);
-        else RUINRestoreView(view);
+        if (RUINShouldHideView(target, view)) RUINHideViewWithTarget(view, target);
+        else RUINRestoreViewWithTarget(view, target);
     }
     for (UIView *child in view.subviews) RUINRefreshViewTree(child);
 }
 
 static void RUINRefreshVisibleViews(void)
 {
+    BOOL anyEnabled = atomic_load_explicit(&gHideAdsEnabled, memory_order_relaxed) ||
+        atomic_load_explicit(&gHideRecommendationsEnabled, memory_order_relaxed) ||
+        atomic_load_explicit(&gHideVoiceInputEnabled, memory_order_relaxed) ||
+        atomic_load_explicit(&gHideAgentIEnabled, memory_order_relaxed);
+    if (!anyEnabled && !atomic_load_explicit(&gAnyHideEffectApplied, memory_order_acquire)) return;
     for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
         if (![scene isKindOfClass:UIWindowScene.class]) continue;
         for (UIWindow *window in ((UIWindowScene *)scene).windows) RUINRefreshViewTree(window);
@@ -1559,7 +1572,7 @@ static void RUINLoadPreferences(void)
     atomic_store(&gHideAgentIEnabled, [defaults boolForKey:RUINHideAgentIBarDefaultsKey]);
 }
 
-static void RUINPerformInstallOrRefresh(void)
+static void RUINPerformInstallOrRefresh(BOOL refreshVisibleViews)
 {
     if (!RUINTargetMatches()) {
         atomic_store(&gTargetMatches, false);
@@ -1571,7 +1584,7 @@ static void RUINPerformInstallOrRefresh(void)
     RUINLoadPreferences();
     RUINDiscoverExistingTabs();
     RUINRefreshTrackedTabControllers();
-    RUINRefreshVisibleViews();
+    if (refreshVisibleViews) RUINRefreshVisibleViews();
 }
 
 static void RUINOnMain(dispatch_block_t block)
@@ -1582,12 +1595,16 @@ static void RUINOnMain(dispatch_block_t block)
 
 void RUINInstallInterfaceFeatures(void)
 {
-    RUINOnMain(^{ RUINPerformInstallOrRefresh(); });
+    static atomic_bool firstInstallDone = ATOMIC_VAR_INIT(false);
+    RUINOnMain(^{
+        BOOL first = !atomic_exchange_explicit(&firstInstallDone, true, memory_order_acq_rel);
+        RUINPerformInstallOrRefresh(first);
+    });
 }
 
 void RUINRefreshInterfaceFeatures(void)
 {
-    RUINOnMain(^{ RUINPerformInstallOrRefresh(); });
+    RUINOnMain(^{ RUINPerformInstallOrRefresh(YES); });
 }
 
 static NSArray<NSString *> *RUINNativeTabIdentifiersOnMain(BOOL includeHiddenChoices)

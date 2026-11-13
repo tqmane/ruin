@@ -13,6 +13,7 @@
 #import <objc/message.h>
 #import <sqlite3.h>
 #import <stdatomic.h>
+#import <os/lock.h>
 #import <limits.h>
 #import <stdlib.h>
 #import <string.h>
@@ -454,23 +455,48 @@ static NSString *StoreNamespace(NSManagedObject *object) {
     if (!store) return nil;
     NSString *uuid = store.metadata[NSStoreUUIDKey];
     NSString *source = Token(uuid) ? uuid : store.identifier;
-    NSString *path = store.URL.path ?: @"";
-    NSString *home = NSHomeDirectory();
-    if ([path hasPrefix:[home stringByAppendingString:@"/"]]) path = [path substringFromIndex:home.length];
+    NSString *rawPath = store.URL.path ?: @"";
+    NSString *type = store.type ?: @"";
     NSString *tag = @"uuid";
     if (!Token(source)) {
+        NSString *home = NSHomeDirectory();
+        NSString *path = rawPath;
+        if ([path hasPrefix:[home stringByAppendingString:@"/"]]) path = [path substringFromIndex:home.length];
         source = path;
         if (!Token(source)) return nil;
         tag = @"path-fallback";
     }
+    static os_unfair_lock nsCacheLock = OS_UNFAIR_LOCK_INIT;
+    static NSMutableArray<NSDictionary *> *nsCache;
+    os_unfair_lock_lock(&nsCacheLock);
+    for (NSDictionary *entry in nsCache) {
+        if ([entry[@"rawPath"] isEqualToString:rawPath] &&
+            [entry[@"source"] isEqualToString:source] &&
+            [entry[@"type"] isEqualToString:type] &&
+            [entry[@"tag"] isEqualToString:tag]) {
+            NSString *cached = entry[@"digest"];
+            os_unfair_lock_unlock(&nsCacheLock);
+            return cached;
+        }
+    }
+    os_unfair_lock_unlock(&nsCacheLock);
+    NSString *path = rawPath;
+    NSString *home = NSHomeDirectory();
+    if ([path hasPrefix:[home stringByAppendingString:@"/"]]) path = [path substringFromIndex:home.length];
     // Include location too: cloned files can carry the same store UUID and later diverge.
-    NSData *bytes = [NSJSONSerialization dataWithJSONObject:@[tag, store.type ?: @"", source, path] options:0 error:NULL];
+    NSData *bytes = [NSJSONSerialization dataWithJSONObject:@[tag, type, source, path] options:0 error:NULL];
     if (!bytes || bytes.length > UINT_MAX) return nil;
     unsigned char hash[CC_SHA256_DIGEST_LENGTH];
     CC_SHA256(bytes.bytes, (CC_LONG)bytes.length, hash);
-    NSMutableString *result = [NSMutableString string];
+    NSMutableString *result = [NSMutableString stringWithCapacity:sizeof(hash) * 2];
     for (NSUInteger i = 0; i < sizeof(hash); i++) [result appendFormat:@"%02x", hash[i]];
-    return result;
+    NSString *digest = [result copy];
+    os_unfair_lock_lock(&nsCacheLock);
+    if (!nsCache) nsCache = [NSMutableArray array];
+    if (nsCache.count >= 32) [nsCache removeObjectAtIndex:0];
+    [nsCache addObject:@{@"rawPath":[rawPath copy], @"source":[source copy], @"type":[type copy], @"tag":tag, @"digest":digest}];
+    os_unfair_lock_unlock(&nsCacheLock);
+    return digest;
 }
 
 static BOOL NativeUserMID(NSString *mid) {
@@ -487,7 +513,9 @@ static NSString *NativeProfileMID(void) {
     return hostProfileMID;
 #else
     // Public native profile value in the current signed app-group domain.
-    NSUserDefaults *profile = [[NSUserDefaults alloc] initWithSuiteName:@"group.com.linecorp.line"];
+    static NSUserDefaults *profile;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ profile = [[NSUserDefaults alloc] initWithSuiteName:@"group.com.linecorp.line"]; });
     id mid = [profile objectForKey:@"mid"];
     return NativeUserMID(mid) ? [mid copy] : nil;
 #endif

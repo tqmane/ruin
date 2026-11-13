@@ -68,7 +68,12 @@ static BOOL RUINChatCatalogAccountIsValid(id value)
 
 static NSString *RUINCurrentChatCatalogAccount(void)
 {
-    id value = [[[NSUserDefaults alloc] initWithSuiteName:RUINChatCatalogSuite] objectForKey:@"mid"];
+    static NSUserDefaults *suiteDefaults;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        suiteDefaults = [[NSUserDefaults alloc] initWithSuiteName:RUINChatCatalogSuite];
+    });
+    id value = [suiteDefaults objectForKey:@"mid"];
     return RUINChatCatalogAccountIsValid(value) ? [value copy] : nil;
 }
 
@@ -222,18 +227,72 @@ static BOOL RUINRequestMatchesSchema(NSFetchRequest *request, RUINChatCatalogSch
 #endif
 
 #if !defined(RUIN_CHAT_CATALOG_HOST_CHECK)
+static NSMapTable<NSManagedObjectModel *, NSNumber *> *gChatCatalogModelSchemas;
+static NSMapTable<NSManagedObjectContext *, NSDictionary *> *gChatCatalogValidatedContexts;
+
+static RUINChatCatalogSchema RUINCachedSchemaForModel(NSManagedObjectModel *model)
+{
+    if (!model) return RUINChatCatalogSchemaUnknown;
+    os_unfair_lock_lock(&gChatCatalogLock);
+    NSNumber *cached = [gChatCatalogModelSchemas objectForKey:model];
+    os_unfair_lock_unlock(&gChatCatalogLock);
+    if (cached) return (RUINChatCatalogSchema)cached.integerValue;
+
+    RUINChatCatalogSchema schema = RUINSchemaForModel(model);
+    os_unfair_lock_lock(&gChatCatalogLock);
+    if (!gChatCatalogModelSchemas) gChatCatalogModelSchemas = [NSMapTable weakToStrongObjectsMapTable];
+    [gChatCatalogModelSchemas setObject:@(schema) forKey:model];
+    os_unfair_lock_unlock(&gChatCatalogLock);
+    return schema;
+}
+
 static void RUINCaptureChatCatalogContext(NSManagedObjectContext *context, NSFetchRequest *request)
 {
+    if (![request isKindOfClass:NSFetchRequest.class]) return;
+    NSString *entityName = request.entity.name ?: request.entityName;
+    if (![entityName isEqualToString:@"Chat"] &&
+        ![entityName isEqualToString:@"User"] &&
+        ![entityName isEqualToString:@"UnifiedGroup"]) return;
+
     NSString *account = RUINCurrentChatCatalogAccount();
-    if (!account || !RUINContextMatchesAccount(context, account)) return;
-    NSManagedObjectModel *model = context.persistentStoreCoordinator.managedObjectModel;
-    RUINChatCatalogSchema schema = RUINSchemaForModel(model);
+    if (!account) return;
+    NSPersistentStoreCoordinator *coordinator = context.persistentStoreCoordinator;
+    NSManagedObjectModel *model = coordinator.managedObjectModel;
+    RUINChatCatalogSchema schema = RUINCachedSchemaForModel(model);
     if (!RUINRequestMatchesSchema(request, schema, model)) return;
-    if (![RUINCurrentChatCatalogAccount() isEqualToString:account]) return;
+
+    NSArray<NSPersistentStore *> *stores = coordinator.persistentStores;
+    NSPersistentStore *firstStore = stores.count == 1 ? stores.firstObject : nil;
+    NSURL *storeURL = firstStore.URL;
+    BOOL contextAlreadyValidated = NO;
+    if (coordinator && firstStore && storeURL) {
+        os_unfair_lock_lock(&gChatCatalogLock);
+        NSDictionary *entry = [gChatCatalogValidatedContexts objectForKey:context];
+        contextAlreadyValidated = entry &&
+            [entry[@"coordinator"] pointerValue] == (__bridge const void *)coordinator &&
+            [entry[@"store"] pointerValue] == (__bridge const void *)firstStore &&
+            [entry[@"url"] isEqual:storeURL] &&
+            [entry[@"account"] isEqualToString:account];
+        os_unfair_lock_unlock(&gChatCatalogLock);
+    }
+
+    if (!contextAlreadyValidated) {
+        if (!RUINContextMatchesAccount(context, account)) return;
+        if (![RUINCurrentChatCatalogAccount() isEqualToString:account]) return;
+    }
 
     os_unfair_lock_lock(&gChatCatalogLock);
     if (!gChatCatalogContexts) gChatCatalogContexts = [NSHashTable weakObjectsHashTable];
     [gChatCatalogContexts addObject:context];
+    if (coordinator && firstStore && storeURL) {
+        if (!gChatCatalogValidatedContexts) gChatCatalogValidatedContexts = [NSMapTable weakToStrongObjectsMapTable];
+        [gChatCatalogValidatedContexts setObject:@{
+            @"coordinator": [NSValue valueWithPointer:(__bridge const void *)coordinator],
+            @"store": [NSValue valueWithPointer:(__bridge const void *)firstStore],
+            @"url": storeURL,
+            @"account": [account copy]
+        } forKey:context];
+    }
     os_unfair_lock_unlock(&gChatCatalogLock);
     atomic_fetch_add_explicit(&gChatCatalogFetches, 1, memory_order_relaxed);
 }
