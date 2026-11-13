@@ -834,19 +834,32 @@ static BOOL RUINSenderMatchesHook(RUINConfirmationHook *hook, id target, id send
 
 static BOOL RUINIsComposerSendControl(id control, id actionTarget, SEL action)
 {
-    Class inputClass = objc_getClass(RUINChatInputBarClass);
+    static atomic_uintptr_t inputClassPtr;
+    uintptr_t rawInputClass = atomic_load_explicit(&inputClassPtr, memory_order_acquire);
+    Class resolvedInputClass = (__bridge Class)(const void *)rawInputClass;
+    if (!resolvedInputClass) {
+        resolvedInputClass = objc_getClass(RUINChatInputBarClass);
+        if (resolvedInputClass) {
+            atomic_store_explicit(&inputClassPtr, (uintptr_t)(__bridge const void *)resolvedInputClass, memory_order_release);
+        }
+    }
     BOOL isControl = [control isKindOfClass:UIControl.class];
-    if (!inputClass || !isControl) return RUINConfirmationIsComposerControl(isControl, NO, NO, NO);
+    if (!resolvedInputClass || !isControl) return RUINConfirmationIsComposerControl(isControl, NO, NO, NO);
     UIView *composer = nil;
     for (UIView *view = (UIView *)control; view; view = view.superview) {
-        if ([view isKindOfClass:inputClass]) {
+        if ([view isKindOfClass:resolvedInputClass]) {
             composer = view;
             break;
         }
     }
     if (!composer) return RUINConfirmationIsComposerControl(YES, NO, NO, NO);
 
-    BOOL targetsInputBarSend = [actionTarget isKindOfClass:inputClass] && action == sel_registerName("send:");
+    static SEL sendSel;
+    static dispatch_once_t sendSelOnce;
+    dispatch_once(&sendSelOnce, ^{
+        sendSel = sel_registerName("send:");
+    });
+    BOOL targetsInputBarSend = [actionTarget isKindOfClass:resolvedInputClass] && action == sendSel;
     if (targetsInputBarSend) return RUINConfirmationIsComposerControl(YES, YES, YES, NO);
 
     id sendButton = RUINObjectIvar(composer, RUINChatInputBarClass, "$__lazy_storage_$_sendButton");

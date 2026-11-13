@@ -81,6 +81,7 @@ typedef NS_ENUM(NSInteger, RUINNativeChatHookState) {
 
 @interface RUINNativeTitleAliasRecord : NSObject
 @property(nonatomic, weak) id chatObject;
+@property(nonatomic, weak) UIView *contentView;
 @property(nonatomic, weak) UILabel *label;
 @property(nonatomic, copy, nullable) NSString *identityKey;
 @property(nonatomic, copy, nullable) NSString *nativeTitle;
@@ -556,20 +557,26 @@ static NSString *RUINNativeTitleText(UIView *titleView, NSString *navigationTitl
 // Exact LINE26.16 stored fields, verified in its Objective-C ivar metadata.
 static UIView *RUINFindCustomNavigationContent(UIView *view, NSUInteger depth) {
     if (!view || depth > 24 || view.hidden) return nil;
-    Class contentClass = objc_getClass("_TtC17LineMessagingUIV228ChatNavigationBarContentView");
+    static Class contentClass;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ contentClass = objc_getClass("_TtC17LineMessagingUIV228ChatNavigationBarContentView"); });
     if (contentClass && [view isKindOfClass:contentClass]) return view;
+    if ([view isKindOfClass:UICollectionView.class] || [view isKindOfClass:UITableView.class]) return nil;
     for (UIView *child in view.subviews) {
         UIView *content = RUINFindCustomNavigationContent(child, depth + 1);
         if (content) return content;
     }
     return nil;
 }
-static UILabel *RUINCurrentVerifiedTitleLabel(UIViewController *controller)
+static UILabel *RUINCurrentVerifiedTitleLabelInContent(UIView *content)
 {
-    UIView *content = RUINFindCustomNavigationContent(controller.view, 0);
     id label = content ? RUINCopySwiftField(content, "titleLabel") : nil;
     if ([label isKindOfClass:UILabel.class] && ((UILabel *)label).window) return label;
     return nil;
+}
+static UILabel *RUINCurrentVerifiedTitleLabel(UIViewController *controller)
+{
+    return RUINCurrentVerifiedTitleLabelInContent(RUINFindCustomNavigationContent(controller.view, 0));
 }
 
 static UIView *RUINCurrentTitleView(UIViewController *controller)
@@ -578,9 +585,10 @@ static UIView *RUINCurrentTitleView(UIViewController *controller)
 }
 
 static void RUINApplyNativeTitleAliasRecord(UIViewController *controller,
-                                            RUINNativeTitleAliasRecord *record)
+                                            RUINNativeTitleAliasRecord *record,
+                                            UILabel *knownLabel)
 {
-    UILabel *label = RUINCurrentVerifiedTitleLabel(controller);
+    UILabel *label = knownLabel ?: RUINCurrentVerifiedTitleLabel(controller);
     id chat = RUINNativeChatObject(controller);
     if (!label || label != record.label || chat != record.chatObject ||
         !RUINNativeControllerIsCurrent(controller, chat) || !record.identityKey.length) return;
@@ -631,33 +639,55 @@ static void RUINResolveTitleAlias(UIViewController *controller,
         record.originalName = [identity.localNameOriginalText copy];
         record.nativeTitle = RUINNativeOriginalTitle(currentTitle.length ? currentTitle : titleAtStart,
             record.originalName, [record.identityKey hasPrefix:@"group:"]);
-        RUINApplyNativeTitleAliasRecord(controller, record);
+        RUINApplyNativeTitleAliasRecord(controller, record, label);
     });
 }
 
 static void RUINRefreshNativeTitleAlias(UIViewController *controller)
 {
     if (![NSThread isMainThread] || !controller.isViewLoaded || !controller.view.window) return;
-    UILabel *label = RUINCurrentVerifiedTitleLabel(controller);
+    RUINNativeTitleAliasRecord *existing = objc_getAssociatedObject(controller, &gTitleAliasRecordKey);
     id chat = RUINNativeChatObject(controller);
-    if (!label || !chat || !RUINNativeControllerIsCurrent(controller, chat)) return;
+    if (!chat || !RUINNativeControllerIsCurrent(controller, chat)) return;
 
-    RUINNativeTitleAliasRecord *record = objc_getAssociatedObject(controller, &gTitleAliasRecordKey);
+    if (existing && existing.chatObject == chat && existing.resolved && !existing.appliedAlias) {
+        NSDictionary *saved = [NSUserDefaults.standardUserDefaults dictionaryForKey:RUINLocalNamesByIdentityDefaultsKey];
+        if (!saved.count) return;
+    }
+
+    UIView *cachedContent = existing.contentView;
+    UILabel *label = nil;
+    if (existing && existing.chatObject == chat && cachedContent && cachedContent.window &&
+        cachedContent.superview && existing.label && existing.label.window &&
+        [existing.label isDescendantOfView:cachedContent]) {
+        label = existing.label;
+    } else {
+        UIView *content = RUINFindCustomNavigationContent(controller.view, 0);
+        label = RUINCurrentVerifiedTitleLabelInContent(content);
+        if (!label) return;
+        cachedContent = content;
+    }
+
+    RUINNativeTitleAliasRecord *record = existing;
     if (!record || record.chatObject != chat || (record.resolving && record.label != label)) {
         record = [RUINNativeTitleAliasRecord new];
         record.chatObject = chat;
+        record.contentView = cachedContent;
         record.label = label;
         record.nativeTitle = [label.text copy] ?: @"";
         objc_setAssociatedObject(controller, &gTitleAliasRecordKey, record, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    } else if (record.label != label) {
-        record.label = label;
-        record.nativeTitle = [label.text copy] ?: @"";
-        record.appliedAlias = nil;
+    } else {
+        record.contentView = cachedContent;
+        if (record.label != label) {
+            record.label = label;
+            record.nativeTitle = [label.text copy] ?: @"";
+            record.appliedAlias = nil;
+        }
     }
 
     if (record.resolving) return;
     if (record.resolved) {
-        RUINApplyNativeTitleAliasRecord(controller, record);
+        RUINApplyNativeTitleAliasRecord(controller, record, label);
         return;
     }
     RUINResolveTitleAlias(controller, label, chat, record);
@@ -687,7 +717,7 @@ static void RUINApplySavedNativeTitleAlias(UIViewController *controller,
     record.resolved = YES;
     if (!record.appliedAlias) record.nativeTitle = [label.text copy] ?: [nativeTitle copy] ?:
         [identity.localNameOriginalText copy] ?: @"";
-    RUINApplyNativeTitleAliasRecord(controller, record);
+    RUINApplyNativeTitleAliasRecord(controller, record, label);
 }
 
 static void RUINDetachTitleGesture(UIViewController *controller)

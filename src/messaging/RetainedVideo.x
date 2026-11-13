@@ -19,12 +19,18 @@ static atomic_ulong nativeAssets, nativeCacheMatches, nativeRangeChecks, nativeC
 static atomic_ulong playerLayers;
 static atomic_ulong nativeKeyMatches, nativeOriginMatches, nativeCacheObjects;
 static NSString *lastAssetClass, *lastCacheClass, *lastCacheQueueClass, *lastRangeQueueClass;
-static char nativeCachePendingKey;
+static char nativeCachePendingKey, capturedVideoURLKey;
 static void ObserveActiveCache(UIViewController *viewer, NSManagedObject *message);
 
+static BOOL TargetMatches(void) {
+    static BOOL matched;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ matched = RUINTargetMetadataMatchesInfo(NSBundle.mainBundle.infoDictionary); });
+    return matched;
+}
+
 static BOOL Enabled(void) {
-    return RUINTargetMetadataMatchesInfo(NSBundle.mainBundle.infoDictionary) &&
-        [NSUserDefaults.standardUserDefaults boolForKey:RUINKeepUnsentMessagesKey];
+    return [NSUserDefaults.standardUserDefaults boolForKey:RUINKeepUnsentMessagesKey] && TargetMatches();
 }
 
 static BOOL MethodMatches(Method method, const char *encoding) {
@@ -66,11 +72,14 @@ static void Observe(UIViewController *viewer) {
             return;
         }
         NSURL *source = [URL copy];
+        NSURL *previous = objc_getAssociatedObject(viewer, &capturedVideoURLKey);
+        if ([previous isEqual:source]) return;
         NSManagedObject *object = message;
         // The fullscreen controller owns a managed object directly. Resolve
         // its permanent chat/store/account identity on that object's context.
         NSManagedObjectContext *context = object.managedObjectContext;
         if (!context) { atomic_fetch_add(&missingContext, 1); return; }
+        objc_setAssociatedObject(viewer, &capturedVideoURLKey, source, OBJC_ASSOCIATION_COPY_NONATOMIC);
         atomic_fetch_add(&queued, 1);
         [context performBlock:^{
             NSDictionary *key = RUINHistoryMessageKey(object);
@@ -82,9 +91,13 @@ static void Observe(UIViewController *viewer) {
 
 static void ObserveActiveCache(UIViewController *viewer, NSManagedObject *message) {
     if (objc_getAssociatedObject(viewer, &nativeCachePendingKey)) return;
-    Class assetClass = NSClassFromString(@"NLCacheableAsset");
-    Class cacheClass = NSClassFromString(@"_TtC14CacheableAsset14CacheableCache");
-    Class queueClass = NSClassFromString(@"OS_dispatch_queue");
+    static Class assetClass, cacheClass, queueClass;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        assetClass = NSClassFromString(@"NLCacheableAsset");
+        cacheClass = NSClassFromString(@"_TtC14CacheableAsset14CacheableCache");
+        queueClass = NSClassFromString(@"OS_dispatch_queue");
+    });
     if (!assetClass || !cacheClass || !queueClass ||
         !MethodMatches(class_getInstanceMethod(assetClass, @selector(cacheKey)), "@16@0:8") ||
         !MethodMatches(class_getInstanceMethod(assetClass, @selector(originURL)), "@16@0:8")) return;
@@ -156,14 +169,23 @@ static void ObserveActiveCache(UIViewController *viewer, NSManagedObject *messag
 - (void)viewDidAppear:(BOOL)animated {
     %orig;
     Observe(self);
-    if (![self ruin_retainedVideoTimer] && Enabled()) {
-        __weak UIViewController *viewer = self;
-        NSTimer *timer = [NSTimer timerWithTimeInterval:1 repeats:YES block:^(__unused NSTimer *timer) {
-            UIViewController *current = viewer;
-            if (current.viewIfLoaded.window) Observe(current);
+    if (![self ruin_retainedVideoTimer] && Enabled() && !objc_getAssociatedObject(self, &capturedVideoURLKey)) {
+        __weak __typeof__(self) viewer = self;
+        NSTimer *timer = [NSTimer timerWithTimeInterval:1 repeats:YES block:^(NSTimer *activeTimer) {
+            __typeof__(self) current = viewer;
+            if (!current || objc_getAssociatedObject(current, &capturedVideoURLKey)) {
+                [activeTimer invalidate];
+                [current setRuin_retainedVideoTimer:nil];
+                return;
+            }
+            if (((UIViewController *)current).viewIfLoaded.window) Observe(current);
+            if (objc_getAssociatedObject(current, &capturedVideoURLKey)) {
+                [activeTimer invalidate];
+                [current setRuin_retainedVideoTimer:nil];
+            }
         }];
         [self setRuin_retainedVideoTimer:timer];
-        [NSRunLoop.mainRunLoop addTimer:timer forMode:NSRunLoopCommonModes];
+        [NSRunLoop.mainRunLoop addTimer:timer forMode:NSDefaultRunLoopMode];
     }
 }
 - (void)viewDidLayoutSubviews { %orig; Observe(self); }

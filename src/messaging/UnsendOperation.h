@@ -14,6 +14,7 @@ FOUNDATION_EXPORT BOOL RUINClearUnsendOperationMarkers(void);
 // never creates a file/schema/marker, changes a preference, or freezes History.
 // Returns NO when disabled/gated, invalid, unavailable or ambiguous to caller.
 FOUNDATION_EXPORT BOOL RUINUnsendOperationHasRetainedMarker(NSDictionary *messageKey);
+FOUNDATION_EXPORT uint64_t RUINUnsendOperationGeneration(void);
 
 // LINE 26.16.0 / 2026.1006.1718 only. No Swift IMP/ABI replacement. The
 // original Core Data fetch runs once. Only its exact, fingerprinted incoming

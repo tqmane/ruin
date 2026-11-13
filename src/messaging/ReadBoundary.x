@@ -115,8 +115,13 @@ static BOOL ImpliesPendingRead(NSPredicate *predicate) {
 }
 static BOOL KnownChat(id object) {
     static const char *names[] = {"ManagedChat", "ManagedSquareChat", "ManagedSquareChatThread"};
+    static atomic_uintptr_t classes[3];
     for (unsigned int i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
-        Class cls = objc_getClass(names[i]);
+        Class cls = (__bridge Class)(const void *)atomic_load_explicit(&classes[i], memory_order_acquire);
+        if (!cls) {
+            cls = objc_getClass(names[i]);
+            if (cls) atomic_store_explicit(&classes[i], (uintptr_t)(__bridge const void *)cls, memory_order_release);
+        }
         if (cls && [object isKindOfClass:cls]) return YES;
     }
     return NO;
@@ -125,9 +130,10 @@ static BOOL KnownChat(id object) {
 %hook NSManagedObjectContext
 - (NSArray *)executeFetchRequest:(NSFetchRequest *)request error:(NSError **)error {
     NSArray *result = %orig;
-    if (!result || request.resultType != NSManagedObjectResultType || !ImpliesPendingRead(request.predicate)) return result;
-    atomic_fetch_add(&pendingFetchQueries, 1);
+    if (!result || !result.count || request.resultType != NSManagedObjectResultType || !request.predicate) return result;
     if (![NSUserDefaults.standardUserDefaults boolForKey:RUINReadControlEnabledDefaultsKey]) return result;
+    if (!ImpliesPendingRead(request.predicate)) return result;
+    atomic_fetch_add(&pendingFetchQueries, 1);
     NSMutableArray *allowed = [NSMutableArray arrayWithCapacity:result.count];
     for (id object in result) {
         BOOL hold = NO;
@@ -277,17 +283,46 @@ static void InstallBoundaryAccessor(Class cls) {
     installedBoundaries[name] = current ? @"installed_original_accessor" : @"installed_coredata_accessor";
 }
 
+static BOOL ReadBoundaryTargetMatches(NSDictionary *info) {
+#if defined(RUIN_BOUNDARY_HOST_CHECK)
+    return RUINTargetMetadataMatchesInfo(info);
+#else
+    static BOOL matched = NO;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        matched = RUINTargetMetadataMatchesInfo(info);
+    });
+    return matched;
+#endif
+}
+
 void RUINInstallReadBoundary(void) {
     NSDictionary *info = NSBundle.mainBundle.infoDictionary;
-    nativeReadCaller = 0;
-    if (!RUINTargetMetadataMatchesInfo(info)) return;
 #if defined(RUIN_BOUNDARY_HOST_CHECK)
+    nativeReadCaller = 0;
+    if (!ReadBoundaryTargetMatches(info)) return;
     const RUINVersionMapping *versionMapping = testVersionMapping ?: RUINMappingForInfo(info);
-#else
-    const RUINVersionMapping *versionMapping = RUINCurrentMapping();
-#endif
     const RUINMessagingMapping *mapping = versionMapping ? &versionMapping->messaging : NULL;
     BOOL projectPreSendBoundary = mapping && VerifyNativeReadSite(versionMapping, &mapping->readBoundary);
+#else
+    if (!ReadBoundaryTargetMatches(info)) {
+        nativeReadCaller = 0;
+        return;
+    }
+    static BOOL projectPreSendBoundary = NO;
+    static uintptr_t verifiedCaller = 0;
+    static dispatch_once_t siteOnce;
+    dispatch_once(&siteOnce, ^{
+        nativeReadCaller = 0;
+        const RUINVersionMapping *versionMapping = RUINCurrentMapping();
+        const RUINMessagingMapping *mapping = versionMapping ? &versionMapping->messaging : NULL;
+        if (mapping && VerifyNativeReadSite(versionMapping, &mapping->readBoundary)) {
+            verifiedCaller = nativeReadCaller;
+            projectPreSendBoundary = YES;
+        }
+    });
+    nativeReadCaller = verifiedCaller;
+#endif
     @synchronized (NSManagedObjectContext.class) {
         if (!installedBoundaries) installedBoundaries = [NSMutableDictionary dictionary];
         if (!installedImplementations) installedImplementations = [NSMutableDictionary dictionary];
@@ -306,6 +341,12 @@ void RUINInstallReadBoundary(void) {
         // An unavailable/inapplicable numeric projection must not disable this
         // independent structural filter.
         if (!projectPreSendBoundary) return;
+#if !defined(RUIN_BOUNDARY_HOST_CHECK)
+        static int lastScannedClassCount = -1;
+        int currentClassCount = objc_getClassList(NULL, 0);
+        if (lastScannedClassCount == currentClassCount) return;
+        lastScannedClassCount = currentClassCount;
+#endif
         NSArray *baseNames = @[@"ManagedChat", @"ManagedSquareChat", @"ManagedSquareChatThread"];
         NSMutableArray *targets = [NSMutableArray array];
         for (NSString *baseName in baseNames) {

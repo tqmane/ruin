@@ -1,6 +1,8 @@
 #import "LocalFont.h"
 #import <CoreText/CoreText.h>
 #import <math.h>
+#import <os/lock.h>
+#import <stdatomic.h>
 
 static NSString * const RUINLocalFontDefaultsKey = @"RUINLocalFontSelection";
 static NSString * const RUINLocalFontErrorDomain = @"RUINLocalFontErrorDomain";
@@ -24,6 +26,10 @@ static NSURL *sURL;
 static NSMutableDictionary<NSString *, NSURL *> *sRegisteredURLs;
 static unsigned long long sFileSize;
 static BOOL sRegistered;
+static atomic_bool sRegisteredAtomic = ATOMIC_VAR_INIT(false);
+static os_unfair_lock sFontCacheLock = OS_UNFAIR_LOCK_INIT;
+static NSMutableDictionary<NSNumber *, UIFont *> *sFontSizeCache;
+static uint64_t sFontCacheGeneration;
 static NSString *sStatus = @"not_loaded";
 
 static NSObject *RUINLocalFontLock(void) {
@@ -149,6 +155,7 @@ void RUINInstallLocalFont(void) {
                 sURL = url;
                 sFileSize = bytes;
                 sRegistered = YES;
+                atomic_store_explicit(&sRegisteredAtomic, true, memory_order_release);
                 sRegisteredURLs[validatedName] = url;
                 sStatus = @"loaded";
                 RUINRemoveManagedFontsExcept(directory, url);
@@ -162,7 +169,7 @@ void RUINInstallLocalFont(void) {
 
 BOOL RUINLocalFontIsRegistered(void) {
     RUINInstallLocalFont();
-    @synchronized (RUINLocalFontLock()) { return sRegistered && sName != nil; }
+    return atomic_load_explicit(&sRegisteredAtomic, memory_order_acquire);
 }
 
 NSString *RUINLocalFontName(void) {
@@ -249,6 +256,11 @@ BOOL RUINImportLocalFont(NSURL *url, NSError **error) {
             sURL = selectedURL;
             sFileSize = selectedSize;
             sRegistered = YES;
+            atomic_store_explicit(&sRegisteredAtomic, true, memory_order_release);
+            os_unfair_lock_lock(&sFontCacheLock);
+            sFontCacheGeneration++;
+            [sFontSizeCache removeAllObjects];
+            os_unfair_lock_unlock(&sFontCacheLock);
             sStatus = cachedURL ? @"reselected_registered" : @"imported";
             imported = YES;
             // Registered fonts remain on disk until next launch, when only the saved selection is loaded.
@@ -271,6 +283,11 @@ void RUINResetLocalFont(void) {
         sURL = nil;
         sFileSize = 0;
         sRegistered = NO;
+        atomic_store_explicit(&sRegisteredAtomic, false, memory_order_release);
+        os_unfair_lock_lock(&sFontCacheLock);
+        sFontCacheGeneration++;
+        [sFontSizeCache removeAllObjects];
+        os_unfair_lock_unlock(&sFontCacheLock);
         sStatus = @"default";
         // Keep process-registered font files until next launch; never unlink a live registration.
     }
@@ -279,12 +296,31 @@ void RUINResetLocalFont(void) {
 UIFont *RUINLocalFontAtSize(CGFloat size) {
     if (!isfinite(size) || size <= 0) return nil;
     RUINInstallLocalFont();
+    if (!atomic_load_explicit(&sRegisteredAtomic, memory_order_acquire)) return nil;
+    NSNumber *sizeKey = @(size);
+    os_unfair_lock_lock(&sFontCacheLock);
+    UIFont *cached = sFontSizeCache[sizeKey];
+    uint64_t generation = sFontCacheGeneration;
+    os_unfair_lock_unlock(&sFontCacheLock);
+    if (cached) return cached;
+
+    NSString *name = nil;
     @synchronized (RUINLocalFontLock()) {
         if (!sRegistered || !sName) return nil;
-        // UIKit creates the font and its normal glyph fallback. The Logos hook
-        // excludes calls from RUIN and protects reentry while replacing a font.
-        return [UIFont fontWithName:sName size:size];
+        name = [sName copy];
     }
+    // UIKit creates the font and its normal glyph fallback. The Logos hook
+    // excludes calls from RUIN and protects reentry while replacing a font.
+    UIFont *font = [UIFont fontWithName:name size:size];
+    if (!font) return nil;
+    os_unfair_lock_lock(&sFontCacheLock);
+    if (sFontCacheGeneration == generation) {
+        if (!sFontSizeCache) sFontSizeCache = [NSMutableDictionary new];
+        if (sFontSizeCache.count >= 128) [sFontSizeCache removeAllObjects];
+        sFontSizeCache[sizeKey] = font;
+    }
+    os_unfair_lock_unlock(&sFontCacheLock);
+    return font;
 }
 
 NSDictionary<NSString *, id> *RUINLocalFontDiagnostics(void) {

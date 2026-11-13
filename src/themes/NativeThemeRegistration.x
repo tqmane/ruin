@@ -301,13 +301,15 @@ static BOOL RUINNativeServerRevocationFetch(void)
     return NO;
 #else
     RUINFeatureImage image = {0};
-    const RUINVersionMapping *mapping = RUINCopyVerifiedThemeImage(&image);
-    if (!mapping || !RUINFeatureImageMatches(&image, &mapping->host)) return NO;
+    if (!RUINCopyVerifiedThemeImage(&image) || !image.image.header) return NO;
+    uintptr_t textStart = 0, textSize = 0;
+    if (!RUINImageExecutableTextRange(image.image.header, &textStart, &textSize)) return NO;
     void *frames[24];
     int count = backtrace(frames, 24);
     uintptr_t PCs[2]; NSUInteger found = 0;
     for (int i = 0; i < count && found < 2; i++) {
         uintptr_t pc = (uintptr_t)frames[i], address;
+        if (pc < textStart || pc - textStart >= textSize) continue;
         Dl_info info;
         if (!dladdr((const void *)pc, &info) || info.dli_fbase != (void *)image.image.header) continue;
         intptr_t slide = image.image.slide;
@@ -331,23 +333,32 @@ static BOOL RUINNativeServerRevocationFetch(void)
 %hook NSManagedObjectContext
 - (NSArray *)executeFetchRequest:(NSFetchRequest *)request error:(NSError **)error
 {
+    NSString *entityName = [request isKindOfClass:NSFetchRequest.class]
+        ? (request.entity.name ?: request.entityName)
+        : nil;
+    if (![entityName isEqual:@"OwnedThemeProduct"]) return %orig(request, error);
     NSManagedObjectContext *context = self;
     NSFetchRequest *effectiveRequest = request;
     NSSet *localIDs = nil;
+    BOOL targetsThemeResolved = NO;
+    BOOL targetsTheme = NO;
     @try {
         NSString *account = nil;
-        if (![NSThread.currentThread.threadDictionary[kRUINWriterThreadKey] boolValue] &&
-            RUINRequestTargetsTheme(request, context) &&
-            RUINContextNativeScope(context, NULL, NULL, NULL, NULL, NULL, &account, NO)) {
-            RUINCaptureNativeContext(context);
-            NSURL *root = [RUINPackageDirectory(RUINMappedGroupContainerURL(), account,
-                @"00000000-0000-0000-0000-000000000000") URLByDeletingLastPathComponent];
-            localIDs = RUINNativeLocalThemeIDs(root);
-            if (localIDs.count && request.predicate) {
-                effectiveRequest = [request copy];
-                effectiveRequest.predicate = RUINNativeServerRevocationFetch()
-                    ? RUINNativeThemeRevocationPredicate(request.predicate, localIDs)
-                    : RUINNativeLocalThemePredicate(request.predicate, localIDs);
+        if (![NSThread.currentThread.threadDictionary[kRUINWriterThreadKey] boolValue]) {
+            targetsTheme = RUINRequestTargetsTheme(request, context);
+            targetsThemeResolved = YES;
+            if (targetsTheme &&
+                RUINContextNativeScope(context, NULL, NULL, NULL, NULL, NULL, &account, NO)) {
+                RUINCaptureNativeContext(context);
+                NSURL *root = [RUINPackageDirectory(RUINMappedGroupContainerURL(), account,
+                    @"00000000-0000-0000-0000-000000000000") URLByDeletingLastPathComponent];
+                localIDs = RUINNativeLocalThemeIDs(root);
+                if (localIDs.count && request.predicate) {
+                    effectiveRequest = [request copy];
+                    effectiveRequest.predicate = RUINNativeServerRevocationFetch()
+                        ? RUINNativeThemeRevocationPredicate(request.predicate, localIDs)
+                        : RUINNativeLocalThemePredicate(request.predicate, localIDs);
+                }
             }
         }
     } @catch (__unused NSException *exception) {
@@ -358,7 +369,7 @@ static BOOL RUINNativeServerRevocationFetch(void)
     if ([NSThread.currentThread.threadDictionary[kRUINWriterThreadKey] boolValue] || !result || (error && *error))
         return result;
     @try {
-        if (!RUINRequestTargetsTheme(request, context)) return result;
+        if (!(targetsThemeResolved ? targetsTheme : RUINRequestTargetsTheme(request, context))) return result;
 #if !defined(RUIN_NATIVE_THEME_REGISTRATION_HOST_CHECK)
         RUINRecordNativeThemeFetchInspection(request, effectiveRequest, result.count);
 #endif
@@ -425,8 +436,21 @@ static NSURL *RUINNativeApplicationSupportURL(void)
     os_unfair_lock_unlock(&gCaptureLock);
     return URL;
 #else
-    return [NSFileManager.defaultManager URLsForDirectory:NSApplicationSupportDirectory
+    static os_unfair_lock lock = OS_UNFAIR_LOCK_INIT;
+    static NSURL *cachedURL;
+    os_unfair_lock_lock(&lock);
+    NSURL *cached = cachedURL;
+    os_unfair_lock_unlock(&lock);
+    if (cached) return cached;
+    NSURL *resolved = [NSFileManager.defaultManager URLsForDirectory:NSApplicationSupportDirectory
         inDomains:NSUserDomainMask].firstObject;
+    if (resolved) {
+        os_unfair_lock_lock(&lock);
+        if (!cachedURL) cachedURL = [resolved copy];
+        cached = cachedURL;
+        os_unfair_lock_unlock(&lock);
+    }
+    return cached ?: resolved;
 #endif
 }
 
@@ -438,8 +462,21 @@ static NSURL *RUINMappedGroupContainerURL(void)
     os_unfair_lock_unlock(&gCaptureLock);
     return fixtureURL;
 #else
+    static os_unfair_lock lock = OS_UNFAIR_LOCK_INIT;
+    static NSURL *cachedURL;
+    os_unfair_lock_lock(&lock);
+    NSURL *cached = cachedURL;
+    os_unfair_lock_unlock(&lock);
+    if (cached) return cached;
     // RUINSideload maps this original identifier to the active profile container.
-    return [NSFileManager.defaultManager containerURLForSecurityApplicationGroupIdentifier:@"group.com.linecorp.line"];
+    NSURL *resolved = [NSFileManager.defaultManager containerURLForSecurityApplicationGroupIdentifier:@"group.com.linecorp.line"];
+    if (resolved) {
+        os_unfair_lock_lock(&lock);
+        if (!cachedURL) cachedURL = [resolved copy];
+        cached = cachedURL;
+        os_unfair_lock_unlock(&lock);
+    }
+    return cached ?: resolved;
 #endif
 }
 

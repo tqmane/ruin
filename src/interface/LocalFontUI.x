@@ -71,17 +71,104 @@ void RUINOpenLocalFontSettings(UIViewController *presenter) {
 
 #import <dlfcn.h>
 #import <mach-o/dyld.h>
+#import <mach-o/loader.h>
+#import <objc/runtime.h>
+#import <os/lock.h>
 #import <stdatomic.h>
+#include <stdlib.h>
+#include <string.h>
 
 static atomic_uint_fast64_t sFontReplacements;
 static _Thread_local BOOL sReplacingFont;
+static _Atomic uintptr_t sFontHostTextStart;
+static _Atomic uintptr_t sFontHostTextSize;
+static os_unfair_lock sFontHostResolveLock = OS_UNFAIR_LOCK_INIT;
+static uint32_t sFontHostMissImageCount;
+
+static BOOL RUINResolveFontHostRange(uintptr_t *startOut, uintptr_t *sizeOut) {
+    uintptr_t start = atomic_load_explicit(&sFontHostTextStart, memory_order_acquire);
+    uintptr_t size = atomic_load_explicit(&sFontHostTextSize, memory_order_relaxed);
+    if (start && size) {
+        *startOut = start;
+        *sizeOut = size;
+        return YES;
+    }
+
+    RUINMainExecutableImage mainImage;
+    if (RUINResolveMainExecutableImage(&mainImage) &&
+        RUINImageExecutableTextRange(mainImage.header, &start, &size) && start && size) {
+        os_unfair_lock_lock(&sFontHostResolveLock);
+        if (!atomic_load_explicit(&sFontHostTextStart, memory_order_relaxed)) {
+            atomic_store_explicit(&sFontHostTextSize, size, memory_order_relaxed);
+            atomic_store_explicit(&sFontHostTextStart, start, memory_order_release);
+        }
+        os_unfair_lock_unlock(&sFontHostResolveLock);
+        *startOut = start;
+        *sizeOut = size;
+        return YES;
+    }
+
+    uint32_t currentCount = _dyld_image_count();
+    os_unfair_lock_lock(&sFontHostResolveLock);
+    start = atomic_load_explicit(&sFontHostTextStart, memory_order_relaxed);
+    size = atomic_load_explicit(&sFontHostTextSize, memory_order_relaxed);
+    if (start && size) {
+        os_unfair_lock_unlock(&sFontHostResolveLock);
+        *startOut = start;
+        *sizeOut = size;
+        return YES;
+    }
+    if (sFontHostMissImageCount == currentCount) {
+        os_unfair_lock_unlock(&sFontHostResolveLock);
+        return NO;
+    }
+    os_unfair_lock_unlock(&sFontHostResolveLock);
+
+    // LiveContainer loads LINE as an MH_DYLIB at NSBundle.mainBundle.executablePath.
+    // Verify both the canonical bundle executable path and ownership of a core LINE class.
+    NSString *execPath = NSBundle.mainBundle.executablePath;
+    Class marker = objc_lookUpClass("_TtC4LINE11AppDelegate") ?: objc_lookUpClass("LineShopProductDetail");
+    Dl_info markerInfo = {0};
+    BOOL matched = NO;
+    if (execPath.length && marker && dladdr((__bridge const void *)marker, &markerInfo) &&
+        markerInfo.dli_fbase && markerInfo.dli_fname) {
+        char *expected = realpath(execPath.fileSystemRepresentation, NULL);
+        char *actual = realpath(markerInfo.dli_fname, NULL);
+        BOOL samePath = expected && actual && strcmp(expected, actual) == 0;
+        free(expected);
+        free(actual);
+        if (samePath) {
+            const struct mach_header_64 *header = markerInfo.dli_fbase;
+            if (header->magic == MH_MAGIC_64 &&
+                (header->filetype == MH_EXECUTE || header->filetype == MH_DYLIB) &&
+                RUINImageExecutableTextRange(header, &start, &size) && start && size) {
+                matched = YES;
+            }
+        }
+    }
+
+    os_unfair_lock_lock(&sFontHostResolveLock);
+    if (matched) {
+        atomic_store_explicit(&sFontHostTextSize, size, memory_order_relaxed);
+        atomic_store_explicit(&sFontHostTextStart, start, memory_order_release);
+        *startOut = start;
+        *sizeOut = size;
+    } else if (_dyld_image_count() == currentCount) {
+        sFontHostMissImageCount = currentCount;
+    }
+    os_unfair_lock_unlock(&sFontHostResolveLock);
+    return matched;
+}
+
+static BOOL RUINFontCallerIsLINE(void *caller) {
+    uintptr_t start = 0, size = 0;
+    if (!caller || !RUINResolveFontHostRange(&start, &size)) return NO;
+    return ((uintptr_t)caller - start) < size;
+}
 
 static UIFont *RUINReplaceTextFont(UIFont *original, void *caller) {
     if (!original || sReplacingFont || !RUINLocalFontIsRegistered()) return original;
-    Dl_info image;
-    RUINMainExecutableImage mainImage;
-    if (!RUINResolveMainExecutableImage(&mainImage) ||
-        !dladdr(caller, &image) || image.dli_fbase != (const void *)mainImage.header) return original;
+    if (!RUINFontCallerIsLINE(caller)) return original;
     sReplacingFont = YES;
     UIFont *replacement = RUINLocalFontAtSize(original.pointSize);
     sReplacingFont = NO;
@@ -98,34 +185,36 @@ static BOOL RUINIsSystemTextFont(UIFont *font) {
 %group RUINLocalTextFont
 %hook UIFont
 + (UIFont *)systemFontOfSize:(CGFloat)size {
-    return RUINReplaceTextFont(%orig, __builtin_return_address(0));
+    return RUINReplaceTextFont(%orig, __builtin_extract_return_addr(__builtin_return_address(0)));
 }
 + (UIFont *)systemFontOfSize:(CGFloat)size weight:(UIFontWeight)weight {
-    return RUINReplaceTextFont(%orig, __builtin_return_address(0));
+    return RUINReplaceTextFont(%orig, __builtin_extract_return_addr(__builtin_return_address(0)));
 }
 + (UIFont *)boldSystemFontOfSize:(CGFloat)size {
-    return RUINReplaceTextFont(%orig, __builtin_return_address(0));
+    return RUINReplaceTextFont(%orig, __builtin_extract_return_addr(__builtin_return_address(0)));
 }
 + (UIFont *)italicSystemFontOfSize:(CGFloat)size {
-    return RUINReplaceTextFont(%orig, __builtin_return_address(0));
+    return RUINReplaceTextFont(%orig, __builtin_extract_return_addr(__builtin_return_address(0)));
 }
 + (UIFont *)preferredFontForTextStyle:(UIFontTextStyle)style {
-    return RUINReplaceTextFont(%orig, __builtin_return_address(0));
+    return RUINReplaceTextFont(%orig, __builtin_extract_return_addr(__builtin_return_address(0)));
 }
 + (UIFont *)preferredFontForTextStyle:(UIFontTextStyle)style compatibleWithTraitCollection:(UITraitCollection *)traits {
-    return RUINReplaceTextFont(%orig, __builtin_return_address(0));
+    return RUINReplaceTextFont(%orig, __builtin_extract_return_addr(__builtin_return_address(0)));
 }
 + (UIFont *)fontWithName:(NSString *)name size:(CGFloat)size {
     UIFont *original = %orig;
+    if (!original || sReplacingFont || !RUINLocalFontIsRegistered()) return original;
     if (!RUINIsSystemTextFont(original)) return original;
-    return RUINReplaceTextFont(original, __builtin_return_address(0));
+    return RUINReplaceTextFont(original, __builtin_extract_return_addr(__builtin_return_address(0)));
 }
 + (UIFont *)fontWithDescriptor:(UIFontDescriptor *)descriptor size:(CGFloat)size {
     UIFont *original = %orig;
     // Named icon/symbol fonts retain their own glyphs. LINE's basic text font
     // uses the system descriptor; only direct calls from LINE are replaced.
+    if (!original || sReplacingFont || !RUINLocalFontIsRegistered()) return original;
     if (!RUINIsSystemTextFont(original)) return original;
-    return RUINReplaceTextFont(original, __builtin_return_address(0));
+    return RUINReplaceTextFont(original, __builtin_extract_return_addr(__builtin_return_address(0)));
 }
 %end
 %end

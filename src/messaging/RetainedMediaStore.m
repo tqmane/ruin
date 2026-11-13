@@ -8,6 +8,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <os/lock.h>
 #include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -516,6 +517,12 @@ static BOOL RUINCommit(int rootFD,
     int _rootFD;
     NSString *_rootPath;
     dispatch_queue_t _queue;
+    os_unfair_lock _cacheLock;
+    NSMutableSet<NSString *> *_cachedScopeNames;
+    BOOL _scopeCacheValid;
+    time_t _cachedMtimeSec;
+    long _cachedMtimeNsec;
+    nlink_t _cachedNlink;
     atomic_uint_fast64_t _capturesAccepted;
     atomic_uint_fast64_t _capturesSucceeded;
     atomic_uint_fast64_t _capturesFailed;
@@ -573,6 +580,7 @@ static BOOL RUINCommit(int rootFD,
     }
     _rootFD = rootFD;
     _rootPath = [[NSString stringWithUTF8String:canonical] copy];
+    _cacheLock = OS_UNFAIR_LOCK_INIT;
     dispatch_queue_attr_t attributes = dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_UTILITY, 0);
     _queue = dispatch_queue_create("com.ruin.retained-media", attributes);
     atomic_init(&_capturesAccepted, 0);
@@ -600,7 +608,55 @@ static BOOL RUINCommit(int rootFD,
     });
 }
 
+- (void)invalidateScopeCache {
+    os_unfair_lock_lock(&_cacheLock);
+    _scopeCacheValid = NO;
+    os_unfair_lock_unlock(&_cacheLock);
+}
+
+- (BOOL)refreshAndHasScope:(nullable NSString *)scopeName {
+    struct stat st;
+    if (fstat(_rootFD, &st) != 0) return YES;
+    os_unfair_lock_lock(&_cacheLock);
+    @try {
+        if (!_scopeCacheValid ||
+            st.st_mtimespec.tv_sec != _cachedMtimeSec ||
+            st.st_mtimespec.tv_nsec != _cachedMtimeNsec ||
+            st.st_nlink != _cachedNlink) {
+            int scanFD = openat(_rootFD, ".", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+            DIR *dir = scanFD >= 0 ? fdopendir(scanFD) : NULL;
+            if (!dir) {
+                if (scanFD >= 0) close(scanFD);
+                _scopeCacheValid = NO;
+                return YES;
+            }
+            NSMutableSet<NSString *> *names = [NSMutableSet set];
+            struct dirent *entry = NULL;
+            while ((entry = readdir(dir)) != NULL) {
+                if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, "..")) continue;
+                if (entry->d_type != DT_DIR && entry->d_type != DT_UNKNOWN) continue;
+                NSString *name = [NSString stringWithUTF8String:entry->d_name];
+                if (name) [names addObject:name];
+            }
+            closedir(dir);
+            _cachedScopeNames = names;
+            _cachedMtimeSec = st.st_mtimespec.tv_sec;
+            _cachedMtimeNsec = st.st_mtimespec.tv_nsec;
+            _cachedNlink = st.st_nlink;
+            _scopeCacheValid = YES;
+        }
+        return scopeName ? [_cachedScopeNames containsObject:scopeName] : (_cachedScopeNames.count > 0);
+    } @finally {
+        os_unfair_lock_unlock(&_cacheLock);
+    }
+}
+
+- (BOOL)hasAnyScopes {
+    return [self refreshAndHasScope:nil];
+}
+
 - (void)finishCapture:(BOOL)success completion:(void (^ _Nullable)(BOOL success))completion {
+    if (success) [self invalidateScopeCache];
     atomic_fetch_add_explicit(success ? &_capturesSucceeded : &_capturesFailed, 1, memory_order_relaxed);
     if (!completion) return;
     @try { completion(success); }
@@ -675,15 +731,19 @@ static BOOL RUINCommit(int rootFD,
     NSDictionary *copiedKey = RUINCopyMessageKey(key);
     NSString *scopeName = copiedKey ? RUINScopeName(copiedKey) : nil;
     BOOL marked = scopeName && RUINWriteUnsentMarker(_rootFD, _rootPath, scopeName);
-    if (marked) atomic_fetch_add_explicit(&_unsentMarkSuccesses, 1, memory_order_relaxed);
+    if (marked) {
+        [self invalidateScopeCache];
+        atomic_fetch_add_explicit(&_unsentMarkSuccesses, 1, memory_order_relaxed);
+    }
     return marked;
 }
 
 - (BOOL)isUnsentForKey:(NSDictionary *)key {
     atomic_fetch_add_explicit(&_unsentQueries, 1, memory_order_relaxed);
+    if (![self refreshAndHasScope:nil]) return NO;
     NSDictionary *copiedKey = RUINCopyMessageKey(key);
     NSString *scopeName = copiedKey ? RUINScopeName(copiedKey) : nil;
-    if (!scopeName) return NO;
+    if (!scopeName || ![self refreshAndHasScope:scopeName]) return NO;
     int scopeFD = RUINOpenScope(_rootFD, scopeName.UTF8String, NO);
     if (scopeFD < 0) return NO;
     struct stat status;
@@ -695,9 +755,10 @@ static BOOL RUINCommit(int rootFD,
 
 - (NSArray<NSDictionary<NSString *,id> *> *)itemsForKey:(NSDictionary *)key {
     atomic_fetch_add_explicit(&_itemQueries, 1, memory_order_relaxed);
+    if (![self refreshAndHasScope:nil]) return @[];
     NSDictionary *copiedKey = RUINCopyMessageKey(key);
     NSString *scopeName = copiedKey ? RUINScopeName(copiedKey) : nil;
-    if (!scopeName) return @[];
+    if (!scopeName || ![self refreshAndHasScope:scopeName]) return @[];
     int scopeFD = RUINOpenScope(_rootFD, scopeName.UTF8String, NO);
     if (scopeFD < 0) return @[];
     struct stat scopeStatus;

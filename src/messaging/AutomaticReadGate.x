@@ -28,8 +28,24 @@ static char originalEnabledKey;
 static NSUInteger applied, restored;
 static atomic_ulong rejected;
 static NSMutableDictionary *hookStatus;
-static char boundaryObservationKey, boundaryObservationContext;
+static char boundaryObservationKey, boundaryObservationContext, layoutCacheKey;
 static atomic_ulong boundaryWillChanges;
+static atomic_uint_fast64_t readGatePolicyGeneration = ATOMIC_VAR_INIT(1);
+
+@interface RUINAutomaticReadLayoutCache : NSObject
+@property(nonatomic, weak) id gate;
+@property(nonatomic, weak) id chat;
+@property(nonatomic) uint64_t generation;
+@property(nonatomic) BOOL hold;
+@property(nonatomic) BOOL hasChatGetter;
+@end
+
+@implementation RUINAutomaticReadLayoutCache
+@end
+
+static inline void RUINBumpReadGateGeneration(void) {
+    atomic_fetch_add_explicit(&readGatePolicyGeneration, 1, memory_order_release);
+}
 
 static void HoldGate(id gate) {
     if (!NSThread.isMainThread || !gate) return;
@@ -85,6 +101,7 @@ static void RestoreGate(id gate) {
         self.revokedToken = RUINRevokeReadAfterUserReply(chat);
         NSDictionary *policyToken = RUINCaptureReadOnReplyToken(chat);
         atomic_fetch_add(&boundaryWillChanges, 1);
+        RUINBumpReadGateGeneration();
         if (policyToken.count) {
             __weak RUINAutomaticReadBoundaryObservation *weakObservation = self;
             id gate = self.gate;
@@ -102,6 +119,7 @@ static void RestoreGate(id gate) {
         id newBoundary = change[NSKeyValueChangeNewKey];
         self.receivedBoundary = [newBoundary isKindOfClass:NSNumber.class] ? newBoundary : nil;
         self.boundaryChanging = NO;
+        RUINBumpReadGateGeneration();
         if (token.count && [newBoundary isKindOfClass:NSNumber.class] &&
             [newBoundary longLongValue] == [token[@"boundary"] longLongValue] &&
             RUINAllowReadAfterUserReplyWithToken(chat, token)) RUINAllowAutomaticReadForReply(token);
@@ -136,34 +154,38 @@ static BOOL Compatible(void) {
 }
 static void Apply(UIViewController *controller) {
     if (!NSThread.isMainThread || !Compatible()) return;
+    uint64_t generation = atomic_load_explicit(&readGatePolicyGeneration, memory_order_acquire);
     [controllers addObject:controller];
     id context = RUINCopySwiftField(controller, "chatContext");
-    Class contextClass = NSClassFromString(@"_TtC15LineMessagingUI11ChatContext");
+    static Class contextClass;
+    static dispatch_once_t clsOnce;
+    dispatch_once(&clsOnce, ^{ contextClass = NSClassFromString(@"_TtC15LineMessagingUI11ChatContext"); });
     if (!context || object_getClass(context) != contextClass) { rejected++; return; }
     id gate = RUINCopySwiftField(context, "markAsReadController");
     if (!gate) { rejected++; return; }
     BOOL hold = [NSUserDefaults.standardUserDefaults boolForKey:RUINReadControlEnabledDefaultsKey];
     __block BOOL observedBoundary = NO;
-    if (hold) {
-        SEL selector = sel_registerName("chat");
-        Method method = class_getInstanceMethod(object_getClass(controller), selector);
-        if (method && !strcmp(method_getTypeEncoding(method), "@16@0:8")) {
-            id chat = [(id<RUINMessagingChatOwner>)controller chat];
-            if ([chat isKindOfClass:NSManagedObject.class]) {
-                NSManagedObjectContext *owner = [chat managedObjectContext];
-                if (owner) {
-                    __block BOOL policy = YES;
-                    [owner performBlockAndWait:^{
-                        if (RUINReadPolicyHasIdentity(chat)) {
-                            NSDictionary *token = RUINCaptureReadOnReplyToken(chat);
-                            if (token.count) observedBoundary = ObserveBoundary(controller, chat, gate, token);
-                            policy = RUINShouldSuppressReadForChat(chat);
-                            if (token.count && !observedBoundary) policy = YES;
-                        }
-                    }];
-                    hold = policy;
+    id currentChat = nil;
+    BOOL hasChatGetter = NO;
+    SEL selector = sel_registerName("chat");
+    Method method = class_getInstanceMethod(object_getClass(controller), selector);
+    if (method && !strcmp(method_getTypeEncoding(method), "@16@0:8")) {
+        hasChatGetter = YES;
+        currentChat = [(id<RUINMessagingChatOwner>)controller chat];
+    }
+    if (hold && currentChat && [currentChat isKindOfClass:NSManagedObject.class]) {
+        NSManagedObjectContext *owner = [currentChat managedObjectContext];
+        if (owner) {
+            __block BOOL policy = YES;
+            [owner performBlockAndWait:^{
+                if (RUINReadPolicyHasIdentity(currentChat)) {
+                    NSDictionary *token = RUINCaptureReadOnReplyToken(currentChat);
+                    if (token.count) observedBoundary = ObserveBoundary(controller, currentChat, gate, token);
+                    policy = RUINShouldSuppressReadForChat(currentChat);
+                    if (token.count && !observedBoundary) policy = YES;
                 }
-            }
+            }];
+            hold = policy;
         }
     }
     if (!observedBoundary) {
@@ -171,9 +193,35 @@ static void Apply(UIViewController *controller) {
         [old invalidate];
         objc_setAssociatedObject(controller, &boundaryObservationKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
+    RUINAutomaticReadLayoutCache *cache = objc_getAssociatedObject(controller, &layoutCacheKey);
+    if (!cache) {
+        cache = [RUINAutomaticReadLayoutCache new];
+        objc_setAssociatedObject(controller, &layoutCacheKey, cache, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    cache.gate = gate;
+    cache.chat = currentChat;
+    cache.hasChatGetter = hasChatGetter;
+    cache.hold = hold;
+    cache.generation = generation;
     if (hold) {
         HoldGate(gate);
     } else RestoreGate(gate);
+}
+
+static void ApplyForLayout(UIViewController *controller) {
+    if (!NSThread.isMainThread || !Compatible()) return;
+    uint64_t generation = atomic_load_explicit(&readGatePolicyGeneration, memory_order_acquire);
+    RUINAutomaticReadLayoutCache *cache = objc_getAssociatedObject(controller, &layoutCacheKey);
+    id gate = cache.gate;
+    if (cache && cache.generation == generation && gate) {
+        id currentChat = cache.hasChatGetter ? [(id<RUINMessagingChatOwner>)controller chat] : nil;
+        if (currentChat == cache.chat) {
+            if (cache.hold) HoldGate(gate);
+            else RestoreGate(gate);
+            return;
+        }
+    }
+    Apply(controller);
 }
 
 void RUINAllowAutomaticReadForReply(NSDictionary *token) {
@@ -182,6 +230,7 @@ void RUINAllowAutomaticReadForReply(NSDictionary *token) {
         dispatch_async(dispatch_get_main_queue(), ^{ RUINAllowAutomaticReadForReply(copied); }); return;
     }
     if (!RUINReadOnReplyTokenIsAllowed(token)) return;
+    RUINBumpReadGateGeneration();
     for (UIViewController *controller in controllers.allObjects) {
         RUINAutomaticReadBoundaryObservation *observation = objc_getAssociatedObject(controller, &boundaryObservationKey);
         if (observation.observing && !observation.boundaryChanging &&
@@ -191,6 +240,7 @@ void RUINAllowAutomaticReadForReply(NSDictionary *token) {
 }
 void RUINRefreshAutomaticReadGate(void) {
     if (!NSThread.isMainThread) { dispatch_async(dispatch_get_main_queue(), ^{ RUINRefreshAutomaticReadGate(); }); return; }
+    RUINBumpReadGateGeneration();
     for (UIViewController *controller in controllers.allObjects) Apply(controller);
 }
 %group RUINAutomaticDidLoad
@@ -226,9 +276,9 @@ void RUINRefreshAutomaticReadGate(void) {
 %group RUINAutomaticLayout
 %hook RUINAutomaticChatController
 - (void)viewDidLayoutSubviews {
-    Apply((id)self);
+    ApplyForLayout((id)self);
     %orig;
-    Apply((id)self);
+    ApplyForLayout((id)self);
 }
 %end
 %end
@@ -236,6 +286,13 @@ void RUINRefreshAutomaticReadGate(void) {
 void RUINInstallAutomaticReadGate(void) {
     if (!NSThread.isMainThread) { dispatch_async(dispatch_get_main_queue(), ^{ RUINInstallAutomaticReadGate(); }); return; }
     if (!Compatible()) return;
+    static dispatch_once_t defaultsObserverOnce;
+    dispatch_once(&defaultsObserverOnce, ^{
+        [NSNotificationCenter.defaultCenter addObserverForName:NSUserDefaultsDidChangeNotification
+            object:nil queue:nil usingBlock:^(__unused NSNotification *note) {
+                RUINBumpReadGateGeneration();
+            }];
+    });
     if (!controllers) controllers = [NSHashTable weakObjectsHashTable];
     if (!hookStatus) hookStatus = [NSMutableDictionary dictionary];
     Class cls = NSClassFromString(@"_TtC15LineMessagingUI18ChatViewController");

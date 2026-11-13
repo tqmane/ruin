@@ -414,6 +414,8 @@ NSDictionary *RUINNativeTabAvailabilityDiagnostics(void) {
 
 void RUINInstallNativeTabAvailability(void) {
 #if !defined(RUIN_NATIVE_TAB_AVAILABILITY_HOST_CHECK)
+    static atomic_bool gNativeTabInstallAttempted = ATOMIC_VAR_INIT(0);
+    if (atomic_load_explicit(&gNativeTabInstallAttempted, memory_order_acquire)) return;
     const RUINVersionMapping *versionMapping = RUINCurrentMapping();
     RUINMainExecutableImage image={0};
     BOOL guestImage=NO;
@@ -424,6 +426,7 @@ void RUINInstallNativeTabAvailability(void) {
     } else if (!RUINResolveMainExecutableImage(&image)) { atomic_store(&status,1); return; }
     static dispatch_once_t once;
     dispatch_once(&once, ^{
+        atomic_store_explicit(&gNativeTabInstallAttempted, YES, memory_order_release);
         const RUINNativeTabMapping *mapping = &versionMapping->nativeTabs;
         if (mapping->status != RUINMappingStatusVerified) { atomic_store(&status,1); return; }
         intptr_t slide = image.slide;

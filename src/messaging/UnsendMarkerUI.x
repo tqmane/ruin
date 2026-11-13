@@ -293,16 +293,48 @@ static NSURL *UIResolvedVideoURL(UICollectionViewCell *cell, RUINUnsendMarkerRec
         }
     return nil;
 }
+static char UIMediaObservedGenKey, UIMediaObservedURLKey, UIBadgeEpochKey;
+static atomic_uint_fast64_t UIMediaChangeEpoch;
+
+static uint64_t UICurrentChangeEpoch(void) {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        [NSNotificationCenter.defaultCenter addObserverForName:@"com.tqmane.ruin.retained-media-changed"
+                                                        object:nil queue:nil usingBlock:^(__unused NSNotification *note) {
+            atomic_fetch_add_explicit(&UIMediaChangeEpoch, 1, memory_order_release);
+        }];
+    });
+    return RUINUnsendOperationGeneration() ^
+        (atomic_load_explicit(&UIMediaChangeEpoch, memory_order_acquire) << 32);
+}
+
 static void UIObserveVisibleMedia(UICollectionViewCell *cell, RUINUnsendMarkerRecord *record, BOOL force) {
+    static Class videoClass1, videoClass2;
+    static dispatch_once_t videoOnce;
+    dispatch_once(&videoOnce, ^{
+        videoClass1 = NSClassFromString(@"_TtC17LineMessagingUIV220ChatVideoMessageCell");
+        videoClass2 = NSClassFromString(@"_TtC17LineMessagingUIV222ChatVideoMessageCellV2");
+    });
     if (!UIEnabled() || !UIMediaCell(cell) || record.mediaObservationPending || !record.key.count ||
         (!force && NSProcessInfo.processInfo.systemUptime - record.lastMediaObservation < 1)) return;
+    NSUInteger generation = record.generation;
+    NSNumber *observedGen = objc_getAssociatedObject(record, &UIMediaObservedGenKey);
+    BOOL isVideoCell = (videoClass1 && [cell isKindOfClass:videoClass1]) ||
+        (videoClass2 && [cell isKindOfClass:videoClass2]);
+    NSURL *videoURL = (isVideoCell || ![observedGen isEqual:@(generation)]) ?
+        [UIResolvedVideoURL(cell, record) copy] : nil;
+    if (!force && [observedGen isEqual:@(generation)]) {
+        if (!isVideoCell || !videoURL) return;
+        NSURL *previousURL = objc_getAssociatedObject(record, &UIMediaObservedURLKey);
+        if ([previousURL isEqual:videoURL]) return;
+    }
     NSManagedObject *chat = record.chat;
     NSManagedObjectContext *context = chat.managedObjectContext;
     NSString *server = record.server;
     if (!context || !server) return;
     record.mediaObservationPending = YES; record.lastMediaObservation = NSProcessInfo.processInfo.systemUptime;
-    NSURL *videoURL = [UIResolvedVideoURL(cell, record) copy];
-    NSUInteger generation = record.generation;
+    objc_setAssociatedObject(record, &UIMediaObservedGenKey, @(generation), OBJC_ASSOCIATION_COPY_NONATOMIC);
+    if (videoURL) objc_setAssociatedObject(record, &UIMediaObservedURLKey, videoURL, OBJC_ASSOCIATION_COPY_NONATOMIC);
     __weak RUINUnsendMarkerRecord *weakRecord = record;
     // ponytail: reuse the existing visible-cell heartbeat until LINE exposes a
     // verified common media-download completion callback. Only media cells are
@@ -316,22 +348,53 @@ static void UIObserveVisibleMedia(UICollectionViewCell *cell, RUINUnsendMarkerRe
         });
     }];
 }
-static void UIRefreshCell(UICollectionViewCell *cell) {
-    if (![cell isKindOfClass:objc_getClass(UICellClass)]) return;
+static void UIRefreshCellInternal(UICollectionViewCell *cell, BOOL fromTimer) {
+    static Class cellClass, modelClass, videoClass1, videoClass2, bubbleClass, statusClass;
+    static dispatch_once_t clsOnce;
+    dispatch_once(&clsOnce, ^{
+        cellClass = objc_getClass(UICellClass);
+        modelClass = objc_getClass(UIModelClass);
+        videoClass1 = NSClassFromString(@"_TtC17LineMessagingUIV220ChatVideoMessageCell");
+        videoClass2 = NSClassFromString(@"_TtC17LineMessagingUIV222ChatVideoMessageCellV2");
+        bubbleClass = objc_getClass("_TtC17LineMessagingUIV224ChatMessageContainerView");
+        statusClass = NSClassFromString(@"_TtC17LineMessagingUIV221ChatMessageStatusView");
+    });
+    if (!cellClass || ![cell isKindOfClass:cellClass]) return;
+    BOOL enabled = UIEnabled();
+    if (!enabled && !objc_getAssociatedObject(cell, &UIBadgeKey)) {
+        if (UICells && [UICells containsObject:cell]) {
+            UIRemoveBadge(cell);
+            UIClearBinding(UIRecord(cell));
+        }
+        return;
+    }
     if (!UICells) UICells = [NSHashTable weakObjectsHashTable]; [UICells addObject:cell];
     RUINUnsendMarkerRecord *record = UIRecord(cell);
-    if (!UIEnabled() || !cell.window || cell.hidden || cell.alpha <= 0.01 || UIApplication.sharedApplication.applicationState != UIApplicationStateActive) {
-        UIRemoveBadge(cell); UIClearBinding(record); return;
+    if (!enabled || !cell.window || cell.hidden || cell.alpha <= 0.01 || UIApplication.sharedApplication.applicationState != UIApplicationStateActive) {
+        UIRemoveBadge(cell); UIClearBinding(record);
+        objc_setAssociatedObject(cell, &UIBadgeEpochKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        return;
+    }
+    uint64_t epoch = UICurrentChangeEpoch();
+    NSArray<NSNumber *> *badgeStamp = @[ @(record.generation), @(epoch) ];
+    if (fromTimer && !record.bindingPending && record.key.count) {
+        NSArray<NSNumber *> *lastStamp = objc_getAssociatedObject(cell, &UIBadgeEpochKey);
+        if ([lastStamp isEqual:badgeStamp]) {
+            if ((videoClass1 && [cell isKindOfClass:videoClass1]) ||
+                (videoClass2 && [cell isKindOfClass:videoClass2])) {
+                UIObserveVisibleMedia(cell, record, NO);
+            }
+            return;
+        }
     }
     @try {
         id model = UIField(cell, "messageViewModel");
-        BOOL videoCell = [cell isKindOfClass:NSClassFromString(@"_TtC17LineMessagingUIV220ChatVideoMessageCell")] ||
-            [cell isKindOfClass:NSClassFromString(@"_TtC17LineMessagingUIV222ChatVideoMessageCellV2")];
+        BOOL videoCell = (videoClass1 && [cell isKindOfClass:videoClass1]) ||
+            (videoClass2 && [cell isKindOfClass:videoClass2]);
         if (model && (!UIHasModelProbe || (videoCell && !UIHasVideoModelProbe))) {
             UIObserveMetadata(cell); UIHasModelProbe = YES;
             if (videoCell) UIHasVideoModelProbe = YES;
         }
-        Class modelClass = objc_getClass(UIModelClass);
         if (!modelClass || ![model isKindOfClass:modelClass] || !UIMayBind(record, model)) { UIRemoveBadge(cell); return; }
         NSString *server = UIServerNumber(UIField(model, "messageIdentifier.server.value"));
         UIViewController *owner = UIOwnerController(cell); NSManagedObject *chat = UIOwnerChat(owner);
@@ -361,19 +424,20 @@ static void UIRefreshCell(UICollectionViewCell *cell) {
                             !weakChat || UIOwnerChat(UIOwnerController(current)) != weakChat || !key.count) {
                             atomic_fetch_add(&UIUnresolvedCells, 1); UIRemoveBadge(current); UIClearBinding(latest); return;
                         }
-                        latest.key = key; atomic_fetch_add(&UIBoundCells, 1); UIRefreshCell(current);
+                        latest.key = key; atomic_fetch_add(&UIBoundCells, 1); UIRefreshCellInternal(current, NO);
                     } @catch (__unused NSException *exception) { atomic_fetch_add(&UIErrors, 1); UIRemoveBadge(current); UIClearBinding(UIRecord(current)); }
                 });
             }];
             UIRemoveBadge(cell); return;
         }
+        objc_setAssociatedObject(cell, &UIBadgeEpochKey, @[ @(record.generation), @(epoch) ], OBJC_ASSOCIATION_COPY_NONATOMIC);
         UIObserveVisibleMedia(cell, record, NO);
         NSArray *mediaItems = RUINRetainedMediaItems(record.key);
         if (!mediaItems.count && !RUINUnsendOperationHasRetainedMarker(record.key)) { UIRemoveBadge(cell); return; }
         atomic_fetch_add(&UIMarkerMatches, 1);
         UIView *bubble = UIField(cell, "contentContainerView"), *status = UIField(cell, "messageStatusView");
-        if (object_getClass(bubble) != objc_getClass("_TtC17LineMessagingUIV224ChatMessageContainerView") ||
-            ![status isKindOfClass:NSClassFromString(@"_TtC17LineMessagingUIV221ChatMessageStatusView")] ||
+        if (object_getClass(bubble) != bubbleClass ||
+            ![status isKindOfClass:statusClass] ||
             ![bubble isDescendantOfView:cell.contentView] || ![status isDescendantOfView:cell.contentView] || status.hidden) { UIRemoveBadge(cell); return; }
         BOOL retainedMedia = mediaItems.count && UIUpdateMedia(cell, bubble, record.key);
         UILabel *badge = objc_getAssociatedObject(cell, &UIBadgeKey);
@@ -402,17 +466,20 @@ static void UIRefreshCell(UICollectionViewCell *cell) {
         [cell.contentView bringSubviewToFront:badge];
     } @catch (__unused NSException *exception) { atomic_fetch_add(&UIErrors, 1); UIRemoveBadge(cell); UIClearBinding(record); }
 }
-static void UIRefreshTracked(void) {
+static void UIRefreshTrackedInternal(BOOL fromTimer);
+static void UIRefreshCell(UICollectionViewCell *cell) { UIRefreshCellInternal(cell, NO); }
+static void UIRefreshTracked(void) { UIRefreshTrackedInternal(NO); }
+static void UIRefreshTrackedInternal(BOOL fromTimer) {
     NSUInteger visible = 0;
-    for (UICollectionViewCell *cell in UICells.allObjects) { UIRefreshCell(cell); if (cell.window && !cell.hidden) visible++; }
+    for (UICollectionViewCell *cell in UICells.allObjects) { UIRefreshCellInternal(cell, fromTimer); if (cell.window && !cell.hidden) visible++; }
     atomic_store(&UIVisibleCount, (unsigned int)visible);
     BOOL run = visible && UIEnabled() && UIApplication.sharedApplication.applicationState == UIApplicationStateActive;
     if (!run) { [UITimer invalidate]; UITimer = nil; }
     else if (!UITimer) {
         // The retained object is unchanged, so native layout may not rerun when
         // its sidecar marker arrives. Poll only weakly tracked visible cells.
-        UITimer = [NSTimer timerWithTimeInterval:1 repeats:YES block:^(__unused NSTimer *timer) { UIRefreshTracked(); }];
-        [NSRunLoop.mainRunLoop addTimer:UITimer forMode:NSRunLoopCommonModes];
+        UITimer = [NSTimer timerWithTimeInterval:1 repeats:YES block:^(__unused NSTimer *timer) { UIRefreshTrackedInternal(YES); }];
+        [NSRunLoop.mainRunLoop addTimer:UITimer forMode:NSDefaultRunLoopMode];
     }
 }
 static void UINativeCallback(id object, NSUInteger index, void (^original)(void)) {

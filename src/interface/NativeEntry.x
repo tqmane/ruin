@@ -121,9 +121,14 @@ static void RUINAttachHomeSettingsButton(UIViewController *controller) {
         objc_setAssociatedObject(controller, &homeItemKey, item, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
     NSArray *items = controller.navigationItem.rightBarButtonItems ?: @[];
-    if (![items containsObject:item]) controller.navigationItem.rightBarButtonItems = [items arrayByAddingObject:item];
+    BOOL addedItem = NO;
+    if (![items containsObject:item]) {
+        controller.navigationItem.rightBarButtonItems = [items arrayByAddingObject:item];
+        addedItem = YES;
+    }
+    BOOL becameAvailable = !homeEntryAvailable;
     homeEntryAvailable = YES;
-    RUINRefreshRuntimeReport();
+    if (addedItem || becameAvailable) RUINRefreshRuntimeReport();
 }
 
 %group RUINHomeEntry
@@ -174,10 +179,18 @@ static void RUINAttachHomeSettingsButton(UIViewController *controller) {
 %end
 %end
 
+static BOOL RUINNativeEntryTargetMatches(void) {
+    static BOOL matched = NO;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        matched = RUINTargetMetadataMatchesInfo(NSBundle.mainBundle.infoDictionary);
+    });
+    return matched;
+}
+
 void RUINInstallNativeEntry(void) {
     if (nativeHookInstalled && homeHookInstalled && friendHomeHookInstalled) return;
-    NSDictionary *info = NSBundle.mainBundle.infoDictionary;
-    if (!RUINTargetMetadataMatchesInfo(info)) return;
+    if (!RUINNativeEntryTargetMatches()) return;
     for (NSString *name in @[@"_TtC8LineHome18HomeViewController", @"_TtC11LineHomeTab23FriendTabViewController"]) {
         BOOL *hookInstalled = [name containsString:@"FriendTab"] ? &friendHomeHookInstalled : &homeHookInstalled;
         if (*hookInstalled) continue;

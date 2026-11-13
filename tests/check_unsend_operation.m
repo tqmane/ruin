@@ -194,14 +194,18 @@ int main(void) {
                 WithScope(fixtureScopePCs, fixtureScopePCCount, ^{
                     Check([a executeFetchRequest:Request(@"9007199254740993") error:NULL].count == 1, @"non-unsend operation authorized retention");
                 });
+                uint64_t generationBeforeDuplicate = RUINUnsendOperationGeneration();
                 CaptureOperation(@"private-chat-sentinel", @"9007199254740993", 65);
                 WithScope(fixtureScopePCs, fixtureScopePCCount, ^{ Destroy(a, Request(@"9007199254740993")); });
                 Check([RUINUnsendOperationDiagnostics()[@"markerCount"] unsignedIntegerValue] == 1, @"duplicate operation duplicated marker");
+                Check(RUINUnsendOperationGeneration() >= generationBeforeDuplicate, @"marker generation regressed");
                 WithScope(fixtureScopePCs, 3, ^{ Destroy(a, Request(@"13")); });
                 Check(missingScope.isDeleted, @"partial call chain suppressed unrelated delete");
                 [a deleteObject:manual]; Check(manual.isDeleted, @"manual user deletion was suppressed");
+                uint64_t generationBeforeMedia = RUINUnsendOperationGeneration();
                 CaptureOperation(@"media-chat", @"14", 64);
                 WithScope(fixtureScopePCs, fixtureScopePCCount, ^{ Destroy(a, Request(@"14")); });
+                Check(RUINUnsendOperationGeneration() > generationBeforeMedia, @"new retained marker did not bump generation");
                 Check(!media.isDeleted && [[media displayedText] isEqual:@"native media caption"], @"media model was deleted or fabricated as plaintext");
                 Check([a save:NULL], @"post-operation save failed");
             }];
@@ -277,7 +281,9 @@ int main(void) {
             fixtureInfo = @{ @"RUINOriginalBundleIdentifier":@"jp.naver.line", @"CFBundleShortVersionString":@"26.16.0", @"CFBundleVersion":@"2026.1006.1718" };
             RUINInstallUnsendOperation();
             Check([RUINUnsendOperationDiagnostics()[@"nativeCodeVerified"] boolValue], @"26.16 mapping did not recover after a gated host");
+            uint64_t generationBeforeClear = RUINUnsendOperationGeneration();
             Check(RUINClearUnsendOperationMarkers() && [RUINUnsendOperationDiagnostics()[@"markerCount"] unsignedIntegerValue] == 0, @"marker clear failed");
+            Check(RUINUnsendOperationGeneration() > generationBeforeClear, @"marker clear did not bump generation");
             [a performBlockAndWait:^{ Check([[retained displayedText] isEqual:@"RUIN TEST private-original-sentinel"], @"cleared marker still rendered a label"); }];
             NSString *diagnostics = [RUINUnsendOperationDiagnostics() description];
             for (NSString *private in @[@"private-chat-sentinel", @"private-original-sentinel", @"9007199254740993", fixtureSupport.path])

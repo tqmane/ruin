@@ -138,6 +138,39 @@ int main(void)
         assert(!RUINVerifyHostImage(&arm64Mapping.host, mainImage.header));
         assert(!RUINMappingForImageInRegistryForTesting(info, mainImage.header, variants, 2));
 
+        struct {
+            struct mach_header_64 header;
+            struct segment_command_64 text;
+        } rangeImage;
+        memset(&rangeImage, 0, sizeof(rangeImage));
+        rangeImage.header = (struct mach_header_64){
+            .magic = MH_MAGIC_64,
+            .cputype = CPU_TYPE_ARM64,
+            .cpusubtype = CPU_SUBTYPE_ARM64_ALL,
+            .filetype = MH_EXECUTE,
+            .ncmds = 1,
+            .sizeofcmds = sizeof(rangeImage.text)
+        };
+        rangeImage.text = (struct segment_command_64){
+            .cmd = LC_SEGMENT_64,
+            .cmdsize = sizeof(rangeImage.text),
+            .vmsize = 0x4000,
+            .fileoff = 0,
+            .initprot = VM_PROT_READ | VM_PROT_EXECUTE
+        };
+        memcpy(rangeImage.text.segname, "__TEXT", sizeof("__TEXT") - 1);
+        uintptr_t textStart = 0, textSize = 0;
+        assert(RUINImageExecutableTextRange(&rangeImage.header, &textStart, &textSize));
+        assert(textStart == (uintptr_t)&rangeImage.header && textSize == 0x4000);
+        rangeImage.header.filetype = MH_DYLIB;
+        assert(RUINImageExecutableTextRange(&rangeImage.header, &textStart, &textSize));
+        assert(textStart == (uintptr_t)&rangeImage.header && textSize == 0x4000);
+        rangeImage.header.filetype = MH_BUNDLE;
+        assert(!RUINImageExecutableTextRange(&rangeImage.header, &textStart, &textSize));
+        rangeImage.header.filetype = MH_EXECUTE;
+        rangeImage.text.initprot = VM_PROT_READ;
+        assert(!RUINImageExecutableTextRange(&rangeImage.header, &textStart, &textSize));
+
         unlink(symlinkPath); unlink(executable); unlink(fakeLINE); unlink(hook); rmdir(directory);
         puts("PASS generic main-image selection, ARM64-only host verification, canonical paths, ambiguity, UUID variant selection and header/slide/index pairing");
     }
