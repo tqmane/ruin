@@ -68,9 +68,57 @@ static atomic_uint_fast64_t transportFlagShapes[2][FlagShapeCount];
 static atomic_bool constructorAttempted;
 static atomic_bool constructorTargetSupported, constructorTransportReady, constructorPreferenceEnabled;
 static atomic_uint_fast64_t filteredMetadataCalls, persistedMarkers, unresolvedMarkerAttempts, markerFailures, ambiguousMarkerSamples;
+#include <sys/stat.h>
+
 static char pendingFilteredKey, transportReadingKey;
 static os_unfair_lock markerLock = OS_UNFAIR_LOCK_INIT;
 static sqlite3 *markerDatabase;
+static NSMutableSet<NSString *> *knownEventMessageIDs;
+static NSMutableDictionary<NSArray<NSString *> *, NSNumber *> *cachedBindingResults;
+static BOOL eventIndexLoaded;
+static NSString *cachedEventPath;
+static dev_t cachedEventDev;
+static ino_t cachedEventIno;
+static struct timespec cachedEventMtime;
+static off_t cachedEventSize;
+static atomic_bool eventIndexReady, hasAnyEventMarkers;
+
+static NSURL *MarkerURL(void) {
+#if defined(RUIN_HOST_CHECK) && RUIN_HOST_CHECK
+    NSURL *root = [NSFileManager.defaultManager URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask].firstObject;
+    return [root URLByAppendingPathComponent:@"RUIN/unsend-markers.sqlite"];
+#else
+    static NSURL *cached;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSURL *root = [NSFileManager.defaultManager URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask].firstObject;
+        cached = [[root URLByAppendingPathComponent:@"RUIN/unsend-markers.sqlite"] copy];
+    });
+    return cached;
+#endif
+}
+static void UpdateEventStatLocked(NSURL *url) {
+    struct stat st;
+    if (url && stat(url.fileSystemRepresentation, &st) == 0) {
+        cachedEventDev = st.st_dev; cachedEventIno = st.st_ino;
+        cachedEventMtime = st.st_mtimespec; cachedEventSize = st.st_size;
+    } else {
+        cachedEventDev = 0; cachedEventIno = 0;
+        cachedEventMtime = (struct timespec){0, 0}; cachedEventSize = 0;
+    }
+}
+static void PublishEventStateLocked(void) {
+    atomic_store_explicit(&hasAnyEventMarkers, knownEventMessageIDs.count > 0, memory_order_release);
+    atomic_store_explicit(&eventIndexReady, YES, memory_order_release);
+}
+static void InvalidateCachedBindingsForMessageLocked(NSString *message) {
+    if (!cachedBindingResults.count) return;
+    NSMutableArray *toRemove = [NSMutableArray array];
+    for (NSArray<NSString *> *tuple in cachedBindingResults) {
+        if ([tuple[3] isEqualToString:message]) [toRemove addObject:tuple];
+    }
+    [cachedBindingResults removeObjectsForKeys:toRemove];
+}
 
 static BOOL MarkerToken(id value) {
     if (![value isKindOfClass:NSString.class] || ![value length]) return NO;
@@ -97,11 +145,10 @@ static int MarkerBind(sqlite3_stmt *statement, int index, NSString *value) {
 // Called only under markerLock, lazily after a real callback (not in a constructor).
 static BOOL OpenMarkers(void) {
     if (markerDatabase) return YES;
-    NSURL *root = [NSFileManager.defaultManager URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask].firstObject;
-    if (!root) return NO;
-    root = [root URLByAppendingPathComponent:@"RUIN" isDirectory:YES];
+    NSURL *url = MarkerURL();
+    NSURL *root = url.URLByDeletingLastPathComponent;
+    if (!url || !root) return NO;
     if (![NSFileManager.defaultManager createDirectoryAtURL:root withIntermediateDirectories:YES attributes:nil error:NULL]) return NO;
-    NSURL *url = [root URLByAppendingPathComponent:@"unsend-markers.sqlite"];
     int status = sqlite3_open_v2(url.fileSystemRepresentation, &markerDatabase,
         SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, NULL);
     if (status == SQLITE_OK) {
@@ -121,11 +168,74 @@ static BOOL OpenMarkers(void) {
 #endif
     return YES;
 }
+static void EnsureEventIndexLocked(void) {
+    NSURL *url = MarkerURL();
+    NSString *path = url.path ?: @"";
+    if (markerDatabase != NULL && eventIndexLoaded && [cachedEventPath isEqualToString:path]) return;
+    struct stat st;
+    BOOL exists = url && stat(url.fileSystemRepresentation, &st) == 0;
+    if (!exists && !markerDatabase) {
+        if (!eventIndexLoaded || ![cachedEventPath isEqualToString:path] || knownEventMessageIDs.count != 0) {
+            knownEventMessageIDs = [NSMutableSet set];
+            cachedBindingResults = [NSMutableDictionary dictionary];
+            cachedEventPath = [path copy];
+            cachedEventDev = 0; cachedEventIno = 0;
+            cachedEventMtime = (struct timespec){0, 0}; cachedEventSize = 0;
+            eventIndexLoaded = YES;
+        }
+        PublishEventStateLocked();
+        return;
+    }
+    if (!markerDatabase && eventIndexLoaded && [cachedEventPath isEqualToString:path] &&
+        cachedEventDev == st.st_dev && cachedEventIno == st.st_ino &&
+        cachedEventMtime.tv_sec == st.st_mtimespec.tv_sec &&
+        cachedEventMtime.tv_nsec == st.st_mtimespec.tv_nsec &&
+        cachedEventSize == st.st_size) {
+        PublishEventStateLocked();
+        return;
+    }
+    sqlite3 *database = markerDatabase, *readOnly = NULL;
+    if (!database && url) {
+        if (sqlite3_open_v2(url.fileSystemRepresentation, &readOnly, SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX, NULL) != SQLITE_OK) {
+            if (readOnly) sqlite3_close_v2(readOnly);
+            return;
+        }
+        sqlite3_busy_timeout(readOnly, 30);
+        database = readOnly;
+    }
+    NSMutableSet<NSString *> *loaded = [NSMutableSet set];
+    BOOL queryOK = NO;
+    sqlite3_stmt *statement = NULL;
+    if (database && sqlite3_prepare_v2(database, "SELECT DISTINCT message FROM events", -1, &statement, NULL) == SQLITE_OK) {
+        int stepStatus = SQLITE_OK;
+        while ((stepStatus = sqlite3_step(statement)) == SQLITE_ROW) {
+            const char *m = (const char *)sqlite3_column_text(statement, 0);
+            if (!m) continue;
+            NSString *msg = [NSString stringWithUTF8String:m];
+            if (msg) [loaded addObject:msg];
+        }
+        queryOK = (stepStatus == SQLITE_DONE);
+    }
+    sqlite3_finalize(statement);
+    if (readOnly) sqlite3_close_v2(readOnly);
+    knownEventMessageIDs = loaded;
+    cachedBindingResults = [NSMutableDictionary dictionary];
+    cachedEventPath = [path copy];
+    if (exists) {
+        cachedEventDev = st.st_dev; cachedEventIno = st.st_ino;
+        cachedEventMtime = st.st_mtimespec; cachedEventSize = st.st_size;
+    } else {
+        UpdateEventStatLocked(url);
+    }
+    eventIndexLoaded = queryOK || !exists;
+    PublishEventStateLocked();
+}
 static BOOL RecordMarker(NSString *message, NSString *from, NSString *to) {
     os_unfair_lock_lock(&markerLock);
     BOOL ok = NO;
     @try {
         if (!OpenMarkers()) return NO;
+        EnsureEventIndexLocked();
         sqlite3_stmt *statement = NULL;
         int status = sqlite3_prepare_v2(markerDatabase,
             "INSERT OR IGNORE INTO events(message,from_mid,to_mid) VALUES(?,?,?);", -1, &statement, NULL);
@@ -134,6 +244,14 @@ static BOOL RecordMarker(NSString *message, NSString *from, NSString *to) {
         if (status == SQLITE_OK) status = MarkerBind(statement, 3, to);
         if (status == SQLITE_OK) status = sqlite3_step(statement);
         sqlite3_finalize(statement); ok = status == SQLITE_DONE;
+        if (ok) {
+            if (!knownEventMessageIDs) knownEventMessageIDs = [NSMutableSet set];
+            [knownEventMessageIDs addObject:[message copy]];
+            InvalidateCachedBindingsForMessageLocked(message);
+            eventIndexLoaded = YES;
+            UpdateEventStatLocked(MarkerURL());
+            PublishEventStateLocked();
+        }
     } @finally { os_unfair_lock_unlock(&markerLock); }
     return ok;
 }
@@ -146,6 +264,11 @@ static BOOL MarkerForKey(NSDictionary *key) {
     os_unfair_lock_lock(&markerLock);
     BOOL matched = NO;
     @try {
+        EnsureEventIndexLocked();
+        if (![knownEventMessageIDs containsObject:message]) return NO;
+        NSArray<NSString *> *cacheKey = @[[key[@"store"] copy], @"talk", [key[@"chat"] copy], message];
+        NSNumber *cached = cachedBindingResults[cacheKey];
+        if (cached != nil && markerDatabase != NULL) return cached.boolValue;
         if (!OpenMarkers()) { atomic_fetch_add(&markerFailures, 1); return NO; }
         if (sqlite3_exec(markerDatabase, "BEGIN IMMEDIATE", NULL, NULL, NULL) != SQLITE_OK) { atomic_fetch_add(&markerFailures, 1); return NO; }
         sqlite3_stmt *statement = NULL;
@@ -167,6 +290,7 @@ static BOOL MarkerForKey(NSDictionary *key) {
         if (status == SQLITE_OK) status = MarkerBind(statement, 2, key[@"store"]);
         if (status == SQLITE_OK) status = MarkerBind(statement, 3, key[@"chat"]);
         if (status == SQLITE_OK) status = sqlite3_step(statement);
+        int insertedBindings = status == SQLITE_DONE ? sqlite3_changes(markerDatabase) : 0;
         sqlite3_finalize(statement); statement = NULL;
         if (status == SQLITE_DONE) status = sqlite3_prepare_v2(markerDatabase,
             "SELECT COUNT(DISTINCT store) FROM bindings WHERE event_id=? AND chat=?;", -1, &statement, NULL);
@@ -180,6 +304,11 @@ static BOOL MarkerForKey(NSDictionary *key) {
         sqlite3_finalize(statement);
         if (status != SQLITE_ROW || sqlite3_exec(markerDatabase, "COMMIT", NULL, NULL, NULL) != SQLITE_OK) {
             sqlite3_exec(markerDatabase, "ROLLBACK", NULL, NULL, NULL); matched = NO; atomic_fetch_add(&markerFailures, 1);
+        } else {
+            if (insertedBindings > 0) InvalidateCachedBindingsForMessageLocked(message);
+            if (!cachedBindingResults) cachedBindingResults = [NSMutableDictionary dictionary];
+            if (cachedBindingResults.count >= 512) [cachedBindingResults removeAllObjects];
+            cachedBindingResults[cacheKey] = @(matched);
         }
     } @finally { os_unfair_lock_unlock(&markerLock); }
     return matched;
@@ -191,6 +320,14 @@ BOOL RUINClearUnsendMarkers(void) {
         if (!OpenMarkers()) return NO;
         ok = sqlite3_exec(markerDatabase, "BEGIN IMMEDIATE;DELETE FROM bindings;DELETE FROM events;COMMIT;", NULL, NULL, NULL) == SQLITE_OK;
         if (!ok) sqlite3_exec(markerDatabase, "ROLLBACK", NULL, NULL, NULL);
+        else {
+            knownEventMessageIDs = [NSMutableSet set];
+            cachedBindingResults = [NSMutableDictionary dictionary];
+            cachedEventPath = [MarkerURL().path copy] ?: @"";
+            UpdateEventStatLocked(MarkerURL());
+            eventIndexLoaded = YES;
+            PublishEventStateLocked();
+        }
     } @finally { os_unfair_lock_unlock(&markerLock); }
     return ok;
 }
@@ -219,7 +356,14 @@ RUINNativeUnsendState RUINUnsendStateForMetadata(NSDictionary *metadata) {
     return RUINNativeUnsendNone;
 }
 static BOOL TargetMatches(void) {
+#if defined(RUIN_HOST_CHECK) && RUIN_HOST_CHECK
     return RUINTargetMetadataMatchesInfo(NSBundle.mainBundle.infoDictionary);
+#else
+    static BOOL matched;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ matched = RUINTargetMetadataMatchesInfo(NSBundle.mainBundle.infoDictionary); });
+    return matched;
+#endif
 }
 static BOOL VerifyNativeKeys(void) {
     Class cls = objc_getClass("_TtC19LineSharedMessaging22MessageContentMetadata");
@@ -290,6 +434,24 @@ static NSString *InspectAndRetain(id message) {
         }
         RUINNativeUnsendState state = metadata ? RUINUnsendStateForMetadata(metadata) : RUINNativeUnsendNone;
         if (!atomic_load(&keepEnabled)) return nil;
+        if (state == RUINNativeUnsendNone) {
+            if (!atomic_load_explicit(&eventIndexReady, memory_order_acquire)) {
+                os_unfair_lock_lock(&markerLock);
+                @try { EnsureEventIndexLocked(); }
+                @finally { os_unfair_lock_unlock(&markerLock); }
+            }
+            if (!atomic_load_explicit(&hasAnyEventMarkers, memory_order_acquire)) return nil;
+            NSManagedObject *msgObject = (NSManagedObject *)message;
+            NSString *rawID = msgObject.entity.attributesByName[@"id"] ? MarkerMessageID([msgObject valueForKey:@"id"]) : nil;
+            if (!rawID) return nil;
+            BOOL maybeEvent = NO;
+            os_unfair_lock_lock(&markerLock);
+            @try {
+                EnsureEventIndexLocked();
+                maybeEvent = [knownEventMessageIDs containsObject:rawID];
+            } @finally { os_unfair_lock_unlock(&markerLock); }
+            if (!maybeEvent) return nil;
+        }
         NSDictionary *key = RUINHistoryMessageKey(message);
         if (!key.count) return nil;
         BOOL filteredMarker = MarkerForKey(key);

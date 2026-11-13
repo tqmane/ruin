@@ -158,7 +158,10 @@ static CFDictionaryRef IdentityCFInfo(CFBundleRef bundle) {
     return (__bridge CFDictionaryRef)projection;
 }
 
+static atomic_bool gBundleIdentitySettled = ATOMIC_VAR_INIT(0);
+
 void RUINInstallBundleIdentity(void) {
+    if (atomic_load_explicit(&gBundleIdentitySettled, memory_order_acquire)) return;
     NSBundle *bundle = NSBundle.mainBundle;
     NSDictionary *info = [bundle.infoDictionary copy] ?: @{};
     if (![info[identifierKey] isKindOfClass:NSString.class]) {
@@ -186,20 +189,31 @@ void RUINInstallBundleIdentity(void) {
         if (alreadyOriginal && metadataValid) {
             cfBindingStatus = RUINCFBindingStatusForPlan(cfPlan);
             identityStatus = @"already_original";
+            atomic_store_explicit(&gBundleIdentitySettled, YES, memory_order_release);
             return;
         }
-        if (!verifiedBinary) { identityStatus = @"unsupported_binary"; return; }
+        if (!verifiedBinary) {
+            identityStatus = @"unsupported_binary";
+            atomic_store_explicit(&gBundleIdentitySettled, YES, memory_order_release);
+            return;
+        }
         Class cls = object_getClass(identityMainBundle);
         const SEL selectors[] = {@selector(bundleIdentifier), @selector(objectForInfoDictionaryKey:), @selector(infoDictionary)};
         const char *types[] = {"@16@0:8", "@24@0:8@16", "@16@0:8"};
         for (unsigned i = 0; i < 3; i++) {
             Method method = class_getInstanceMethod(cls, selectors[i]);
             if (!method || strcmp(method_getTypeEncoding(method), types[i]) || !method_getImplementation(method)) {
-                identityStatus = @"bundle_abi_mismatch"; return;
+                identityStatus = @"bundle_abi_mismatch";
+                atomic_store_explicit(&gBundleIdentitySettled, YES, memory_order_release);
+                return;
             }
         }
         Dl_info own;
-        if (!dladdr((const void *)RUINInstallBundleIdentity, &own)) { identityStatus = @"own_image_missing"; return; }
+        if (!dladdr((const void *)RUINInstallBundleIdentity, &own)) {
+            identityStatus = @"own_image_missing";
+            atomic_store_explicit(&gBundleIdentitySettled, YES, memory_order_release);
+            return;
+        }
         lineImage = header;
         ruinImage = own.dli_fbase;
         %init(RUINBundleIdentity, RUINIdentityBundle=cls);
@@ -208,15 +222,21 @@ void RUINInstallBundleIdentity(void) {
             cfBindingStatus = RUINCFBindingStatusForPlan(cfPlan);
             atomic_store(&identityReady, YES);
             identityStatus = @"installed";
+            atomic_store_explicit(&gBundleIdentitySettled, YES, memory_order_release);
             return;
         }
         struct rebinding binding = {"CFBundleGetInfoDictionary", (void *)IdentityCFInfo, (void **)&originalCFInfo};
         int result = rebind_symbols_image((void *)header, image.slide, &binding, 1);
         cfBindingInstalled = result == 0 && originalCFInfo;
         cfBindingStatus = cfBindingInstalled ? @"Installed" : @"Unavailable";
-        if (!cfBindingInstalled) { identityStatus = @"cf_binding_unavailable"; return; }
+        if (!cfBindingInstalled) {
+            identityStatus = @"cf_binding_unavailable";
+            atomic_store_explicit(&gBundleIdentitySettled, YES, memory_order_release);
+            return;
+        }
         atomic_store(&identityReady, YES);
         identityStatus = @"installed";
+        atomic_store_explicit(&gBundleIdentitySettled, YES, memory_order_release);
     });
 }
 #else

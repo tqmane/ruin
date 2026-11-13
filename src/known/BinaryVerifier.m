@@ -114,11 +114,18 @@ static char *CurrentExecutablePath(void) {
     return NULL;
 }
 
-// The MH_EXECUTE image lives for the process lifetime. Cache only a unique
-// positive result; dyld enumeration and path canonicalization happen unlocked.
+// The MH_EXECUTE image lives for the process lifetime. Cache a unique
+// positive result permanently, and cache negative results keyed on dyld image
+// count, image-0 header/filetype, and _NSGetExecutablePath so LiveContainer
+// guest loads or Dyld hooks invalidate cleanly without repeated realpath scans.
 static os_unfair_lock gMainExecutableImageCacheLock = OS_UNFAIR_LOCK_INIT;
 static BOOL gHasMainExecutableImageCache;
 static RUINMainExecutableImage gMainExecutableImageCache;
+static BOOL gHasMainExecutableMissCache;
+static uint32_t gMissImageCount;
+static const struct mach_header_64 *gMissFirstHeader;
+static uint32_t gMissFirstFileType;
+static char *gMissExecutablePath;
 
 static BOOL SameMainExecutableImage(const RUINMainExecutableImage *left,
     const RUINMainExecutableImage *right)
@@ -137,6 +144,38 @@ static BOOL CopyCachedMainExecutableImage(RUINMainExecutableImage *result)
     return cached;
 }
 
+static BOOL MainExecutableMissIsCached(uint32_t count, const struct mach_header_64 *firstHeader,
+    uint32_t firstFileType, const char *executablePath)
+{
+    os_unfair_lock_lock(&gMainExecutableImageCacheLock);
+    BOOL hit = !gHasMainExecutableImageCache && gHasMainExecutableMissCache &&
+        gMissImageCount == count && gMissFirstHeader == firstHeader &&
+        gMissFirstFileType == firstFileType && gMissExecutablePath &&
+        executablePath && !strcmp(gMissExecutablePath, executablePath);
+    os_unfair_lock_unlock(&gMainExecutableImageCacheLock);
+    return hit;
+}
+
+static void StoreMainExecutableMiss(uint32_t count, const struct mach_header_64 *firstHeader,
+    uint32_t firstFileType, const char *executablePath)
+{
+    if (!executablePath || !*executablePath) return;
+    char *copy = strdup(executablePath);
+    if (!copy) return;
+    os_unfair_lock_lock(&gMainExecutableImageCacheLock);
+    if (!gHasMainExecutableImageCache) {
+        free(gMissExecutablePath);
+        gMissExecutablePath = copy;
+        gMissImageCount = count;
+        gMissFirstHeader = firstHeader;
+        gMissFirstFileType = firstFileType;
+        gHasMainExecutableMissCache = YES;
+        copy = NULL;
+    }
+    os_unfair_lock_unlock(&gMainExecutableImageCacheLock);
+    free(copy);
+}
+
 static BOOL StoreMainExecutableImage(RUINMainExecutableImage *image,
     RUINMainExecutableImage *result)
 {
@@ -144,6 +183,9 @@ static BOOL StoreMainExecutableImage(RUINMainExecutableImage *image,
     if (!gHasMainExecutableImageCache) {
         gMainExecutableImageCache = *image;
         gHasMainExecutableImageCache = YES;
+        gHasMainExecutableMissCache = NO;
+        free(gMissExecutablePath);
+        gMissExecutablePath = NULL;
     }
     BOOL sameImage = SameMainExecutableImage(&gMainExecutableImageCache, image);
     if (sameImage) *result = gMainExecutableImageCache;
@@ -156,12 +198,29 @@ BOOL RUINResolveMainExecutableImage(RUINMainExecutableImage *result) {
     memset(result, 0, sizeof(*result));
     if (CopyCachedMainExecutableImage(result)) return YES;
 
-    char *path = CurrentExecutablePath();
+    char stackPath[PATH_MAX];
+    uint32_t pathSize = sizeof(stackPath);
+    char *heapPath = NULL;
+    const char *path = NULL;
+    if (_NSGetExecutablePath(stackPath, &pathSize) == 0) {
+        path = stackPath;
+    } else {
+        heapPath = CurrentExecutablePath();
+        path = heapPath;
+    }
     if (!path) return NO;
+
     uint32_t count = _dyld_image_count();
+    const struct mach_header_64 *firstHeader = count ? (const struct mach_header_64 *)_dyld_get_image_header(0) : NULL;
+    uint32_t firstFileType = firstHeader ? firstHeader->filetype : 0;
+    if (MainExecutableMissIsCached(count, firstHeader, firstFileType, path)) {
+        free(heapPath);
+        return NO;
+    }
+
     RUINDyldImageCandidate *candidates = count ? calloc(count, sizeof(*candidates)) : NULL;
     if (count && !candidates) {
-        free(path);
+        free(heapPath);
         return NO;
     }
     for (uint32_t i = 0; i < count; i++) {
@@ -174,8 +233,17 @@ BOOL RUINResolveMainExecutableImage(RUINMainExecutableImage *result) {
     RUINMainExecutableImage image = {0};
     BOOL resolved = RUINResolveMainExecutableImageFromCandidates(path, candidates, count, &image);
     free(candidates);
-    free(path);
-    return resolved && StoreMainExecutableImage(&image, result);
+    if (!resolved) {
+        uint32_t postCount = _dyld_image_count();
+        const struct mach_header_64 *postFirst = postCount ? (const struct mach_header_64 *)_dyld_get_image_header(0) : NULL;
+        uint32_t postType = postFirst ? postFirst->filetype : 0;
+        if (postCount == count && postFirst == firstHeader && postType == firstFileType)
+            StoreMainExecutableMiss(count, firstHeader, firstFileType, path);
+        free(heapPath);
+        return NO;
+    }
+    free(heapPath);
+    return StoreMainExecutableImage(&image, result);
 }
 
 BOOL RUINReadImageBytes(const struct mach_header_64 *header, intptr_t slide,
@@ -223,5 +291,37 @@ BOOL RUINVerifyInstructions(const struct mach_header_64 *header, intptr_t slide,
             !RUINReadImageBytes(header, slide, anchor->address, actual, anchor->wordCount * sizeof(uint32_t), "__TEXT") ||
             memcmp(actual, anchor->words, anchor->wordCount * sizeof(uint32_t))) return NO;
     }
+    return YES;
+}
+
+BOOL RUINImageExecutableTextRange(const struct mach_header_64 *header,
+    uintptr_t *startOut, uintptr_t *sizeOut)
+{
+    if (startOut) *startOut = 0;
+    if (sizeOut) *sizeOut = 0;
+    if (!header || header->magic != MH_MAGIC_64 ||
+        (header->filetype != MH_EXECUTE && header->filetype != MH_DYLIB) ||
+        header->sizeofcmds > 1024 * 1024 ||
+        header->ncmds > header->sizeofcmds / sizeof(struct load_command)) return NO;
+    const uint8_t *cursor = (const void *)(header + 1), *end = cursor + header->sizeofcmds;
+    uintptr_t textStart = 0, textSize = 0;
+    for (uint32_t i = 0; i < header->ncmds; i++) {
+        const struct load_command *command = NextCommand(cursor, end);
+        if (!command) return NO;
+        if (command->cmd == LC_SEGMENT_64) {
+            if (command->cmdsize < sizeof(struct segment_command_64)) return NO;
+            const struct segment_command_64 *segment = (const void *)command;
+            if (!strncmp(segment->segname, "__TEXT", sizeof(segment->segname))) {
+                if (textSize || segment->fileoff != 0 || !(segment->initprot & VM_PROT_EXECUTE) ||
+                    !segment->vmsize || segment->vmsize > UINTPTR_MAX - (uintptr_t)header) return NO;
+                textStart = (uintptr_t)header;
+                textSize = (uintptr_t)segment->vmsize;
+            }
+        }
+        cursor += command->cmdsize;
+    }
+    if (!textStart || !textSize || cursor != end) return NO;
+    if (startOut) *startOut = textStart;
+    if (sizeOut) *sizeOut = textSize;
     return YES;
 }

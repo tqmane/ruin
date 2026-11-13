@@ -51,6 +51,7 @@
 #import "LegacyMessagingConfiguration.h"
 #import <objc/runtime.h>
 #import <mach-o/dyld.h>
+#import <stdatomic.h>
 #import <string.h>
 
 extern void RUINInstallNativeEntry(void);
@@ -69,8 +70,12 @@ static NSDictionary *RUINMainBundleInfo(void) {
 }
 
 BOOL RUINIsCompatible(void) {
-    NSDictionary *info = RUINMainBundleInfo();
-    return RUINTargetMetadataMatchesInfo(info);
+    static BOOL compatible = NO;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        compatible = RUINTargetMetadataMatchesInfo(RUINMainBundleInfo());
+    });
+    return compatible;
 }
 
 %group RUINLaunchBoundary
@@ -206,17 +211,49 @@ NSDictionary *RUINRuntimeDiagnostics(void) {
     };
 }
 
+static atomic_bool sRuntimeReportScheduled;
+
+static dispatch_queue_t RUINRuntimeReportIOQueue(void) {
+    static dispatch_queue_t queue;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        dispatch_queue_attr_t attr = dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_UTILITY, 0);
+        queue = dispatch_queue_create("com.tqmane.ruin.runtime-report", attr);
+    });
+    return queue;
+}
+
+static NSString *RUINRuntimeReportPath(void) {
+    static NSString *reportPath;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSString *caches = NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES).firstObject;
+        if (caches.length) reportPath = [caches stringByAppendingPathComponent:@"RUIN/runtime.json"];
+    });
+    return reportPath;
+}
+
 static void RUINWriteRuntimeReport(void) {
-    RUINRefreshPushDiagnostics();
-    NSString *caches = NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES).firstObject;
-    if (!caches.length) return;
-    NSString *directory = [caches stringByAppendingPathComponent:@"RUIN"];
-    if (![NSFileManager.defaultManager createDirectoryAtPath:directory
-                                 withIntermediateDirectories:YES attributes:nil error:NULL]) return;
-    NSData *data = [NSJSONSerialization dataWithJSONObject:RUINRuntimeDiagnostics()
-                                                   options:NSJSONWritingPrettyPrinted | NSJSONWritingSortedKeys
-                                                     error:NULL];
-    if (data) [data writeToFile:[directory stringByAppendingPathComponent:@"runtime.json"] options:NSDataWritingAtomic error:NULL];
+    if (atomic_exchange_explicit(&sRuntimeReportScheduled, YES, memory_order_acq_rel)) return;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(250 * NSEC_PER_MSEC)), dispatch_get_main_queue(), ^{
+        atomic_store_explicit(&sRuntimeReportScheduled, NO, memory_order_release);
+        NSString *path = RUINRuntimeReportPath();
+        if (!path.length) return;
+        RUINRefreshPushDiagnostics();
+        NSData *data = [NSJSONSerialization dataWithJSONObject:RUINRuntimeDiagnostics()
+                                                       options:NSJSONWritingPrettyPrinted | NSJSONWritingSortedKeys
+                                                         error:NULL];
+        if (!data) return;
+        dispatch_async(RUINRuntimeReportIOQueue(), ^{
+            static BOOL directoryReady = NO;
+            if (!directoryReady) {
+                directoryReady = [NSFileManager.defaultManager createDirectoryAtPath:path.stringByDeletingLastPathComponent
+                                                        withIntermediateDirectories:YES attributes:nil error:NULL];
+                if (!directoryReady) return;
+            }
+            [data writeToFile:path options:NSDataWritingAtomic error:NULL];
+        });
+    });
 }
 
 void RUINRefreshSettingsFeatures(void) {
@@ -278,10 +315,13 @@ static void RUINApplicationDidBecomeActive(void) {
         selfTestAttempted = YES;
         sKeychainSelfTest = RUINKeychainSelfTest();
     }
-    [NSUserDefaults.standardUserDefaults registerDefaults:@{
-        RUINReadControlEnabledDefaultsKey: @NO,
-        RUINLocalNamesDefaultsKey: @{}
-    }];
+    static dispatch_once_t defaultsOnce;
+    dispatch_once(&defaultsOnce, ^{
+        [NSUserDefaults.standardUserDefaults registerDefaults:@{
+            RUINReadControlEnabledDefaultsKey: @NO,
+            RUINLocalNamesDefaultsKey: @{}
+        }];
+    });
     if (RUINIsCompatible()) {
         RUINInstallFeatures();
         RUINInstallReadBoundary();

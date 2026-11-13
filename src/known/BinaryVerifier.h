@@ -34,3 +34,5 @@ FOUNDATION_EXPORT BOOL RUINReadImageBytes(const struct mach_header_64 *header, i
     uintptr_t address, void *output, size_t length, const char *segmentName);
 FOUNDATION_EXPORT BOOL RUINVerifyInstructions(const struct mach_header_64 *header, intptr_t slide,
     const RUINInstructionAnchor *anchors, size_t count);
+FOUNDATION_EXPORT BOOL RUINImageExecutableTextRange(const struct mach_header_64 *header,
+    uintptr_t *startOut, uintptr_t *sizeOut);
