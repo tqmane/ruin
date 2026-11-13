@@ -140,6 +140,7 @@ check-host: check-portable check-mapping-manifest $(HOST_FIXTURES)
 	./build/check_mid mismatch
 	./build/check_reply
 	./build/check_read_until
+	./build/check_read_until native-owner
 	./build/check_read_until chat-abi
 	./build/check_read_until service-abi
 	./build/check_read_until mid-abi
@@ -172,6 +173,7 @@ check-host: check-portable check-mapping-manifest $(HOST_FIXTURES)
 	./build/check_localization "$(CURDIR)/resources/RUINResources.bundle"
 	./build/check_legacy_messaging_configuration
 	python3 tests/check_secondary_login.py
+	python3 tests/check_local_font_scope.py
 	python3 tests/check_native_mute_send.py
 	python3 tests/check_confirmations.py
 	python3 tests/check_retained_video_cache.py

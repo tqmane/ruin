@@ -1,8 +1,72 @@
-// Compile this file (it includes the actual adapter with private host seams):
-// xcrun --sdk macosx clang -fobjc-arc -fblocks -std=gnu11 -Wall -Wextra -Werror \
-//   -I. src/core/Features.m src/messaging/MessageHistory.m tests/check_unsend_operation.m \
-//   -framework Foundation -framework CoreData -lsqlite3 -o /tmp/ruin-check-unsend-operation
-// /tmp/ruin-check-unsend-operation
+// Focused host check; generate Logos output in a temporary directory first:
+//   testdir="$(mktemp -d /tmp/ruin-unsend.XXXXXX)"
+//   for source in src/core/Features.x src/messaging/MessageHistory.x src/messaging/UnsendOperation.x; do
+//     perl vendor/logos/bin/logos.pl "$source" > "$testdir/$(basename "$source" .x).m"
+//   done
+//   xcrun --sdk macosx clang -fobjc-arc -fblocks -std=gnu11 -Wall -Wextra -Werror \
+//     -Wno-unused-parameter -Wno-deprecated-declarations -DRUIN_HOST_CHECK=1 \
+//     -I"$testdir" -Isrc/core -Isrc/messaging -Isrc/known -Isrc/platform -Isrc/themes \
+//     "$testdir/Features.m" "$testdir/MessageHistory.m" src/messaging/NativeReadPositions.m \
+//     src/known/KnownMappings.m src/known/BinaryVerifier.m src/known/versions/*.m \
+//     tests/check_unsend_operation.m -framework Foundation -framework CoreData -lsqlite3 \
+//     -o "$testdir/check_unsend_operation"
+//   "$testdir/check_unsend_operation"
+#import "../src/known/VersionMapping.h"
+#import "../src/known/FeatureImage.h"
+
+// Inject loader boundaries only. The runtime VerifyCode publication, retry,
+// cached-proof verification and hook installation logic still runs unchanged.
+static const RUINVersionMapping *fixtureNativeVersion;
+static BOOL fixtureResolveImage, fixtureMatchImage, fixtureFingerprint;
+static unsigned int imageResolves, imageReleases, imageFingerprints, nativeFingerprints, nativeResolves;
+static struct mach_header_64 fixtureHeader;
+static const RUINVersionMapping *FixtureCurrentMapping(void) { return fixtureNativeVersion; }
+static BOOL FixtureResolveNative(RUINMainExecutableImage *result) {
+    *result = (RUINMainExecutableImage){.header=&fixtureHeader, .slide=0x2000};
+    return YES;
+}
+static BOOL FixtureVerifyNative(const struct mach_header_64 *header, intptr_t slide,
+    const RUINInstructionAnchor *anchors, size_t count) {
+    nativeFingerprints++;
+    return fixtureFingerprint && header == &fixtureHeader && slide == 0x2000 && fixtureNativeVersion &&
+        anchors == fixtureNativeVersion->messaging.unsendOperation.parserAnchors &&
+        count == fixtureNativeVersion->messaging.unsendOperation.parserAnchorCount;
+}
+static BOOL FixtureResolveFeature(const RUINHostIdentity *host, Class owner, RUINFeatureImage *result) {
+    if (fixtureNativeVersion) nativeResolves++;
+    else imageResolves++;
+    const RUINVersionMapping *version = RUINMappingForInfo(NSBundle.mainBundle.infoDictionary);
+    if (!fixtureResolveImage || !version || host != &version->host || owner != NSClassFromString(@"LineOperation")) return NO;
+    *result = (RUINFeatureImage){.image={.header=&fixtureHeader, .slide=0x2000},
+        .fileType=fixtureNativeVersion ? MH_EXECUTE : MH_DYLIB,
+        .convertedExecutable=fixtureNativeVersion == NULL,
+        .loaderReference=fixtureNativeVersion ? NULL : &fixtureHeader};
+    return YES;
+}
+static BOOL FixtureMatchFeature(const RUINFeatureImage *image, const RUINHostIdentity *host) {
+    const RUINVersionMapping *version = RUINMappingForInfo(NSBundle.mainBundle.infoDictionary);
+    return fixtureMatchImage && version && host == &version->host && image->image.header == &fixtureHeader;
+}
+static BOOL FixtureVerifyFeature(const RUINFeatureImage *image, const RUINInstructionAnchor *anchors, size_t count) {
+    imageFingerprints++;
+    const RUINVersionMapping *version = RUINMappingForInfo(NSBundle.mainBundle.infoDictionary);
+    return fixtureFingerprint && version && image->image.header == &fixtureHeader &&
+        anchors == version->messaging.unsendOperation.parserAnchors &&
+        count == version->messaging.unsendOperation.parserAnchorCount;
+}
+static void FixtureReleaseFeature(RUINFeatureImage *image) {
+    if (image->loaderReference) imageReleases++;
+    memset(image, 0, sizeof(*image));
+}
+static NSString *FixtureResolutionStatus(void) { return @"imageCandidateRejected"; }
+#define RUINCurrentMapping FixtureCurrentMapping
+#define RUINResolveMainExecutableImage FixtureResolveNative
+#define RUINVerifyInstructions FixtureVerifyNative
+#define RUINResolveFeatureImage FixtureResolveFeature
+#define RUINFeatureImageMatches FixtureMatchFeature
+#define RUINVerifyFeatureInstructions FixtureVerifyFeature
+#define RUINReleaseFeatureImage FixtureReleaseFeature
+#define RUINFeatureImageResolutionStatus FixtureResolutionStatus
 #define RUIN_UNSEND_OPERATION_HOST_CHECK 1
 #import "UnsendOperation.m"
 #import <stdio.h>
@@ -311,6 +375,73 @@ int main(void) {
             fixtureInfo = @{ @"RUINOriginalBundleIdentifier":@"jp.naver.line", @"CFBundleShortVersionString":@"26.16.0", @"CFBundleVersion":@"2026.1006.1718" };
             RUINInstallUnsendOperation();
             Check([RUINUnsendOperationDiagnostics()[@"nativeCodeVerified"] boolValue], @"26.16 mapping did not recover after a gated host");
+            // LC uses metadata only for selection; the feature resolver must
+            // prove the class-owned image and pin it before exact fingerprints.
+            testUseFeatureImage = YES;
+            fixtureNativeVersion = NULL;
+            fixtureResolveImage = NO; fixtureMatchImage = YES; fixtureFingerprint = YES;
+            unsigned int resolves = imageResolves;
+            RUINInstallUnsendOperation(); RUINInstallUnsendOperation();
+            Check(!atomic_load(&codeVerified) && !unsendImageVersion && imageResolves == resolves + 2,
+                @"feature image miss was cached or activated hooks");
+            fixtureResolveImage = YES; fixtureMatchImage = NO;
+            RUINInstallUnsendOperation();
+            Check(!atomic_load(&codeVerified) && !unsendImageVersion && imageReleases == 1,
+                @"rejected owner/UUID proof was retained");
+            fixtureMatchImage = YES; fixtureFingerprint = NO;
+            RUINInstallUnsendOperation();
+            Check(!atomic_load(&codeVerified) && !unsendImageVersion && imageReleases == 2,
+                @"parser fingerprint failure leaked a candidate pin");
+            fixtureFingerprint = YES;
+            RUINInstallUnsendOperation();
+            NSDictionary *imageStatus = RUINUnsendOperationDiagnostics();
+            Check(atomic_load(&codeVerified) && unsendImageVersion &&
+                atomic_load(&imageSlide) == 0x2000 &&
+                [imageStatus[@"featureImageLoaderPinned"] boolValue] &&
+                [imageStatus[@"featureImageConvertedExecutable"] boolValue] &&
+                [imageStatus[@"featureImageFingerprintVerified"] boolValue],
+                @"converted guest proof/slide/pin was not published");
+            resolves = imageResolves;
+            unsigned int fingerprints = imageFingerprints, releases = imageReleases;
+            for (unsigned int i = 0; i < 8; i++) RUINInstallUnsendOperation();
+            Check(imageResolves == resolves && imageReleases == releases &&
+                imageFingerprints == fingerprints + 8 && atomic_load(&codeVerified),
+                @"repeat install rescanned, repinned or lost the verified image");
+            fixtureFingerprint = NO; RUINInstallUnsendOperation();
+            Check(!atomic_load(&codeVerified) && unsendImage.loaderReference == &fixtureHeader &&
+                imageReleases == releases && ![RUINUnsendOperationDiagnostics()[@"lookupScopeVerified"] boolValue],
+                @"failed recheck released the live pin or left lookup enabled");
+            fixtureFingerprint = YES; fixtureMatchImage = NO; RUINInstallUnsendOperation();
+            Check(!atomic_load(&codeVerified) && imageResolves == resolves && imageReleases == releases,
+                @"invalid retained identity triggered replacement or release");
+            fixtureMatchImage = YES; RUINInstallUnsendOperation();
+            Check(atomic_load(&codeVerified) && imageResolves == resolves,
+                @"valid retained proof did not recover without a rescan");
+            NSDictionary *supportedInfo = fixtureInfo;
+            fixtureInfo = @{@"RUINOriginalBundleIdentifier":@"jp.naver.line",
+                @"CFBundleShortVersionString":@"26.17.0", @"CFBundleVersion":@"2026.1103.1841"};
+            RUINInstallUnsendOperation();
+            Check(!atomic_load(&codeVerified) && imageResolves == resolves && imageReleases == releases &&
+                unsendImage.loaderReference == &fixtureHeader,
+                @"mapping change replaced or discarded the installed image proof");
+            fixtureInfo = supportedInfo; RUINInstallUnsendOperation();
+            Check(atomic_load(&codeVerified) && imageResolves == resolves,
+                @"retained mapping did not recover after metadata rejection");
+            fingerprints = imageFingerprints;
+            [a performBlockAndWait:^{
+                ManagedMessage *guest = Insert(a, @"188", @"guest-chat", @"guest original");
+                CaptureOperation(@"wrong-chat", @"188", 65);
+                WithScope(fixtureScopePCs, fixtureScopePCCount, ^{
+                    Check([a executeFetchRequest:Request(@"188") error:NULL].count == 1,
+                        @"guest proof bypassed chat rejection");
+                });
+                CaptureOperation(@"guest-chat", @"188", 64);
+                WithScope(fixtureScopePCs, fixtureScopePCCount, ^{ Destroy(a, Request(@"188")); });
+                Check(!guest.isDeleted && [[guest displayedText] hasSuffix:@"\n取消済"],
+                    @"guest proof did not preserve the native operation behavior");
+            }];
+            Check(imageResolves == resolves && imageFingerprints == fingerprints,
+                @"fetch/display performed per-frame image verification");
             NSDictionary *lateMarker = @{@"store":@"write-store", @"kind":@"talk", @"chat":@"write-chat", @"message":@"88"};
             Check(!RUINUnsendOperationHasRetainedMarker(lateMarker), @"unseen marker unexpectedly existed");
             DrainMarkerReadQueue();
@@ -322,6 +453,21 @@ int main(void) {
             DrainMarkerReadQueue();
             Check(!RUINUnsendOperationHasRetainedMarker(retainedKey), @"marker clear did not invalidate the background result");
             [a performBlockAndWait:^{ Check([[retained displayedText] isEqual:@"RUIN TEST private-original-sentinel"], @"cleared marker still rendered a label"); }];
+            // Reset the injected image to model a separate native process. No
+            // production path drops a proof after hooks have been installed.
+            FixtureReleaseFeature(&unsendImage); unsendImageVersion = NULL;
+            fixtureNativeVersion = RUINMappingForInfo(fixtureInfo);
+            fixtureFingerprint = NO;
+            resolves = imageResolves;
+            RUINInstallUnsendOperation();
+            Check(!atomic_load(&codeVerified) && imageResolves == resolves && nativeFingerprints == 1 && nativeResolves == 1,
+                @"native fingerprint failure fell through to guest resolution");
+            fixtureFingerprint = YES; RUINInstallUnsendOperation(); RUINInstallUnsendOperation();
+            Check(atomic_load(&codeVerified) && nativeFingerprints == 2 && nativeResolves == 2 && imageResolves == resolves &&
+                ![RUINUnsendOperationDiagnostics()[@"featureImageConvertedExecutable"] boolValue] &&
+                ![RUINUnsendOperationDiagnostics()[@"featureImageLoaderPinned"] boolValue] &&
+                [RUINUnsendOperationDiagnostics()[@"featureImageProofRetained"] boolValue],
+                @"native process lifetime proof or exact native verification changed");
             NSString *diagnostics = [RUINUnsendOperationDiagnostics() description];
             for (NSString *private in @[@"private-chat-sentinel", @"private-original-sentinel", @"9007199254740993", fixtureSupport.path])
                 Check([diagnostics rangeOfString:private].location == NSNotFound, @"diagnostics exposed content/identity/path");

@@ -15,7 +15,10 @@ FOUNDATION_EXPORT BOOL RUINClearUnsendOperationMarkers(void);
 // Returns NO when disabled/gated, invalid, unavailable or ambiguous to caller.
 FOUNDATION_EXPORT BOOL RUINUnsendOperationHasRetainedMarker(NSDictionary *messageKey);
 
-// LINE 26.16.0 / 2026.1006.1718 only. No Swift IMP/ABI replacement. The
+// Uses only a verified version/UUID mapping and exact parser fingerprints;
+// converted guests additionally require the feature-local class-owner proof.
+// Installed hooks retain that image's lifetime proof across repeated installs.
+// No Swift IMP/ABI replacement. The
 // original Core Data fetch runs once. Only its exact, fingerprinted incoming
 // destroy-operation lookup, matching the native parser's copied chat/message
 // identity on the same thread, sees an empty result before local cleanup/delete
