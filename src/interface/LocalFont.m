@@ -1,6 +1,7 @@
 #import "LocalFont.h"
 #import <CoreText/CoreText.h>
 #import <math.h>
+#import <stdatomic.h>
 
 static NSString * const RUINLocalFontDefaultsKey = @"RUINLocalFontSelection";
 static NSString * const RUINLocalFontErrorDomain = @"RUINLocalFontErrorDomain";
@@ -24,6 +25,7 @@ static NSURL *sURL;
 static NSMutableDictionary<NSString *, NSURL *> *sRegisteredURLs;
 static unsigned long long sFileSize;
 static BOOL sRegistered;
+static atomic_bool sFontActive;
 static NSString *sStatus = @"not_loaded";
 
 static NSObject *RUINLocalFontLock(void) {
@@ -149,6 +151,7 @@ void RUINInstallLocalFont(void) {
                 sURL = url;
                 sFileSize = bytes;
                 sRegistered = YES;
+                atomic_store_explicit(&sFontActive, true, memory_order_release);
                 sRegisteredURLs[validatedName] = url;
                 sStatus = @"loaded";
                 RUINRemoveManagedFontsExcept(directory, url);
@@ -161,8 +164,7 @@ void RUINInstallLocalFont(void) {
 }
 
 BOOL RUINLocalFontIsRegistered(void) {
-    RUINInstallLocalFont();
-    @synchronized (RUINLocalFontLock()) { return sRegistered && sName != nil; }
+    return atomic_load_explicit(&sFontActive, memory_order_acquire);
 }
 
 NSString *RUINLocalFontName(void) {
@@ -249,6 +251,7 @@ BOOL RUINImportLocalFont(NSURL *url, NSError **error) {
             sURL = selectedURL;
             sFileSize = selectedSize;
             sRegistered = YES;
+            atomic_store_explicit(&sFontActive, true, memory_order_release);
             sStatus = cachedURL ? @"reselected_registered" : @"imported";
             imported = YES;
             // Registered fonts remain on disk until next launch, when only the saved selection is loaded.
@@ -266,6 +269,7 @@ BOOL RUINImportLocalFont(NSURL *url, NSError **error) {
 void RUINResetLocalFont(void) {
     RUINInstallLocalFont();
     @synchronized (RUINLocalFontLock()) {
+        atomic_store_explicit(&sFontActive, false, memory_order_release);
         [NSUserDefaults.standardUserDefaults removeObjectForKey:RUINLocalFontDefaultsKey];
         sName = nil;
         sURL = nil;

@@ -37,7 +37,14 @@ static atomic_uint_fast64_t markerFailures, historyFreezes, displayReturns;
 static atomic_uint_fast64_t capturedOperations, rejectedOperations;
 static NSString *const OperationThreadKey = @"RUINUnsendOperation.currentParserIdentity";
 static os_unfair_lock installLock = OS_UNFAIR_LOCK_INIT, markerLock = OS_UNFAIR_LOCK_INIT;
+static os_unfair_lock markerCacheLock = OS_UNFAIR_LOCK_INIT;
 static sqlite3 *markerDatabase;
+static sqlite3 *markerReadDatabase;
+static sqlite3_stmt *markerReadStatement;
+static NSCache<NSArray<NSString *> *, NSNumber *> *markerLookupCache;
+static NSMutableDictionary<NSArray<NSString *> *, NSNumber *> *markerLookupPending;
+static dispatch_queue_t markerReadQueue;
+static uint64_t markerCacheGeneration;
 static _Thread_local unsigned int fetchDepth, displayDepth;
 #if defined(RUIN_UNSEND_OPERATION_HOST_CHECK) && RUIN_UNSEND_OPERATION_HOST_CHECK
 static BOOL testImageMatches;
@@ -166,6 +173,125 @@ static NSURL *MarkerURL(void) {
     NSURL *root = [NSFileManager.defaultManager URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask].firstObject;
     return root ? [root URLByAppendingPathComponent:@"RUIN/unsend-operation.sqlite"] : nil;
 }
+static void InitializeMarkerLookup(void) {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        markerLookupCache = [NSCache new];
+        markerLookupCache.countLimit = 512;
+        markerLookupPending = [NSMutableDictionary dictionary];
+        markerReadQueue = dispatch_queue_create("com.ruin.unsend-marker-read", dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_UTILITY, 0));
+    });
+}
+static NSArray<NSString *> *MarkerQueryKey(NSDictionary *messageKey) {
+    if (![messageKey isKindOfClass:NSDictionary.class]) return nil;
+    NSMutableArray<NSString *> *values = [NSMutableArray arrayWithCapacity:4];
+    for (NSString *field in @[@"store", @"kind", @"chat"]) {
+        id value = messageKey[field];
+        if (![value isKindOfClass:NSString.class] || ![value length]) return nil;
+        NSString *copy = [value copy];
+        NSData *bytes = [copy dataUsingEncoding:NSUTF8StringEncoding];
+        if (!bytes || bytes.length > INT_MAX) return nil;
+        for (NSUInteger i = 0; i < copy.length; i++) if (![copy characterAtIndex:i]) return nil;
+        [values addObject:copy];
+    }
+    NSString *message = MessageID(messageKey[@"message"]);
+    if (!message || ![values[1] isEqual:@"talk"]) return nil;
+    [values addObject:message];
+    return [values copy];
+}
+static NSArray<NSString *> *MarkerStoredKey(NSDictionary *messageKey) {
+    NSArray<NSString *> *queryKey = MarkerQueryKey(messageKey);
+    return queryKey && [messageKey[@"message"] isEqualToString:queryKey[3]] ? queryKey : nil;
+}
+static BOOL CachedMarker(NSArray<NSString *> *key, BOOL *retained) {
+    InitializeMarkerLookup();
+    os_unfair_lock_lock(&markerCacheLock);
+    NSNumber *value = [markerLookupCache objectForKey:key];
+    if (value) *retained = value.boolValue;
+    os_unfair_lock_unlock(&markerCacheLock);
+    return value != nil;
+}
+static void InvalidateMarkerCache(NSArray<NSString *> *writtenKey) {
+    InitializeMarkerLookup();
+    os_unfair_lock_lock(&markerCacheLock);
+    markerCacheGeneration++;
+    [markerLookupCache removeAllObjects];
+    [markerLookupPending removeAllObjects];
+    if (writtenKey) [markerLookupCache setObject:@YES forKey:writtenKey];
+    os_unfair_lock_unlock(&markerCacheLock);
+}
+static int ReadMarkerOnQueue(NSArray<NSString *> *key, BOOL *retained) {
+    int result = SQLITE_ERROR;
+    os_unfair_lock_lock(&markerLock);
+    @try {
+        if (!markerReadStatement) {
+            NSURL *url = MarkerURL();
+            if (!url) return SQLITE_CANTOPEN;
+            if (![NSFileManager.defaultManager fileExistsAtPath:url.path]) return SQLITE_DONE;
+            if (sqlite3_open_v2(url.fileSystemRepresentation, &markerReadDatabase,
+                    SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX, NULL) != SQLITE_OK) {
+                if (markerReadDatabase) sqlite3_close_v2(markerReadDatabase);
+                markerReadDatabase = NULL;
+                return SQLITE_ERROR;
+            }
+            sqlite3_busy_timeout(markerReadDatabase, 30);
+            if (sqlite3_prepare_v2(markerReadDatabase,
+                    "SELECT 1 FROM retained WHERE store=? AND kind=? AND chat=? AND message=?",
+                    -1, &markerReadStatement, NULL) != SQLITE_OK) {
+                BOOL uninitialized = strstr(sqlite3_errmsg(markerReadDatabase), "no such table: retained") != NULL;
+                sqlite3_close_v2(markerReadDatabase);
+                markerReadDatabase = NULL;
+                markerReadStatement = NULL;
+                return uninitialized ? SQLITE_DONE : SQLITE_ERROR;
+            }
+        }
+        sqlite3_reset(markerReadStatement);
+        sqlite3_clear_bindings(markerReadStatement);
+        result = SQLITE_OK;
+        for (NSUInteger i = 0; result == SQLITE_OK && i < key.count; i++) {
+            NSData *bytes = [key[i] dataUsingEncoding:NSUTF8StringEncoding];
+            result = bytes && bytes.length <= INT_MAX
+                ? sqlite3_bind_text(markerReadStatement, (int)i + 1, bytes.bytes ?: "", (int)bytes.length, SQLITE_TRANSIENT)
+                : SQLITE_MISMATCH;
+        }
+        if (result == SQLITE_OK) result = sqlite3_step(markerReadStatement);
+        if (result == SQLITE_ROW) *retained = YES;
+        else if (result == SQLITE_DONE) *retained = NO;
+        sqlite3_reset(markerReadStatement);
+        sqlite3_clear_bindings(markerReadStatement);
+    } @finally { os_unfair_lock_unlock(&markerLock); }
+    return result;
+}
+static void ScheduleMarkerRead(NSArray<NSString *> *key) {
+    InitializeMarkerLookup();
+    uint64_t generation;
+    os_unfair_lock_lock(&markerCacheLock);
+    if ([markerLookupCache objectForKey:key]) { os_unfair_lock_unlock(&markerCacheLock); return; }
+    generation = markerCacheGeneration;
+    NSNumber *pendingGeneration = markerLookupPending[key];
+    if ((pendingGeneration && pendingGeneration.unsignedLongLongValue == generation) || markerLookupPending.count >= 128) {
+        os_unfair_lock_unlock(&markerCacheLock);
+        return;
+    }
+    markerLookupPending[key] = @(generation);
+    os_unfair_lock_unlock(&markerCacheLock);
+    dispatch_async(markerReadQueue, ^{
+        @autoreleasepool {
+            BOOL retained = NO;
+            int status = ReadMarkerOnQueue(key, &retained);
+            BOOL completed = status == SQLITE_ROW || status == SQLITE_DONE;
+            os_unfair_lock_lock(&markerCacheLock);
+            if ([markerLookupPending[key] unsignedLongLongValue] == generation) [markerLookupPending removeObjectForKey:key];
+            if (completed && markerCacheGeneration == generation) [markerLookupCache setObject:@(retained) forKey:key];
+            os_unfair_lock_unlock(&markerCacheLock);
+#if TARGET_OS_IPHONE
+            if (completed && retained) dispatch_async(dispatch_get_main_queue(), ^{
+                    [NSNotificationCenter.defaultCenter postNotificationName:RUINRetainedMediaDidChangeNotification object:key];
+                });
+#endif
+        }
+    });
+}
 static BOOL OpenMarkers(BOOL create) {
     if (markerDatabase) return YES;
     NSURL *url = MarkerURL();
@@ -198,6 +324,7 @@ static BOOL RetainedMarker(NSDictionary *key, BOOL write) {
         if (status == SQLITE_OK) status = sqlite3_step(statement);
         result = status == (write ? SQLITE_DONE : SQLITE_ROW);
         sqlite3_finalize(statement);
+        if (write && result) InvalidateMarkerCache(MarkerStoredKey(key));
     } @finally { os_unfair_lock_unlock(&markerLock); }
     return result;
 }
@@ -316,49 +443,25 @@ BOOL RUINClearUnsendOperationMarkers(void) {
     @try {
         NSURL *url = MarkerURL();
         if (!url) return NO;
-        if (!markerDatabase && ![NSFileManager.defaultManager fileExistsAtPath:url.path]) return YES;
+        if (!markerDatabase && ![NSFileManager.defaultManager fileExistsAtPath:url.path]) {
+            InvalidateMarkerCache(nil);
+            return YES;
+        }
         if (!OpenMarkers(NO)) return NO;
-        return sqlite3_exec(markerDatabase, "DELETE FROM retained", NULL, NULL, NULL) == SQLITE_OK;
+        BOOL cleared = sqlite3_exec(markerDatabase, "DELETE FROM retained", NULL, NULL, NULL) == SQLITE_OK;
+        if (cleared) InvalidateMarkerCache(nil);
+        return cleared;
     } @finally { os_unfair_lock_unlock(&markerLock); }
 }
 BOOL RUINUnsendOperationHasRetainedMarker(NSDictionary *messageKey) {
     if (!Enabled() || ![messageKey isKindOfClass:NSDictionary.class]) return NO;
     @try {
-        NSMutableArray<NSString *> *values = [NSMutableArray array];
-        for (NSString *field in @[@"store", @"kind", @"chat"]) {
-            id value = messageKey[field];
-            if (![value isKindOfClass:NSString.class] || ![value length]) return NO;
-            NSString *copy = [value copy];
-            NSData *bytes = [copy dataUsingEncoding:NSUTF8StringEncoding];
-            if (!bytes || bytes.length > INT_MAX) return NO;
-            for (NSUInteger i = 0; i < copy.length; i++) if (![copy characterAtIndex:i]) return NO;
-            [values addObject:copy];
-        }
-        NSString *message = MessageID(messageKey[@"message"]);
-        if (!message || ![values[1] isEqual:@"talk"]) return NO;
-        [values addObject:message];
-        os_unfair_lock_lock(&markerLock);
-        @try {
-            sqlite3 *database = markerDatabase, *readOnly = NULL;
-            if (!database) {
-                NSURL *url = MarkerURL();
-                if (!url || sqlite3_open_v2(url.fileSystemRepresentation, &readOnly, SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX, NULL) != SQLITE_OK) {
-                    if (readOnly) sqlite3_close_v2(readOnly);
-                    return NO;
-                }
-                sqlite3_busy_timeout(readOnly, 30); database = readOnly;
-            }
-            sqlite3_stmt *statement = NULL;
-            int status = sqlite3_prepare_v2(database, "SELECT 1 FROM retained WHERE store=? AND kind=? AND chat=? AND message=?", -1, &statement, NULL);
-            for (NSUInteger i = 0; status == SQLITE_OK && i < values.count; i++) {
-                NSData *bytes = [values[i] dataUsingEncoding:NSUTF8StringEncoding];
-                status = sqlite3_bind_text(statement, (int)i + 1, bytes.bytes ?: "", (int)bytes.length, SQLITE_TRANSIENT);
-            }
-            if (status == SQLITE_OK) status = sqlite3_step(statement);
-            sqlite3_finalize(statement);
-            if (readOnly) sqlite3_close_v2(readOnly);
-            return status == SQLITE_ROW;
-        } @finally { os_unfair_lock_unlock(&markerLock); }
+        NSArray<NSString *> *key = MarkerQueryKey(messageKey);
+        if (!key) return NO;
+        BOOL retained = NO;
+        if (CachedMarker(key, &retained)) return retained;
+        ScheduleMarkerRead(key);
+        return NO;
     } @catch (__unused NSException *exception) { return NO; }
 }
 NSDictionary *RUINUnsendOperationDiagnostics(void) {

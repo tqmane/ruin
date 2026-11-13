@@ -22,6 +22,8 @@
 #import <limits.h>
 #import <math.h>
 #import <string.h>
+#import <stdlib.h>
+#import <time.h>
 
 /* Native base message cells expose their view model, bubble and status through
  verified Swift field metadata. Bind by typed MessageIdentifier.server.value
@@ -33,7 +35,13 @@
 static BOOL UITargetMatches(void) {
     return RUINTargetMetadataMatchesInfo(NSBundle.mainBundle.infoDictionary);
 }
+#if TARGET_OS_IPHONE
+static atomic_bool UIOptionEnabled, UIRefreshQueued, UIScanRequested;
+static BOOL UIEnabled(void) { return atomic_load_explicit(&UIOptionEnabled, memory_order_relaxed); }
+static BOOL UIReadOption(void) { return UITargetMatches() && [NSUserDefaults.standardUserDefaults boolForKey:RUINKeepUnsentMessagesKey]; }
+#else
 static BOOL UIEnabled(void) { return UITargetMatches() && [NSUserDefaults.standardUserDefaults boolForKey:RUINKeepUnsentMessagesKey]; }
+#endif
 static NSString *UIServerNumber(id value) {
     if (![value isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)value) == CFBooleanGetTypeID()) return nil;
     const char *type = [value objCType];
@@ -94,10 +102,14 @@ static NSDictionary *UIResolveMessageKey(NSManagedObject *chat, NSString *server
 @property(nonatomic) NSUInteger generation;
 @property(nonatomic) CFTimeInterval lastMediaObservation;
 @property(nonatomic) BOOL mediaObservationPending;
+@property(nonatomic, copy) NSArray *mediaItems;
+@property(nonatomic) BOOL archiveLookupPending;
+@property(nonatomic) CFTimeInterval lastArchiveLookup;
 @end
 @implementation RUINUnsendMarkerRecord @end
 static void UIClearBinding(RUINUnsendMarkerRecord *record) {
     record.model = nil; record.chat = nil; record.server = nil; record.key = nil; record.bindingPending = NO; record.mediaObservationPending = NO; record.lastMediaObservation = 0; record.generation++;
+    record.mediaItems = nil; record.archiveLookupPending = NO; record.lastArchiveLookup = 0;
 }
 static void UISealReuse(RUINUnsendMarkerRecord *record, id oldModel) {
     UIClearBinding(record); record.reusedModel = oldModel; record.awaitingModelChange = YES;
@@ -127,12 +139,16 @@ static const char *UIChatControllerClass = "_TtC15LineMessagingUI18ChatViewContr
 static char UIRecordKey, UIBadgeKey, UIMediaButtonKey;
 static NSHashTable<UICollectionViewCell *> *UICells;
 static NSTimer *UITimer;
+static dispatch_queue_t UIArchiveQueue;
+static NSUInteger UIArchivePending;
 static NSArray *UIObservers;
 static os_unfair_lock UIProbeLock = OS_UNFAIR_LOCK_INIT;
 static NSDictionary *UIProbe;
 static BOOL UIHasModelProbe, UIHasVideoModelProbe;
 static atomic_uint_fast64_t UILayoutCalls, UIReuseCalls, UIBoundCells, UIUnresolvedCells, UIMarkerMatches, UIBadgesAdded, UIBadgesRemoved, UINoSpace, UIErrors;
 static atomic_uint UIVisibleCount;
+static atomic_uint_fast64_t UIRefreshNanoseconds, UIRefreshMaxNanoseconds, UIRefreshHistogram[16];
+static atomic_uint_fast64_t UICellRefreshes, UITrackedPasses, UITrackedVisits, UIDisabledCallbacks;
 static _Thread_local unsigned int UIHookDepth;
 static void InitUILayout(Class cls);
 static void InitUIMoveToWindow(Class cls);
@@ -156,6 +172,8 @@ static void UIRemoveBadge(UICollectionViewCell *cell) {
 }
 static id UIField(id object, const char *path) { return RUINCopySwiftField(object, path); }
 static void UIObserveMetadata(UICollectionViewCell *cell) {
+    const char *enabled = getenv("RUIN_ENABLE_RUNTIME_INSPECTOR");
+    if (!enabled || strcmp(enabled, "1")) return;
     NSMutableArray *paths = [NSMutableArray array];
     for (NSString *path in @[@"messageViewModel", @"messageViewModel.messageIdentifier", @"messageViewModel.messageIdentifier.server",
         @"messageViewModel.messageIdentifier.server.value", @"messageViewModel.message", @"messageViewModel.message.id",
@@ -221,8 +239,7 @@ static BOOL UIHasNativeImage(UIView *view, UIView *bubble, NSUInteger depth) {
     for (UIView *child in view.subviews) if (UIHasNativeImage(child, bubble, depth + 1)) return YES;
     return NO;
 }
-static BOOL UIUpdateMedia(UICollectionViewCell *cell, UIView *bubble, NSDictionary *key) {
-    NSArray *items = RUINRetainedMediaItems(key);
+static BOOL UIUpdateMedia(UICollectionViewCell *cell, UIView *bubble, NSDictionary *key, NSArray *items) {
     if (!items.count) return NO;
     RUINRetainedMediaButton *button = objc_getAssociatedObject(cell, &UIMediaButtonKey);
     if (!button) {
@@ -316,7 +333,36 @@ static void UIObserveVisibleMedia(UICollectionViewCell *cell, RUINUnsendMarkerRe
         });
     }];
 }
-static void UIRefreshCell(UICollectionViewCell *cell) {
+static void UIRefreshCell(UICollectionViewCell *cell);
+static void UIRequestArchiveItems(UICollectionViewCell *cell, RUINUnsendMarkerRecord *record) {
+    if (!cell.window || record.archiveLookupPending || UIArchivePending >= 128 ||
+        NSProcessInfo.processInfo.systemUptime - record.lastArchiveLookup < 1.0) return;
+    if (!UIArchiveQueue) UIArchiveQueue = dispatch_queue_create("com.ruin.marker-media-read",
+        dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_UTILITY, 0));
+    NSDictionary *key = [record.key copy];
+    NSUInteger generation = record.generation;
+    record.archiveLookupPending = YES; record.lastArchiveLookup = NSProcessInfo.processInfo.systemUptime; UIArchivePending++;
+    __weak UICollectionViewCell *weakCell = cell;
+    dispatch_async(UIArchiveQueue, ^{
+        @autoreleasepool {
+            NSArray *items = @[];
+            @try { items = RUINRetainedMediaItems(key) ?: @[]; }
+            @catch (__unused NSException *exception) { atomic_fetch_add(&UIErrors, 1); }
+            dispatch_async(dispatch_get_main_queue(), ^{
+                UIArchivePending--;
+                UICollectionViewCell *current = weakCell;
+                RUINUnsendMarkerRecord *latest = current ? objc_getAssociatedObject(current, &UIRecordKey) : nil;
+                if (!latest || latest.generation != generation || ![latest.key isEqual:key]) return;
+                latest.archiveLookupPending = NO; latest.lastArchiveLookup = NSProcessInfo.processInfo.systemUptime;
+                BOOL changed = ![latest.mediaItems isEqualToArray:items];
+                latest.mediaItems = items;
+                if (changed && UIEnabled() && current.window) UIRefreshCell(current);
+            });
+        }
+    });
+}
+static void UIRefreshCellImpl(UICollectionViewCell *cell) {
+    atomic_fetch_add(&UICellRefreshes, 1);
     if (![cell isKindOfClass:objc_getClass(UICellClass)]) return;
     if (!UICells) UICells = [NSHashTable weakObjectsHashTable]; [UICells addObject:cell];
     RUINUnsendMarkerRecord *record = UIRecord(cell);
@@ -368,14 +414,15 @@ static void UIRefreshCell(UICollectionViewCell *cell) {
             UIRemoveBadge(cell); return;
         }
         UIObserveVisibleMedia(cell, record, NO);
-        NSArray *mediaItems = RUINRetainedMediaItems(record.key);
+        UIRequestArchiveItems(cell, record);
+        NSArray *mediaItems = record.mediaItems;
         if (!mediaItems.count && !RUINUnsendOperationHasRetainedMarker(record.key)) { UIRemoveBadge(cell); return; }
         atomic_fetch_add(&UIMarkerMatches, 1);
         UIView *bubble = UIField(cell, "contentContainerView"), *status = UIField(cell, "messageStatusView");
         if (object_getClass(bubble) != objc_getClass("_TtC17LineMessagingUIV224ChatMessageContainerView") ||
             ![status isKindOfClass:NSClassFromString(@"_TtC17LineMessagingUIV221ChatMessageStatusView")] ||
             ![bubble isDescendantOfView:cell.contentView] || ![status isDescendantOfView:cell.contentView] || status.hidden) { UIRemoveBadge(cell); return; }
-        BOOL retainedMedia = mediaItems.count && UIUpdateMedia(cell, bubble, record.key);
+        BOOL retainedMedia = mediaItems.count && UIUpdateMedia(cell, bubble, record.key, mediaItems);
         UILabel *badge = objc_getAssociatedObject(cell, &UIBadgeKey);
         if (!badge) {
             NSString *markerLabel = RUINLocalizedString(@"取消済");
@@ -402,21 +449,55 @@ static void UIRefreshCell(UICollectionViewCell *cell) {
         [cell.contentView bringSubviewToFront:badge];
     } @catch (__unused NSException *exception) { atomic_fetch_add(&UIErrors, 1); UIRemoveBadge(cell); UIClearBinding(record); }
 }
-static void UIRefreshTracked(void) {
-    NSUInteger visible = 0;
-    for (UICollectionViewCell *cell in UICells.allObjects) { UIRefreshCell(cell); if (cell.window && !cell.hidden) visible++; }
-    atomic_store(&UIVisibleCount, (unsigned int)visible);
-    BOOL run = visible && UIEnabled() && UIApplication.sharedApplication.applicationState == UIApplicationStateActive;
-    if (!run) { [UITimer invalidate]; UITimer = nil; }
-    else if (!UITimer) {
-        // The retained object is unchanged, so native layout may not rerun when
-        // its sidecar marker arrives. Poll only weakly tracked visible cells.
-        UITimer = [NSTimer timerWithTimeInterval:1 repeats:YES block:^(__unused NSTimer *timer) { UIRefreshTracked(); }];
-        [NSRunLoop.mainRunLoop addTimer:UITimer forMode:NSRunLoopCommonModes];
+static void UIRefreshCell(UICollectionViewCell *cell) {
+    uint64_t start = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+    UIRefreshCellImpl(cell);
+    uint64_t elapsed = clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - start;
+    atomic_fetch_add(&UIRefreshNanoseconds, elapsed);
+    uint64_t maximum = atomic_load(&UIRefreshMaxNanoseconds);
+    while (elapsed > maximum && !atomic_compare_exchange_weak(&UIRefreshMaxNanoseconds, &maximum, elapsed)) {}
+    unsigned bucket = 0; uint64_t limit = 1000;
+    while (bucket < 15 && elapsed > limit) { bucket++; limit <<= 1; }
+    atomic_fetch_add(&UIRefreshHistogram[bucket], 1);
+}
+static uint64_t UIRefreshP95UpperBound(void) {
+    uint64_t count = atomic_load(&UICellRefreshes), sum = 0;
+    if (!count) return 0;
+    for (unsigned i = 0; i < 16; i++) {
+        sum += atomic_load(&UIRefreshHistogram[i]);
+        if (sum >= count - count / 20) return i == 15 ? atomic_load(&UIRefreshMaxNanoseconds) : (1000ULL << i);
     }
+    return atomic_load(&UIRefreshMaxNanoseconds);
+}
+static void UIRefreshTracked(void);
+static void UIStopHeartbeat(void) { [UITimer invalidate]; UITimer = nil; }
+static void UIEnsureHeartbeat(void) {
+    if (UITimer || !UIEnabled() || UIApplication.sharedApplication.applicationState != UIApplicationStateActive) return;
+    UITimer = [NSTimer timerWithTimeInterval:1 repeats:YES block:^(__unused NSTimer *timer) { UIRefreshTracked(); }];
+    [NSRunLoop.mainRunLoop addTimer:UITimer forMode:NSRunLoopCommonModes];
+}
+static void UIRefreshTracked(void) {
+    if (!UIEnabled() || UIApplication.sharedApplication.applicationState != UIApplicationStateActive) {
+        UIStopHeartbeat(); atomic_store(&UIVisibleCount, 0); return;
+    }
+    atomic_fetch_add(&UITrackedPasses, 1);
+    NSUInteger visible = 0;
+    for (UICollectionViewCell *cell in UICells.allObjects) {
+        if (!cell.window || cell.hidden || cell.alpha <= 0.01) continue;
+        atomic_fetch_add(&UITrackedVisits, 1); visible++; UIRefreshCell(cell);
+    }
+    atomic_store(&UIVisibleCount, (unsigned int)visible);
+    if (!visible) UIStopHeartbeat(); else UIEnsureHeartbeat();
 }
 static void UINativeCallback(id object, NSUInteger index, void (^original)(void)) {
     if (!NSThread.isMainThread) { original(); return; }
+    if (!UIEnabled()) {
+        atomic_fetch_add(&UIDisabledCallbacks, 1);
+        original();
+        RUINUnsendMarkerRecord *record = objc_getAssociatedObject(object, &UIRecordKey);
+        if (record) { UIRemoveBadge(object); UIClearBinding(record); }
+        return;
+    }
     BOOL outermost = UIHookDepth++ == 0;
     @try {
         if (index == 2) {
@@ -429,7 +510,7 @@ static void UINativeCallback(id object, NSUInteger index, void (^original)(void)
         } @catch (__unused NSException *exception) { atomic_fetch_add(&UIErrors, 1); }
         if (outermost && index != 2 && NSThread.isMainThread) {
             if (index == 0) atomic_fetch_add(&UILayoutCalls, 1);
-            @try { UIRefreshCell(object); UIRefreshTracked(); }
+            @try { UIRefreshCell(object); if ([object window]) UIEnsureHeartbeat(); }
             @catch (__unused NSException *exception) { atomic_fetch_add(&UIErrors, 1); }
         }
     } @finally {
@@ -469,14 +550,32 @@ static void UIScan(UIView *view, NSUInteger depth, NSUInteger *budget) {
 }
 void RUINRefreshUnsendMarkerUI(void) {
     if (!NSThread.isMainThread) { dispatch_async(dispatch_get_main_queue(), ^{ RUINRefreshUnsendMarkerUI(); }); return; }
-    if (!UICells) UICells = [NSHashTable weakObjectsHashTable];
-    if (UITargetMatches()) {
-        NSUInteger budget = 1600;
-        for (UIScene *scene in UIApplication.sharedApplication.connectedScenes)
-            if ([scene isKindOfClass:UIWindowScene.class] && scene.activationState == UISceneActivationStateForegroundActive)
-                for (UIWindow *window in ((UIWindowScene *)scene).windows) if (window.isKeyWindow && !window.hidden) UIScan(window, 0, &budget);
+    atomic_store(&UIOptionEnabled, UIReadOption());
+    if (!UIEnabled()) {
+        UIStopHeartbeat();
+        for (UICollectionViewCell *cell in UICells.allObjects) {
+            UIRemoveBadge(cell);
+            RUINUnsendMarkerRecord *record = objc_getAssociatedObject(cell, &UIRecordKey);
+            if (record) UIClearBinding(record);
+        }
+        atomic_store(&UIVisibleCount, 0);
+        return;
     }
+    if (!UICells) UICells = [NSHashTable weakObjectsHashTable];
+    NSUInteger budget = 1600;
+    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes)
+        if ([scene isKindOfClass:UIWindowScene.class] && scene.activationState == UISceneActivationStateForegroundActive)
+            for (UIWindow *window in ((UIWindowScene *)scene).windows) if (window.isKeyWindow && !window.hidden) UIScan(window, 0, &budget);
     UIRefreshTracked();
+}
+static void UIQueueRefresh(BOOL scan) {
+    if (scan) atomic_store(&UIScanRequested, true);
+    if (atomic_exchange(&UIRefreshQueued, true)) return;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        atomic_store(&UIRefreshQueued, false);
+        if (atomic_exchange(&UIScanRequested, false)) RUINRefreshUnsendMarkerUI();
+        else UIRefreshTracked();
+    });
 }
 void RUINInstallUnsendMarkerUI(void) {
     if (!NSThread.isMainThread) { dispatch_async(dispatch_get_main_queue(), ^{ RUINInstallUnsendMarkerUI(); }); return; }
@@ -493,11 +592,18 @@ void RUINInstallUnsendMarkerUI(void) {
     else for (NSUInteger i = 0; i < 3; i++) if (atomic_load(&UIHooks[i].status) != 3) atomic_store(&UIHooks[i].status, 1);
     if (!UIObservers) {
         NSMutableArray *observers = [NSMutableArray array];
-        for (NSNotificationName name in @[NSUserDefaultsDidChangeNotification, UIApplicationDidBecomeActiveNotification, UIApplicationDidEnterBackgroundNotification, RUINRetainedMediaDidChangeNotification])
+        [observers addObject:[NSNotificationCenter.defaultCenter addObserverForName:NSUserDefaultsDidChangeNotification
+            object:nil queue:nil usingBlock:^(__unused NSNotification *note) {
+                if (UIReadOption() != UIEnabled()) UIQueueRefresh(YES);
+            }]];
+        for (NSNotificationName name in @[UIApplicationDidBecomeActiveNotification, UIApplicationDidEnterBackgroundNotification])
             [observers addObject:[NSNotificationCenter.defaultCenter addObserverForName:name object:nil queue:nil
-                usingBlock:^(__unused NSNotification *note) { dispatch_async(dispatch_get_main_queue(), ^{ RUINRefreshUnsendMarkerUI(); }); }]];
+                usingBlock:^(__unused NSNotification *note) { UIQueueRefresh(YES); }]];
+        [observers addObject:[NSNotificationCenter.defaultCenter addObserverForName:RUINRetainedMediaDidChangeNotification
+            object:nil queue:nil usingBlock:^(__unused NSNotification *note) { if (UIEnabled()) UIQueueRefresh(NO); }]];
         [observers addObject:[NSNotificationCenter.defaultCenter addObserverForName:UIApplicationWillResignActiveNotification
             object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
+                if (!UIEnabled()) return;
                 for (UICollectionViewCell *cell in UICells.allObjects) if (cell.window)
                     UIObserveVisibleMedia(cell, UIRecord(cell), YES);
             }]];
@@ -510,6 +616,11 @@ NSDictionary *RUINUnsendMarkerUIDiagnostics(void) {
     NSMutableArray *hooks = [NSMutableArray array]; NSArray *statuses = @[@"pending", @"version_gated", @"missing_or_encoding_mismatch", @"installed"];
     for (NSUInteger i = 0; i < 3; i++) [hooks addObject:@{@"selector":@(UIHooks[i].name), @"expectedEncoding":@"v16@0:8", @"status":statuses[atomic_load(&UIHooks[i].status)]}];
     return @{@"enabled":@(UIEnabled()), @"cellClass":@(UICellClass), @"hooks":hooks, @"layoutCalls":@(atomic_load(&UILayoutCalls)),
+        @"cellRefreshes":@(atomic_load(&UICellRefreshes)), @"trackedRefreshPasses":@(atomic_load(&UITrackedPasses)),
+        @"refreshElapsedNanoseconds":@(atomic_load(&UIRefreshNanoseconds)),
+        @"refreshAverageNanoseconds":@(atomic_load(&UICellRefreshes) ? atomic_load(&UIRefreshNanoseconds) / atomic_load(&UICellRefreshes) : 0),
+        @"refreshP95UpperBoundNanoseconds":@(UIRefreshP95UpperBound()), @"refreshMaxNanoseconds":@(atomic_load(&UIRefreshMaxNanoseconds)),
+        @"trackedCellsVisited":@(atomic_load(&UITrackedVisits)), @"disabledCallbacks":@(atomic_load(&UIDisabledCallbacks)),
         @"reuseCalls":@(atomic_load(&UIReuseCalls)), @"visibleTrackedCells":@(atomic_load(&UIVisibleCount)), @"identityBindings":@(atomic_load(&UIBoundCells)),
         @"unresolvedBindings":@(atomic_load(&UIUnresolvedCells)), @"markerMatches":@(atomic_load(&UIMarkerMatches)),
         @"badgesAdded":@(atomic_load(&UIBadgesAdded)), @"badgesRemoved":@(atomic_load(&UIBadgesRemoved)), @"noSafeSpace":@(atomic_load(&UINoSpace)),

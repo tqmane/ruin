@@ -52,8 +52,14 @@ static void Require(BOOL value, NSString *reason) {
 @interface _TtC15LineMessagingUI18ChatViewController : UIViewController
 @property(nonatomic, strong) ManagedChat *chat;
 @property(nonatomic, strong) _TtC15LineMessagingUI11ChatContext *chatContext;
+@property(nonatomic, strong) _TtC15LineMessagingUI11ChatContext *contextCreatedOnAppearance;
 @end
-@implementation _TtC15LineMessagingUI18ChatViewController @end
+@implementation _TtC15LineMessagingUI18ChatViewController
+- (void)viewDidAppear:(_Bool)animated {
+    [super viewDidAppear:animated];
+    if (self.contextCreatedOnAppearance) self.chatContext = self.contextCreatedOnAppearance;
+}
+@end
 id RUINCopySwiftField(id object, const char *path) {
     if ([object isKindOfClass:_TtC15LineMessagingUI18ChatViewController.class] && !strcmp(path, "chatContext"))
         return [object chatContext];
@@ -85,12 +91,19 @@ int32_t RUINWriteReadControllerEnabled(id object, int32_t enabled) {
 @end
 
 static void DrainMainQueue(void) {
-    __block BOOL finished = NO;
-    dispatch_async(dispatch_get_main_queue(), ^{ finished = YES; });
-    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:2];
-    while (!finished && deadline.timeIntervalSinceNow > 0)
-        [NSRunLoop.currentRunLoop runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
-    Require(finished, @"main-queue fixture did not drain");
+    // Core Data may enqueue the policy completion as a later main-queue turn.
+    for (NSUInteger pass = 0; pass < 4; pass++) {
+        __block BOOL finished = NO;
+        dispatch_async(dispatch_get_main_queue(), ^{ finished = YES; });
+        NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:2];
+        while (!finished && deadline.timeIntervalSinceNow > 0)
+            [NSRunLoop.currentRunLoop runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+        Require(finished, @"main-queue fixture did not drain");
+    }
+}
+static void DrainContextAndMain(NSManagedObjectContext *context) {
+    [context performBlockAndWait:^{}];
+    DrainMainQueue();
 }
 #else
 void RUINRefreshAutomaticReadGate(void) {}
@@ -149,7 +162,7 @@ static void Sent(ReplyFixture *message) {
     NSUInteger before = successes; [message addNotificationOfSentMessage];
     Require(successes == before + 1, @"original sent notification was not forwarded exactly once");
 }
-static void Reload(void) { RUINInstallFeatures(); RUINRefreshAutomaticReadGate(); }
+static void Reload(void) { RUINInstallFeatures(); RUINRefreshAutomaticReadGate(); DrainMainQueue(); }
 
 int main(void) { @autoreleasepool {
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
@@ -192,6 +205,7 @@ int main(void) { @autoreleasepool {
             __attribute__((objc_precise_lifetime)) _TtC15LineMessagingUI18ChatViewController *otherController = [_TtC15LineMessagingUI18ChatViewController new];
             otherController.chat = otherChat; otherController.chatContext = [_TtC15LineMessagingUI11ChatContext new];
             otherController.chatContext.markAsReadController = otherGate; [otherController viewDidLoad];
+            DrainMainQueue();
 #endif
             Require(RUINShouldSuppressReadForChat(chat), @"initial boundary was not hidden");
             Sent(message);
@@ -249,9 +263,11 @@ int main(void) { @autoreleasepool {
             NSString *identity = [NSString stringWithFormat:@"%@:%@", square ? @"squareChat" : @"chat", chat.mid];
             [defaults setObject:@[identity] forKey:RUINReadExceptionsDefaultsKey]; Reload();
             Require(!RUINShouldSuppressReadForChat(chat), @"chat exception was suppressed");
+            Require(RUINReadPolicyHasIdentity(chat), @"exception chat identity did not resolve");
 #if defined(RUIN_AUTOMATIC_READ_GATE_HOST_CHECK)
             NSUInteger receipts = reader.receipts;
-            Require(gate.enabled && !otherGate.enabled, @"exception leaked to another chat or did not restore native gate");
+            Require(gate.enabled && !otherGate.enabled,
+                    [NSString stringWithFormat:@"exception gate mismatch (chat=%d other=%d)", gate.enabled, otherGate.enabled]);
             chat.lastReceivedMessageID = 104;
             Require(reader.receipts == receipts + 1, @"exception incoming read was blocked");
 #endif
@@ -291,6 +307,7 @@ int main(void) { @autoreleasepool {
         privateController.chat = privateChat; privateController.chatContext = [_TtC15LineMessagingUI11ChatContext new];
         privateController.chatContext.markAsReadController = privateGate; [privateController viewDidLoad];
         Require(!privateGate.enabled, @"private-context automatic gate was not held");
+        DrainContextAndMain(privateContext);
         [privateContext performBlockAndWait:^{ Send(privateMessage); Sent(privateMessage); }]; DrainMainQueue();
         Require(privateGate.enabled && privateReader.receipts == 1 && privateReader.lastRead == 300,
                 @"private-context success did not precede native UI delivery");
@@ -308,7 +325,79 @@ int main(void) { @autoreleasepool {
         DrainMainQueue();
         Require(privateGate.enabled, @"private-context settings off did not restore native gate");
         [privateContext performBlockAndWait:^{ [privateChat removeObserver:privateReader forKeyPath:@"lastReceivedMessageID"]; }];
-        puts("Automatic read gate checks passed: prior receive ordering, successful reply, settings and exceptions");
+
+        // Keep the first policy snapshot queued while the UI toggles OFF, then
+        // ON for an exempt replacement chat. The late old-context result must
+        // not reapply its suppression decision to either gate.
+        NSManagedObjectContext *lateContext = [[NSManagedObjectContext alloc] initWithConcurrencyType:NSPrivateQueueConcurrencyType];
+        lateContext.persistentStoreCoordinator = coordinator;
+        __block ManagedChat *lateChat;
+        [lateContext performBlockAndWait:^{
+            lateChat = [NSEntityDescription insertNewObjectForEntityForName:@"Chat" inManagedObjectContext:lateContext];
+            lateChat.mid = @"late-old"; lateChat.lastReceivedMessageID = 700;
+        }];
+        dispatch_semaphore_t entered = dispatch_semaphore_create(0);
+        dispatch_semaphore_t release = dispatch_semaphore_create(0);
+        [lateContext performBlock:^{
+            dispatch_semaphore_signal(entered);
+            dispatch_semaphore_wait(release, DISPATCH_TIME_FOREVER);
+        }];
+        @try {
+            Require(dispatch_semaphore_wait(entered, dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC)) == 0,
+                    @"late-snapshot context blocker did not start");
+            RUINFixtureReadGate *lateGate = [RUINFixtureReadGate new]; lateGate.enabled = YES;
+            __attribute__((objc_precise_lifetime)) _TtC15LineMessagingUI18ChatViewController *lateController = [_TtC15LineMessagingUI18ChatViewController new];
+            lateController.chat = lateChat; lateController.chatContext = [_TtC15LineMessagingUI11ChatContext new];
+            lateController.chatContext.markAsReadController = lateGate;
+            [defaults setBool:YES forKey:RUINReadControlEnabledDefaultsKey];
+            [defaults setBool:YES forKey:RUINMarkReadOnReplyDefaultsKey];
+            [defaults setObject:@[] forKey:RUINReadExceptionsDefaultsKey]; RUINInstallFeatures();
+            [lateController viewDidLoad];
+            Require(!lateGate.enabled, @"late snapshot did not fail closed before its context ran");
+
+            [defaults setBool:NO forKey:RUINReadControlEnabledDefaultsKey]; Reload();
+            Require(lateGate.enabled, @"OFF did not restore the original value while a snapshot was queued");
+
+            ManagedChat *replacementChat = [NSEntityDescription insertNewObjectForEntityForName:@"Chat" inManagedObjectContext:context];
+            replacementChat.mid = @"late-new"; replacementChat.lastReceivedMessageID = 701;
+            RUINFixtureReadGate *replacementGate = [RUINFixtureReadGate new]; replacementGate.enabled = YES;
+            lateController.chat = replacementChat;
+            lateController.chatContext = [_TtC15LineMessagingUI11ChatContext new];
+            lateController.chatContext.markAsReadController = replacementGate;
+            [defaults setBool:YES forKey:RUINReadControlEnabledDefaultsKey];
+            [defaults setObject:@[@"chat:late-new"] forKey:RUINReadExceptionsDefaultsKey]; RUINInstallFeatures();
+            [lateController viewWillAppear:YES];
+            Require(!replacementGate.enabled, @"replacement context was not protected before its exception snapshot");
+            DrainMainQueue();
+            Require(replacementGate.enabled, @"replacement chat exception did not restore its original gate");
+
+            dispatch_semaphore_signal(release);
+            DrainContextAndMain(lateContext);
+            Require(lateGate.enabled && replacementGate.enabled,
+                    @"stale old-context callback changed a restored gate after OFF/context swap");
+            [defaults setObject:@[] forKey:RUINReadExceptionsDefaultsKey];
+            [defaults setBool:NO forKey:RUINReadControlEnabledDefaultsKey]; Reload();
+        } @finally {
+            dispatch_semaphore_signal(release);
+            [lateContext performBlockAndWait:^{}];
+            DrainMainQueue();
+        }
+        // Native code can create its gate during appearance. The post-native
+        // lifecycle check must attach it without relying on any layout callback.
+        [defaults setBool:YES forKey:RUINReadControlEnabledDefaultsKey];
+        [defaults setObject:@[] forKey:RUINReadExceptionsDefaultsKey]; RUINInstallFeatures();
+        _TtC15LineMessagingUI18ChatViewController *appearingController = [_TtC15LineMessagingUI18ChatViewController new];
+        RUINFixtureReadGate *appearingGate = [RUINFixtureReadGate new]; appearingGate.enabled = YES;
+        appearingController.chat = privateChat;
+        appearingController.contextCreatedOnAppearance = [_TtC15LineMessagingUI11ChatContext new];
+        appearingController.contextCreatedOnAppearance.markAsReadController = appearingGate;
+        [appearingController viewDidAppear:YES];
+        Require(!appearingGate.enabled, @"gate created during native appearance was not protected");
+        DrainContextAndMain(privateContext);
+        Require(!appearingGate.enabled, @"appearance policy snapshot unexpectedly opened the gate");
+        [defaults setBool:NO forKey:RUINReadControlEnabledDefaultsKey]; Reload();
+        Require(appearingGate.enabled, @"appearance-created gate did not restore its original value");
+        puts("Automatic read gate checks passed: async/stale snapshots, context swaps, prior rearming, reply tokens, appearance and exceptions");
 #else
         puts("Read-on-reply checks passed: success correlation, stale/failed sends and boundary policy");
 #endif

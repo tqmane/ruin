@@ -102,6 +102,14 @@ static void WithScope(const uintptr_t *pcs, size_t count, void (^body)(void)) {
     testPCs = pcs; testPCCount = count;
     @try { body(); } @finally { testPCs = previous; testPCCount = previousCount; }
 }
+static void DrainMarkerReadQueue(void) { dispatch_sync(markerReadQueue, ^{}); }
+static void EvictMarkerCache(NSDictionary *key) {
+    NSArray<NSString *> *cacheKey = MarkerQueryKey(key);
+    if (!cacheKey) return;
+    os_unfair_lock_lock(&markerCacheLock);
+    [markerLookupCache removeObjectForKey:cacheKey];
+    os_unfair_lock_unlock(&markerCacheLock);
+}
 // Native control-flow fixture: nil/empty lookup skips local destruction only;
 // the enclosing callback still completes. Real Core Data performs every fetch
 // and deletion; only the caller PC capture/image check are injected on macOS.
@@ -153,6 +161,7 @@ int main(void) {
             a = [[NSManagedObjectContext alloc] initWithConcurrencyType:NSPrivateQueueConcurrencyType]; a.persistentStoreCoordinator = first;
             b = [[NSManagedObjectContext alloc] initWithConcurrencyType:NSPrivateQueueConcurrencyType]; b.persistentStoreCoordinator = second;
             __block ManagedMessage *off, *retained, *sameIDOtherChat, *sameIDOtherStore, *manual, *missingScope, *media;
+            __block NSDictionary *retainedKey;
             [a performBlockAndWait:^{
                 off = Insert(a, @"11", @"off-chat", @"RUIN TEST default off");
                 WithScope(fixtureScopePCs, fixtureScopePCCount, ^{ Destroy(a, Request(@"11")); });
@@ -160,6 +169,25 @@ int main(void) {
                 Check([a save:NULL], @"disabled deletion save failed");
             }];
             [defaults setBool:YES forKey:RUINKeepUnsentMessagesKey]; RUINInstallMessageHistory();
+            NSDictionary *coldAbsent = @{@"store":@"cold-store", @"kind":@"talk", @"chat":@"cold-chat", @"message":@"21"};
+            NSURL *markerURL = MarkerURL();
+            Check(!RUINUnsendOperationHasRetainedMarker(coldAbsent) &&
+                ![NSFileManager.defaultManager fileExistsAtPath:markerURL.path], @"cold missing-database lookup created storage");
+            DrainMarkerReadQueue();
+            Check(markerDatabase == NULL && markerReadDatabase == NULL &&
+                ![NSFileManager.defaultManager fileExistsAtPath:markerURL.path], @"background miss created or opened a database");
+            Check([NSFileManager.defaultManager createDirectoryAtURL:markerURL.URLByDeletingLastPathComponent
+                withIntermediateDirectories:YES attributes:nil error:NULL] &&
+                [[NSData data] writeToURL:markerURL options:NSDataWritingAtomic error:NULL], @"empty marker database fixture failed");
+            InvalidateMarkerCache(nil);
+            Check(!RUINUnsendOperationHasRetainedMarker(coldAbsent), @"uninitialized marker database returned a hit");
+            DrainMarkerReadQueue();
+            NSDictionary *emptyStatus = [NSFileManager.defaultManager attributesOfItemAtPath:markerURL.path error:NULL];
+            Check(markerDatabase == NULL && markerReadDatabase == NULL && [emptyStatus[NSFileSize] unsignedLongLongValue] == 0,
+                @"uninitialized marker database was opened for writing");
+            Check([NSFileManager.defaultManager removeItemAtURL:markerURL error:NULL] &&
+                [NSFileManager.defaultManager removeItemAtURL:markerURL.URLByDeletingLastPathComponent error:NULL], @"empty marker fixture cleanup failed");
+            InvalidateMarkerCache(nil);
             [a performBlockAndWait:^{
                 retained = Insert(a, @"9007199254740993", @"private-chat-sentinel", @"RUIN TEST private-original-sentinel");
                 manual = Insert(a, @"12", @"manual-chat", @"RUIN TEST manual");
@@ -175,6 +203,7 @@ int main(void) {
                 uint_fast64_t callbacks = atomic_load(&outerCallbacks), deletes = atomic_load(&actualDeletes);
                 CaptureOperation(@"private-chat-sentinel", @"9007199254740993", 65);
                 WithScope(fixtureScopePCs, fixtureScopePCCount, ^{ Destroy(a, Request(@"9007199254740993")); });
+                retainedKey = RUINHistoryMessageKey(retained);
                 Check(!retained.isDeleted && [[retained plaintext] isEqual:@"RUIN TEST private-original-sentinel"] &&
                     atomic_load(&outerCallbacks) == callbacks + 1 && atomic_load(&actualDeletes) == deletes, @"confirmed local unsend lost body or enclosing callback");
                 uint_fast64_t displays = atomic_load(&fixtureDisplayCalls);
@@ -209,6 +238,11 @@ int main(void) {
                 Check([[sameIDOtherStore displayedText] isEqual:@"RUIN TEST other store"] &&
                     [[sameIDOtherChat displayedText] isEqual:@"RUIN TEST other chat"], @"marker crossed store/chat identity");
             }];
+            EvictMarkerCache(retainedKey);
+            Check(!RUINUnsendOperationHasRetainedMarker(retainedKey), @"cold marker cache synchronously reported a result");
+            DrainMarkerReadQueue();
+            Check(RUINUnsendOperationHasRetainedMarker(retainedKey) && markerReadDatabase != NULL,
+                @"background marker read did not warm a retained positive");
             // A valid caller chain is insufficient when the actual returned ID
             // differs from the requested ID. Original fetch still executes once.
             [a performBlockAndWait:^{
@@ -277,7 +311,16 @@ int main(void) {
             fixtureInfo = @{ @"RUINOriginalBundleIdentifier":@"jp.naver.line", @"CFBundleShortVersionString":@"26.16.0", @"CFBundleVersion":@"2026.1006.1718" };
             RUINInstallUnsendOperation();
             Check([RUINUnsendOperationDiagnostics()[@"nativeCodeVerified"] boolValue], @"26.16 mapping did not recover after a gated host");
+            NSDictionary *lateMarker = @{@"store":@"write-store", @"kind":@"talk", @"chat":@"write-chat", @"message":@"88"};
+            Check(!RUINUnsendOperationHasRetainedMarker(lateMarker), @"unseen marker unexpectedly existed");
+            DrainMarkerReadQueue();
+            Check(!RUINUnsendOperationHasRetainedMarker(lateMarker), @"negative marker cache did not settle");
+            Check(RetainedMarker(lateMarker, YES) && RUINUnsendOperationHasRetainedMarker(lateMarker),
+                @"marker write did not invalidate a cached negative");
             Check(RUINClearUnsendOperationMarkers() && [RUINUnsendOperationDiagnostics()[@"markerCount"] unsignedIntegerValue] == 0, @"marker clear failed");
+            Check(!RUINUnsendOperationHasRetainedMarker(retainedKey), @"marker clear returned a cached positive");
+            DrainMarkerReadQueue();
+            Check(!RUINUnsendOperationHasRetainedMarker(retainedKey), @"marker clear did not invalidate the background result");
             [a performBlockAndWait:^{ Check([[retained displayedText] isEqual:@"RUIN TEST private-original-sentinel"], @"cleared marker still rendered a label"); }];
             NSString *diagnostics = [RUINUnsendOperationDiagnostics() description];
             for (NSString *private in @[@"private-chat-sentinel", @"private-original-sentinel", @"9007199254740993", fixtureSupport.path])
@@ -293,7 +336,12 @@ int main(void) {
             if (originalInfo) method_setImplementation(infoMethod, originalInfo);
             if (originalDirectories) method_setImplementation(directoriesMethod, originalDirectories);
             if (systemFetch) method_setImplementation(fetchMethod, systemFetch);
-            os_unfair_lock_lock(&markerLock); if (markerDatabase) sqlite3_close_v2(markerDatabase); markerDatabase = NULL; os_unfair_lock_unlock(&markerLock);
+            if (markerReadQueue) dispatch_sync(markerReadQueue, ^{});
+            os_unfair_lock_lock(&markerLock);
+            if (markerDatabase) sqlite3_close_v2(markerDatabase); markerDatabase = NULL;
+            if (markerReadStatement) sqlite3_finalize(markerReadStatement); markerReadStatement = NULL;
+            if (markerReadDatabase) sqlite3_close_v2(markerReadDatabase); markerReadDatabase = NULL;
+            os_unfair_lock_unlock(&markerLock);
             [NSFileManager.defaultManager removeItemAtURL:fixtureSupport error:NULL];
         }
         if (!result) puts("RUIN UnsendOperation native host checks passed"); return result;

@@ -5,10 +5,12 @@
 #import "MessageHistory.h"
 #import "MessagingPrivateAPI.h"
 #import "TargetMetadata.h"
+#import <CoreData/CoreData.h>
 #import <UIKit/UIKit.h>
 #import <ImageIO/ImageIO.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import <objc/runtime.h>
+#import <os/lock.h>
 #import <stdatomic.h>
 #import <string.h>
 #import <sys/stat.h>
@@ -22,6 +24,46 @@ static atomic_ulong captureRequests, scopeRejections, localSources, remoteSource
 static _Thread_local unsigned captureDepth, getterDepth;
 static NSMutableDictionary<NSArray *, NSUUID *> *pendingCopies;
 static UIBackgroundTaskIdentifier backgroundTask;
+static NSCache<NSArray<NSString *> *, NSDictionary<NSString *, NSURL *> *> *getterURLCache;
+static dispatch_queue_t getterCacheQueue;
+static os_unfair_lock getterCacheLock = OS_UNFAIR_LOCK_INIT;
+static uint64_t getterCacheGeneration;
+static NSUInteger pendingGetterWarms;
+static const void *getterStateAssociation = &getterStateAssociation;
+static NSUserDefaults *lineAccountDefaults;
+static NSString *getterAccountMID;
+static id accountDefaultsObserver;
+
+@interface RUINRetainedMediaGetterState : NSObject
+@property (nonatomic, copy) NSArray<NSString *> *cacheKey;
+@property (nonatomic) BOOL pending;
+@property (nonatomic) NSTimeInterval retryAfter;
+@property (nonatomic) uint64_t generation;
+@property (nonatomic) uint64_t cacheGeneration;
+@end
+@implementation RUINRetainedMediaGetterState @end
+
+static void InitializeGetterCache(void) {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        getterURLCache = [NSCache new];
+        getterURLCache.countLimit = 512;
+        getterCacheQueue = dispatch_queue_create("com.ruin.retained-media.getter-cache", dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_UTILITY, 0));
+        lineAccountDefaults = [[NSUserDefaults alloc] initWithSuiteName:@"group.com.linecorp.line"];
+        id mid = [lineAccountDefaults objectForKey:@"mid"];
+        getterAccountMID = [mid isKindOfClass:NSString.class] ? [mid copy] : nil;
+    });
+}
+
+static RUINRetainedMediaGetterState *GetterState(NSManagedObject *message, BOOL create) {
+    RUINRetainedMediaGetterState *state = objc_getAssociatedObject(message, getterStateAssociation);
+    if (!state && create) {
+        state = [RUINRetainedMediaGetterState new];
+        state.cacheGeneration = getterCacheGeneration;
+        objc_setAssociatedObject(message, getterStateAssociation, state, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    return state;
+}
 
 // UIKit owns the finite background grace period. A committed archive is durable;
 // force termination before a copy completes cannot be turned into a guarantee.
@@ -91,6 +133,7 @@ static BOOL SameFile(NSURL *firstURL, NSURL *secondURL) {
 // account's Line.sqlite in the OS-authorized/mapped LINE group, not a guessed
 // container or another account's database.
 static NSDictionary *Scope(NSManagedObject *message) {
+    InitializeGetterCache();
     if (message.isDeleted || message.objectID.isTemporaryID ||
         ![message.entity.name isEqual:@"Message"]) return nil;
     NSDictionary *key = ArchiveKey(RUINHistoryMessageKey(message));
@@ -102,8 +145,7 @@ static NSDictionary *Scope(NSManagedObject *message) {
     NSURL *storeURL = message.objectID.persistentStore.URL;
     if (!storeURL.isFileURL || ![storeURL.lastPathComponent isEqual:@"Line.sqlite"]) return nil;
     NSString *accountName = storeURL.URLByDeletingLastPathComponent.URLByDeletingLastPathComponent.lastPathComponent;
-    NSUserDefaults *profile = [[NSUserDefaults alloc] initWithSuiteName:@"group.com.linecorp.line"];
-    id mid = [profile objectForKey:@"mid"];
+    id mid = [lineAccountDefaults objectForKey:@"mid"];
     if (![mid isKindOfClass:NSString.class] || [mid length] != 33 || ![mid hasPrefix:@"u"] ||
         ![@[[@"P_" stringByAppendingString:mid], [@"S_" stringByAppendingString:mid]] containsObject:accountName]) return nil;
     NSURL *group = [NSFileManager.defaultManager containerURLForSecurityApplicationGroupIdentifier:@"group.com.linecorp.line"];
@@ -139,6 +181,76 @@ static NSDictionary *Scope(NSManagedObject *message) {
     return @{@"key":key, @"roots":[roots copy], @"contentType":type};
 }
 
+static NSArray<NSString *> *GetterCacheKey(NSManagedObject *message, NSDictionary *scope) {
+    NSManagedObjectID *objectID = message.objectID;
+    NSURL *storeURL = objectID.persistentStore.URL;
+    NSString *objectURI = objectID.URIRepresentation.absoluteString;
+    NSDictionary *key = scope[@"key"];
+    if (!storeURL.isFileURL || !objectURI.length || !key.count) return nil;
+    return @[objectURI, storeURL.absoluteString ?: @"", key[@"store"], key[@"kind"], key[@"chat"], key[@"message"]];
+}
+
+static NSURL *CachedArchiveURL(NSManagedObject *message, NSString *role) {
+    InitializeGetterCache();
+    NSDictionary<NSString *, NSURL *> *URLs = nil;
+    os_unfair_lock_lock(&getterCacheLock);
+    RUINRetainedMediaGetterState *state = GetterState(message, NO);
+    if (state && state.cacheGeneration == getterCacheGeneration && state.cacheKey)
+        URLs = [getterURLCache objectForKey:state.cacheKey];
+    os_unfair_lock_unlock(&getterCacheLock);
+    NSArray<NSString *> *roles = [role isEqual:@"attached"] ? @[@"attached", @"video", @"file"] : @[role];
+    for (NSString *candidate in roles) if ([URLs[candidate] isKindOfClass:NSURL.class]) return URLs[candidate];
+    return nil;
+}
+
+static void InvalidateGetterCache(NSManagedObject *message) {
+    if (!message) return;
+    InitializeGetterCache();
+    os_unfair_lock_lock(&getterCacheLock);
+    RUINRetainedMediaGetterState *state = GetterState(message, NO);
+    if (state) {
+        if (state.cacheKey) [getterURLCache removeObjectForKey:state.cacheKey];
+        state.cacheKey = nil;
+        state.pending = NO;
+        state.retryAfter = 0;
+        state.generation++;
+        state.cacheGeneration = getterCacheGeneration;
+    }
+    os_unfair_lock_unlock(&getterCacheLock);
+}
+
+static void InvalidateAllGetterCaches(void) {
+    InitializeGetterCache();
+    os_unfair_lock_lock(&getterCacheLock);
+    getterCacheGeneration++;
+    [getterURLCache removeAllObjects];
+    os_unfair_lock_unlock(&getterCacheLock);
+}
+
+static void InstallGetterCacheObservers(void) {
+    InitializeGetterCache();
+    @synchronized (RUINRetainedMediaStore.class) {
+        if (accountDefaultsObserver) return;
+        id defaultsObserver = [NSNotificationCenter.defaultCenter
+            addObserverForName:NSUserDefaultsDidChangeNotification object:nil queue:nil
+            usingBlock:^(__unused NSNotification *notification) {
+                id value = [lineAccountDefaults objectForKey:@"mid"];
+                NSString *mid = [value isKindOfClass:NSString.class] ? [value copy] : nil;
+                os_unfair_lock_lock(&getterCacheLock);
+                if (getterAccountMID != mid && ![getterAccountMID isEqual:mid]) {
+                    getterAccountMID = mid;
+                    getterCacheGeneration++;
+                    [getterURLCache removeAllObjects];
+                }
+                os_unfair_lock_unlock(&getterCacheLock);
+            }];
+        id foregroundObserver = [NSNotificationCenter.defaultCenter
+            addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:nil
+            usingBlock:^(__unused NSNotification *notification) { InvalidateAllGetterCaches(); }];
+        accountDefaultsObserver = @[defaultsObserver, foregroundObserver];
+    }
+}
+
 static id MediaValue(id<RUINMessagingMediaFields> object, NSString *name) {
     Method method = class_getInstanceMethod(object_getClass(object), NSSelectorFromString(name));
     if (!method || strcmp(method_getTypeEncoding(method), "@16@0:8")) return nil;
@@ -163,7 +275,7 @@ static void NotifyChanged(NSDictionary *key) {
 
 // Deduplicate before opening a source FD; getters may be called for every layout.
 static void CaptureSource(RUINRetainedMediaStore *store, NSDictionary *scope, NSString *role,
-                          NSURL *source, NSData *data, NSString *extension) {
+                          NSURL *source, NSData *data, NSString *extension, NSManagedObject *message) {
     NSDictionary *key = scope[@"key"];
     for (NSDictionary *item in [store itemsForKey:key]) if ([item[@"role"] isEqual:role]) return;
     NSArray *token = @[key, role];
@@ -181,7 +293,10 @@ static void CaptureSource(RUINRetainedMediaStore *store, NSDictionary *scope, NS
         }
         atomic_fetch_add(success ? &copySuccesses : &copyFailures, 1);
         UpdateBackgroundTask();
-        if (success && [store isUnsentForKey:key]) NotifyChanged(key);
+        if (success && [store isUnsentForKey:key]) {
+            InvalidateGetterCache(message);
+            NotifyChanged(key);
+        }
     };
     BOOL accepted = data ? [store captureData:data extension:extension forKey:key role:role completion:completed] :
         [store captureURL:source allowedRoots:scope[@"roots"] forKey:key role:role completion:completed];
@@ -190,16 +305,13 @@ static void CaptureSource(RUINRetainedMediaStore *store, NSDictionary *scope, NS
     if (!accepted) completed(NO);
 }
 
-static void Capture(id value, NSDictionary *messageKey, BOOL unsent) {
-    if (!Enabled() || captureDepth || ![value isKindOfClass:NSManagedObject.class]) return;
-    NSManagedObject *message = value;
-    NSManagedObjectContext *context = message.managedObjectContext;
-    NSDictionary *requested = ArchiveKey(messageKey);
-    if (!context || !requested.count) return;
+static void CaptureOnContextQueue(NSManagedObject *message, NSDictionary *requested, BOOL unsent, NSDictionary *knownScope,
+                                  NSString *prefetchedSelector, id prefetchedValue) {
+    if (!Enabled() || captureDepth) return;
     atomic_fetch_add(&captureRequests, 1);
-    [context performBlockAndWait:^{ @try {
-        captureDepth++;
-        NSDictionary *scope = Scope(message);
+    captureDepth++;
+    @try {
+        NSDictionary *scope = knownScope ?: Scope(message);
         if (!scope || ![scope[@"key"] isEqual:requested]) { atomic_fetch_add(&scopeRejections, 1); return; }
         NSInteger type = [scope[@"contentType"] integerValue];
         BOOL media = [@[@1, @2, @3, @14] containsObject:@(type)];
@@ -208,7 +320,10 @@ static void Capture(id value, NSDictionary *messageKey, BOOL unsent) {
         // Tombstones may have lost contentType/metadata already. Mark a prior
         // archive even then, before startup synchronization continues cleanup.
         if (unsent &&
-            ![store isUnsentForKey:requested] && [store markUnsentForKey:requested]) NotifyChanged(requested);
+            ![store isUnsentForKey:requested] && [store markUnsentForKey:requested]) {
+            InvalidateGetterCache(message);
+            NotifyChanged(requested);
+        }
         if (!media) return;
         NSMutableDictionary *selectors = [NSMutableDictionary dictionary];
         if (type == 1) { selectors[@"imageFileURL"] = @"photo"; selectors[@"cacheableImagePathURL"] = @"photo"; selectors[@"livePhotoFileURL"] = @"livePhoto"; }
@@ -220,12 +335,12 @@ static void Capture(id value, NSDictionary *messageKey, BOOL unsent) {
             BOOL saved = NO;
             for (NSDictionary *item in committed) if ([item[@"role"] isEqual:selectors[name]]) { saved = YES; break; }
             if (saved) continue;
-            id source = MediaValue((id<RUINMessagingMediaFields>)message, name);
+            id source = [name isEqual:prefetchedSelector] ? prefetchedValue : MediaValue((id<RUINMessagingMediaFields>)message, name);
             if (![source isKindOfClass:NSURL.class]) continue;
             if (![source isFileURL]) { atomic_fetch_add(&remoteSources, 1); continue; }
             if (![NSFileManager.defaultManager fileExistsAtPath:[source path]]) continue;
             atomic_fetch_add(&localSources, 1);
-            CaptureSource(store, scope, selectors[name], source, nil, nil);
+            CaptureSource(store, scope, selectors[name], source, nil, nil, message);
         }
         NSAttributeDescription *thumbnail = message.entity.attributesByName[@"thumbnail"];
         id data = thumbnail.attributeType == NSBinaryDataAttributeType ? [message valueForKey:@"thumbnail"] : nil;
@@ -235,12 +350,111 @@ static void Capture(id value, NSDictionary *messageKey, BOOL unsent) {
                 CFStringRef identifier = CGImageSourceGetType(image);
                 NSString *extension = identifier ? [UTType typeWithIdentifier:(__bridge NSString *)identifier].preferredFilenameExtension : nil;
                 if (CGImageSourceGetStatus(image) == kCGImageStatusComplete && extension.length)
-                    CaptureSource(store, scope, @"thumbnail", nil, [data copy], extension);
+                    CaptureSource(store, scope, @"thumbnail", nil, [data copy], extension, message);
                 CFRelease(image);
             }
         }
     } @catch (__unused NSException *exception) { atomic_fetch_add(&copyFailures, 1); }
-    @finally { captureDepth--; } }];
+    @finally { captureDepth--; }
+}
+
+static void Capture(id value, NSDictionary *messageKey, BOOL unsent) {
+    if (!Enabled() || captureDepth || ![value isKindOfClass:NSManagedObject.class]) return;
+    NSManagedObject *message = value;
+    NSManagedObjectContext *context = message.managedObjectContext;
+    NSDictionary *requested = ArchiveKey(messageKey);
+    if (!context || !requested.count) return;
+    [context performBlockAndWait:^{ CaptureOnContextQueue(message, requested, unsent, nil, nil, nil); }];
+}
+
+static void FinishGetterWarm(NSManagedObject *message, uint64_t requestGeneration, uint64_t cacheGeneration,
+                             NSArray<NSString *> *cacheKey, NSDictionary<NSString *, NSURL *> *URLs,
+                             NSDictionary *messageKey) {
+    BOOL notify = NO;
+    os_unfair_lock_lock(&getterCacheLock);
+    RUINRetainedMediaGetterState *state = GetterState(message, NO);
+    if (pendingGetterWarms) pendingGetterWarms--;
+    if (state && state.pending && state.generation == requestGeneration && getterCacheGeneration == cacheGeneration) {
+        NSDictionary *previous = state.cacheKey ? [getterURLCache objectForKey:state.cacheKey] : nil;
+        if (state.cacheKey && ![state.cacheKey isEqual:cacheKey]) [getterURLCache removeObjectForKey:state.cacheKey];
+        state.cacheKey = cacheKey;
+        state.cacheGeneration = cacheGeneration;
+        state.pending = NO;
+        state.retryAfter = NSProcessInfo.processInfo.systemUptime + 1.0;
+        if (cacheKey) [getterURLCache setObject:URLs ?: @{} forKey:cacheKey];
+        notify = URLs.count && ![previous isEqualToDictionary:URLs];
+    }
+    os_unfair_lock_unlock(&getterCacheLock);
+    if (notify && messageKey.count) NotifyChanged(messageKey);
+}
+
+static NSString *GetterSelectorForRole(NSString *role) {
+    if ([role isEqual:@"photo"]) return @"imageFileURL";
+    if ([role isEqual:@"audio"]) return @"audioFileURL";
+    if ([role isEqual:@"attached"]) return @"attachedFileURL";
+    if ([role isEqual:@"thumbnail"]) return @"thumbnailFileURL";
+    if ([role isEqual:@"livePhoto"]) return @"livePhotoFileURL";
+    return nil;
+}
+
+static void ScheduleGetterWarm(NSManagedObject *message, NSString *role, id nativeValue) {
+    NSManagedObjectContext *context = message.managedObjectContext;
+    if (!context) return;
+    NSString *prefetchedSelector = GetterSelectorForRole(role);
+    InitializeGetterCache();
+    uint64_t requestGeneration, cacheGeneration;
+    NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
+    os_unfair_lock_lock(&getterCacheLock);
+    RUINRetainedMediaGetterState *state = GetterState(message, YES);
+    if (state.cacheGeneration != getterCacheGeneration) {
+        state.cacheKey = nil;
+        state.pending = NO;
+        state.retryAfter = 0;
+        state.generation++;
+        state.cacheGeneration = getterCacheGeneration;
+    }
+    if (state.pending || now < state.retryAfter || pendingGetterWarms >= 128) {
+        os_unfair_lock_unlock(&getterCacheLock);
+        return;
+    }
+    state.pending = YES;
+    state.retryAfter = now + 1.0;
+    requestGeneration = ++state.generation;
+    cacheGeneration = getterCacheGeneration;
+    pendingGetterWarms++;
+    os_unfair_lock_unlock(&getterCacheLock);
+
+    [context performBlock:^{
+        @autoreleasepool {
+            NSDictionary *scope = nil;
+            NSArray<NSString *> *cacheKey = nil;
+            @try {
+                if (Enabled() && message.managedObjectContext == context) scope = Scope(message);
+                if (scope) CaptureOnContextQueue(message, scope[@"key"], NO, scope, prefetchedSelector, nativeValue);
+                cacheKey = scope ? GetterCacheKey(message, scope) : nil;
+            } @catch (__unused NSException *exception) { }
+            NSDictionary *messageKey = scope[@"key"];
+            if (!cacheKey) {
+                FinishGetterWarm(message, requestGeneration, cacheGeneration, nil, @{}, messageKey);
+                return;
+            }
+            dispatch_async(getterCacheQueue, ^{
+                @autoreleasepool {
+                    NSMutableDictionary<NSString *, NSURL *> *URLs = [NSMutableDictionary dictionary];
+                    @try {
+                        RUINRetainedMediaStore *store = Enabled() ? Store(NO) : nil;
+                        if ([store isUnsentForKey:messageKey])
+                            for (NSDictionary *item in [store itemsForKey:messageKey]) {
+                                NSString *role = item[@"role"];
+                                NSURL *URL = item[@"URL"];
+                                if ([role isKindOfClass:NSString.class] && URL.isFileURL) URLs[role] = URL;
+                            }
+                    } @catch (__unused NSException *exception) { }
+                    FinishGetterWarm(message, requestGeneration, cacheGeneration, cacheKey, [URLs copy], messageKey);
+                }
+            });
+        }
+    }];
 }
 
 void RUINObserveRetainedMedia(id message, NSDictionary *messageKey) { Capture(message, messageKey, NO); }
@@ -263,7 +477,7 @@ void RUINObserveRetainedVideoURL(id value, NSDictionary *messageKey, NSURL *URL)
         [roots addObject:[NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES]];
         NSMutableDictionary *videoScope = [scope mutableCopy]; videoScope[@"roots"] = [roots copy];
         RUINRetainedMediaStore *store = Store(YES);
-        if (store) CaptureSource(store, videoScope, @"video", [URL copy], nil, nil);
+        if (store) CaptureSource(store, videoScope, @"video", [URL copy], nil, nil, message);
     } @catch (__unused NSException *exception) { atomic_fetch_add(&copyFailures, 1); } }];
 }
 
@@ -279,16 +493,9 @@ static id ForwardURL(NSManagedObject *message, NSString *role, id (^original)(vo
     @try {
         id value = original();
         if (!outer || captureDepth || !Enabled() || !message.managedObjectContext) return value;
-        __block NSDictionary *scope = nil;
-        [message.managedObjectContext performBlockAndWait:^{ @try { scope = Scope(message); }
-            @catch (__unused NSException *exception) {} }];
-        if (!scope) return value;
-        RUINObserveRetainedMedia(message, scope[@"key"]);
-        for (NSDictionary *item in RUINRetainedMediaItems(scope[@"key"]))
-            if (([item[@"role"] isEqual:role] || ([role isEqual:@"attached"] &&
-                [@[@"video", @"file"] containsObject:item[@"role"]])) && [item[@"URL"] isKindOfClass:NSURL.class]) {
-                atomic_fetch_add(&URLReplacements,1); return item[@"URL"];
-            }
+        NSURL *cached = CachedArchiveURL(message, role);
+        if (cached) { atomic_fetch_add(&URLReplacements, 1); return cached; }
+        ScheduleGetterWarm(message, role, value);
         return value;
     } @finally { getterDepth--; }
 }
@@ -317,6 +524,7 @@ static void InitTalk(Class cls) { %init(RUINMediaTalkURLs, RUINMediaTalk = cls);
 void RUINInstallRetainedMedia(void) {
     RUINInstallRetainedVideo();
     if (!RUINTargetMetadataMatchesInfo(NSBundle.mainBundle.infoDictionary)) return;
+    InstallGetterCacheObservers();
     @synchronized (RUINRetainedMediaStore.class) {
         Class talk = NSClassFromString(@"ManagedMessage");
         if (!talkHooksInstalled && GettersAvailable(talk)) { InitTalk(talk); talkHooksInstalled = YES; }

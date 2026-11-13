@@ -145,6 +145,9 @@ check-host: check-portable check-mapping-manifest $(HOST_FIXTURES)
 	./build/check_read_until mid-abi
 	./build/check_read_until swift-root
 	./build/check_marker_ui
+	python3 tests/check_marker_hotpath.py
+	python3 tests/check_marker_archive.py
+	python3 tests/check_retained_getter_hotpath.py
 	./build/check_theme_shop
 	./build/check_theme_shop mismatch
 	tests/check_theme_route_scope.sh
