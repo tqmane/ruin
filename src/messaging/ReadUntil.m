@@ -4,9 +4,13 @@
 #include <limits.h>
 #include <stdint.h>
 #include <string.h>
-#if !defined(RUIN_READ_UNTIL_HOST_CHECK)
 #import "../core/TargetMetadata.h"
-#import "../known/VersionMapping.h"
+#import "../known/FeatureImage.h"
+#if defined(RUIN_READ_UNTIL_HOST_CHECK)
+// Only environment inputs are substituted; the identity gate is shared.
+extern NSDictionary *RUINReadUntilInfoForTesting(void);
+extern BOOL RUINReadUntilResolveImageForTesting(const RUINHostIdentity *host,
+    Class owner, RUINFeatureImage *image);
 #endif
 
 NSString *const RUINReadUntilErrorDomain = @"RUINReadUntil";
@@ -100,13 +104,45 @@ static BOOL SubclassOf(Class cls, Class parent) {
     return NO;
 }
 
-static BOOL TargetMatches(void) {
+static BOOL TargetMatches(Class owner) {
 #if defined(RUIN_READ_UNTIL_HOST_CHECK)
-    return YES; // The fixture supplies exact fake runtime classes, never LINE.
+    NSDictionary *info = RUINReadUntilInfoForTesting();
 #else
-    const RUINVersionMapping *mapping = RUINCurrentMapping();
-    return mapping && mapping->messaging.readUntilABIStatus == RUINMappingStatusVerified;
+    NSDictionary *info = NSBundle.mainBundle.infoDictionary;
 #endif
+    // Keep renamed native sideloads supported by the strict main-image path.
+    // Metadata-only selection is not proof: the class owner must verify below.
+    const RUINVersionMapping *mapping = RUINMappingForInfo(info);
+    if (!mapping) mapping = RUINCurrentMapping();
+    if (!RUINMappingIdentityMatchesInfo(mapping, info) ||
+        mapping->messaging.readUntilABIStatus != RUINMappingStatusVerified) return NO;
+    RUINFeatureImage image = {0};
+#if defined(RUIN_READ_UNTIL_HOST_CHECK)
+    if (!RUINReadUntilResolveImageForTesting(&mapping->host, owner, &image)) return NO;
+#else
+    if (!RUINResolveFeatureImage(&mapping->host, owner, &image)) return NO;
+#endif
+    BOOL matches;
+    @synchronized (RUINReadUntilRequest.class) {
+        static const RUINVersionMapping *pinnedMapping;
+        static Class pinnedOwner;
+        static RUINFeatureImage pinnedImage;
+        matches = RUINFeatureImageMatches(&image, &mapping->host) && (!pinnedMapping ||
+            (pinnedMapping == mapping && pinnedOwner == owner &&
+             image.image.header == pinnedImage.image.header && image.image.slide == pinnedImage.image.slide &&
+             RUINFeatureImageMatches(&pinnedImage, &mapping->host)));
+        if (matches && !pinnedMapping) {
+            pinnedMapping = mapping;
+            pinnedOwner = owner;
+            pinnedImage = image;
+            memset(&image, 0, sizeof(image));
+        }
+        // One successful image stays pinned through native callbacks and the
+        // native work after them, including terminal races and thrown errors.
+        // Re-resolve on every use to recheck current metadata and class ownership.
+    }
+    RUINReleaseFeatureImage(&image);
+    return matches;
 }
 
 static BOOL ValidMessageID(NSString *string) {
@@ -127,7 +163,7 @@ BOOL RUINReadUntilAvailable(void) {
     Class mid = objc_getClass("_TtC13LineSharedMID3MID");
     Class task = objc_getClass("_TtC13LEGYInterface17AnyCancelableTask");
     Class service = objc_getClass("_TtC13LineMessaging11ChatService");
-    return TargetMatches() && SubclassOf(chat, NSManagedObject.class) &&
+    return TargetMatches(service) && SubclassOf(chat, NSManagedObject.class) &&
         SubclassOf(mid, NSObject.class) && task && !class_isMetaClass(task) &&
         SubclassOf(service, NSObject.class) &&
         MatchesMethod(chat, NO, "midStructAndReturnError:", "@24@0:8^@16") &&
@@ -155,7 +191,7 @@ void RUINReadUntilMessage(NSDictionary *messageKey, NSManagedObject *nativeChat,
         Class midClass = objc_getClass("_TtC13LineSharedMID3MID");
         Class taskClass = objc_getClass("_TtC13LEGYInterface17AnyCancelableTask");
         Class serviceClass = objc_getClass("_TtC13LineMessaging11ChatService");
-        if (!TargetMatches() || !SubclassOf(chatClass, NSManagedObject.class) ||
+        if (!TargetMatches(serviceClass) || !SubclassOf(chatClass, NSManagedObject.class) ||
             !SubclassOf(midClass, NSObject.class) || !taskClass || class_isMetaClass(taskClass) ||
             !SubclassOf(serviceClass, NSObject.class) ||
             ![nativeChat isKindOfClass:chatClass] ||

@@ -8,6 +8,7 @@
 #import "../core/Localization.h"
 #import "../core/TargetMetadata.h"
 #import "../known/MessagingMappings.h"
+#import "../known/FeatureImage.h"
 #import <CoreData/CoreData.h>
 #import <TargetConditionals.h>
 #import <objc/runtime.h>
@@ -23,8 +24,14 @@
 
 static _Atomic(uintptr_t) imageSlide;
 static atomic_bool codeVerified;
-static const RUINUnsendOperationMapping *selectedUnsendMapping;
-static const RUINUnsendOperationMapping *activeUnsendMapping;
+static _Atomic(const RUINUnsendOperationMapping *) selectedUnsendMapping;
+static _Atomic(const RUINUnsendOperationMapping *) activeUnsendMapping;
+// Written/read under installLock. Once published, keep this proof and its
+// loader reference for the lifetime of the installed hooks, including failures.
+static RUINFeatureImage unsendImage;
+static const RUINVersionMapping *unsendImageVersion;
+static NSString *imageResolution = @"notAttempted";
+static BOOL imageFingerprintVerified;
 typedef NS_ENUM(int, OperationHookStatus) {
     OperationHookPending = 0,
     OperationHookGated = 1,
@@ -48,6 +55,7 @@ static uint64_t markerCacheGeneration;
 static _Thread_local unsigned int fetchDepth, displayDepth;
 #if defined(RUIN_UNSEND_OPERATION_HOST_CHECK) && RUIN_UNSEND_OPERATION_HOST_CHECK
 static BOOL testImageMatches;
+static BOOL testUseFeatureImage;
 static _Thread_local const uintptr_t *testPCs;
 static _Thread_local size_t testPCCount;
 static _Thread_local uintptr_t testParam1Caller;
@@ -61,48 +69,85 @@ static BOOL Enabled(void) {
         [NSUserDefaults.standardUserDefaults boolForKey:RUINKeepUnsentMessagesKey];
 }
 static BOOL VerifyCode(void) {
+    const RUINVersionMapping *versionMapping = RUINMappingForInfo(NSBundle.mainBundle.infoDictionary);
+    const RUINUnsendOperationMapping *operation = versionMapping ? &versionMapping->messaging.unsendOperation : NULL;
+    selectedUnsendMapping = operation;
+    imageFingerprintVerified = NO;
+    imageResolution = @"mappingRejected";
+    if (!TargetMatches() || !operation ||
+        operation->parserStatus != RUINMappingStatusVerified || !operation->parserAnchors ||
+        !operation->parserAnchorCount || !operation->parserParam1ReturnAddress ||
+        operation->lookupStatus != RUINMappingStatusVerified ||
+        !operation->orderedLookupReturnAddresses || !operation->orderedLookupReturnAddressCount) return NO;
 #if defined(RUIN_UNSEND_OPERATION_HOST_CHECK) && RUIN_UNSEND_OPERATION_HOST_CHECK
-    NSDictionary *info = NSBundle.mainBundle.infoDictionary;
-    const RUINVersionMapping *versionMapping = RUINMappingForInfo(info);
-#else
-    const RUINVersionMapping *versionMapping = RUINCurrentMapping();
+    // Preserve the existing native control-flow fixture; focused image tests
+    // also exercise the runtime proof/pin path below with injected loader APIs.
+    if (!testUseFeatureImage) {
+        imageResolution = @"hostFixture";
+        if (!testImageMatches) return NO;
+        atomic_store(&imageSlide, 0);
+        activeUnsendMapping = operation;
+        imageFingerprintVerified = YES;
+        return YES;
+    }
 #endif
-    const RUINMessagingMapping *mapping = versionMapping ? &versionMapping->messaging : NULL;
-    selectedUnsendMapping = mapping ? &mapping->unsendOperation : NULL;
-    activeUnsendMapping = NULL;
-    atomic_store(&imageSlide, 0);
-    if (!TargetMatches() || !versionMapping || !selectedUnsendMapping ||
-        selectedUnsendMapping->parserStatus != RUINMappingStatusVerified || !selectedUnsendMapping->parserAnchors ||
-        !selectedUnsendMapping->parserAnchorCount || !selectedUnsendMapping->parserParam1ReturnAddress) return NO;
-#if defined(RUIN_UNSEND_OPERATION_HOST_CHECK) && RUIN_UNSEND_OPERATION_HOST_CHECK
-    atomic_store(&imageSlide, 0);
-    if (!testImageMatches || selectedUnsendMapping->lookupStatus != RUINMappingStatusVerified ||
-        !selectedUnsendMapping->orderedLookupReturnAddresses ||
-        !selectedUnsendMapping->orderedLookupReturnAddressCount) return NO;
-    activeUnsendMapping = selectedUnsendMapping;
+    if (unsendImageVersion) {
+        // No dyld rescan or new loader reference on repeated installs. A later
+        // failure gates use but cannot discard the proof backing live hooks.
+        imageResolution = @"retainedProofRejected";
+        if (unsendImageVersion != versionMapping ||
+            !RUINFeatureImageMatches(&unsendImage, &versionMapping->host)) return NO;
+        imageResolution = @"retainedProof";
+        imageFingerprintVerified = RUINVerifyFeatureInstructions(&unsendImage,
+            operation->parserAnchors, operation->parserAnchorCount);
+        return imageFingerprintVerified;
+    }
+    RUINFeatureImage candidate = {0};
+    // Require the shared owner/path/UUID/CPU and lifetime proof even when the
+    // strict main resolver succeeds: LC can rewrite a converted guest's type
+    // to MH_EXECUTE, which alone does not prove process lifetime.
+    if (!RUINResolveFeatureImage(&versionMapping->host, objc_getClass("LineOperation"), &candidate)) {
+        imageResolution = RUINFeatureImageResolutionStatus();
+        return NO;
+    }
+    imageResolution = @"featureImageResolved";
+    BOOL identityMatches = RUINFeatureImageMatches(&candidate, &versionMapping->host);
+    const RUINVersionMapping *nativeVersion = RUINCurrentMapping();
+    if (nativeVersion) {
+        // Preserve all of the existing strict native/sideload checks. A native
+        // fingerprint failure must not fall through to the converted route.
+        RUINMainExecutableImage nativeImage;
+        imageResolution = @"nativeImageRejected";
+        imageFingerprintVerified = identityMatches && nativeVersion == versionMapping &&
+            RUINResolveMainExecutableImage(&nativeImage) &&
+            nativeImage.header == candidate.image.header && nativeImage.slide == candidate.image.slide &&
+            RUINCurrentMapping() == versionMapping &&
+            RUINVerifyInstructions(nativeImage.header, nativeImage.slide,
+                operation->parserAnchors, operation->parserAnchorCount);
+        if (imageFingerprintVerified) imageResolution = @"nativeProcessImage";
+    } else {
+        imageFingerprintVerified = identityMatches &&
+            RUINVerifyFeatureInstructions(&candidate, operation->parserAnchors, operation->parserAnchorCount);
+    }
+    if (!imageFingerprintVerified || !TargetMatches() ||
+        RUINMappingForInfo(NSBundle.mainBundle.infoDictionary) != versionMapping) {
+        imageFingerprintVerified = NO;
+        RUINReleaseFeatureImage(&candidate);
+        return NO;
+    }
+    unsendImage = candidate;
+    unsendImageVersion = versionMapping;
+    atomic_store(&imageSlide, (uintptr_t)candidate.image.slide);
+    activeUnsendMapping = operation;
     return YES;
-#else
-    RUINMainExecutableImage image;
-    if (!RUINResolveMainExecutableImage(&image)) return NO;
-    const struct mach_header_64 *header = image.header;
-    intptr_t slide = image.slide;
-    if (RUINCurrentMapping() != versionMapping ||
-        !RUINVerifyInstructions(header, slide, selectedUnsendMapping->parserAnchors,
-            selectedUnsendMapping->parserAnchorCount) ||
-        selectedUnsendMapping->lookupStatus != RUINMappingStatusVerified ||
-        !selectedUnsendMapping->orderedLookupReturnAddresses ||
-        !selectedUnsendMapping->orderedLookupReturnAddressCount) return NO;
-    atomic_store(&imageSlide, (uintptr_t)slide);
-    activeUnsendMapping = selectedUnsendMapping;
-    return YES;
-#endif
 }
 static BOOL OrderedScope(const uintptr_t *pcs, size_t count) {
-    if (!activeUnsendMapping) return NO;
+    const RUINUnsendOperationMapping *operation = atomic_load(&activeUnsendMapping);
+    if (!operation) return NO;
     size_t matched = 0;
-    for (size_t i = 0; i < count && matched < activeUnsendMapping->orderedLookupReturnAddressCount; i++)
-        if (pcs[i] == activeUnsendMapping->orderedLookupReturnAddresses[matched]) matched++;
-    return matched == activeUnsendMapping->orderedLookupReturnAddressCount;
+    for (size_t i = 0; i < count && matched < operation->orderedLookupReturnAddressCount; i++)
+        if (pcs[i] == operation->orderedLookupReturnAddresses[matched]) matched++;
+    return matched == operation->orderedLookupReturnAddressCount;
 }
 static BOOL InUnsendLookup(void) {
 #if defined(RUIN_UNSEND_OPERATION_HOST_CHECK) && RUIN_UNSEND_OPERATION_HOST_CHECK
@@ -134,7 +179,8 @@ static NSString *MessageID(id value) {
 #else
     uintptr_t caller = (uintptr_t)__builtin_return_address(0) - atomic_load(&imageSlide);
 #endif
-    if (!activeUnsendMapping || caller != activeUnsendMapping->parserParam1ReturnAddress) return actual;
+    const RUINUnsendOperationMapping *operation = atomic_load(&activeUnsendMapping);
+    if (!operation || caller != operation->parserParam1ReturnAddress) return actual;
     // This is the first field read by the verified parser, after decoding.
     // Replace, then consume this thread-local tuple at its first scoped fetch;
     // never maintain a global/time-window allowlist of message IDs.
@@ -466,14 +512,18 @@ BOOL RUINUnsendOperationHasRetainedMarker(NSDictionary *messageKey) {
 }
 NSDictionary *RUINUnsendOperationDiagnostics(void) {
     long long count = 0;
-#if defined(RUIN_UNSEND_OPERATION_HOST_CHECK) && RUIN_UNSEND_OPERATION_HOST_CHECK
-    NSDictionary *info = NSBundle.mainBundle.infoDictionary;
-    const RUINVersionMapping *versionMapping = RUINMappingForInfo(info);
-#else
-    const RUINVersionMapping *versionMapping = RUINCurrentMapping();
-#endif
-    const RUINMessagingMapping *mapping = versionMapping ? &versionMapping->messaging : NULL;
-    const RUINUnsendOperationMapping *operationMapping = mapping ? &mapping->unsendOperation : NULL;
+    // Report feature-local selection, never re-enter the process-main resolver
+    // from diagnostics (LC's process executable is not the LINE guest).
+    os_unfair_lock_lock(&installLock);
+    const RUINUnsendOperationMapping *operationMapping = atomic_load(&selectedUnsendMapping);
+    BOOL verified = atomic_load(&codeVerified);
+    BOOL scopeVerified = verified && atomic_load(&activeUnsendMapping) != NULL;
+    NSString *resolution = imageResolution;
+    BOOL fingerprint = imageFingerprintVerified;
+    BOOL proofRetained = unsendImageVersion != NULL;
+    BOOL loaderPinned = unsendImage.loaderReference != NULL;
+    BOOL converted = unsendImage.convertedExecutable;
+    os_unfair_lock_unlock(&installLock);
     os_unfair_lock_lock(&markerLock);
     @try {
         sqlite3_stmt *statement = NULL;
@@ -482,9 +532,12 @@ NSDictionary *RUINUnsendOperationDiagnostics(void) {
         sqlite3_finalize(statement);
     } @finally { os_unfair_lock_unlock(&markerLock); }
     NSArray *statuses = @[@"pending", @"gated", @"missing_or_encoding_mismatch", @"installed"];
-    return @{@"enabled":@(Enabled()), @"targetSupported":@(TargetMatches()), @"nativeCodeVerified":@(atomic_load(&codeVerified)),
+    return @{@"enabled":@(Enabled()), @"targetSupported":@(TargetMatches()), @"nativeCodeVerified":@(verified),
+        @"featureImageResolution":resolution, @"featureImageProofRetained":@(proofRetained),
+        @"featureImageLoaderPinned":@(loaderPinned), @"featureImageConvertedExecutable":@(converted),
+        @"featureImageFingerprintVerified":@(fingerprint),
         @"retentionMappingSupported":@(operationMapping && operationMapping->orderedLookupReturnAddressCount != 0),
-        @"lookupScopeVerified":@(activeUnsendMapping != NULL),
+        @"lookupScopeVerified":@(scopeVerified),
         @"codeAnchorCount":@(operationMapping ? operationMapping->parserAnchorCount : 0),
         @"fetchHook":statuses[atomic_load(&fetchStatus)], @"fetchEncoding":@"@32@0:8@16^@24",
         @"displayHook":statuses[atomic_load(&displayStatus)], @"displayEncoding":@"@16@0:8",

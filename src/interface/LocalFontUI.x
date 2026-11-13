@@ -2,7 +2,8 @@
 
 #import "LocalFont.h"
 #import "LocalFontUI.h"
-#import "BinaryVerifier.h"
+#import "FeatureImage.h"
+#import "VersionMapping.h"
 #import "../core/Localization.h"
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
@@ -57,6 +58,7 @@
 - (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     NSError *error = nil;
     BOOL imported = urls.count == 1 && RUINImportLocalFont(urls.firstObject, &error);
+    if (imported) RUINInstallLocalFontHooks();
     [controller dismissViewControllerAnimated:YES completion:^{
         [self showResult:imported ? RUINLocalizedString(@"フォントを適用しました。トークを開き直してください。") :
             RUINLocalizedString(@"フォントを読み込めませんでした。OTF/TTFファイルを確認してください。")];
@@ -72,22 +74,59 @@ void RUINOpenLocalFontSettings(UIViewController *presenter) {
 #import <dlfcn.h>
 #import <mach-o/dyld.h>
 #import <stdatomic.h>
+#import <objc/runtime.h>
 
 static atomic_uint_fast64_t sFontReplacements, sFontFactoryCalls, sFontInactiveCalls;
 static _Thread_local BOOL sReplacingFont;
+static RUINFeatureImage sFontImage;
+static _Atomic(const void *) sFontCallerHeader;
+static _Atomic(const char *) sFontImageStatus = "notAttempted";
+
+static void RUINRefreshFontCallerImage(void) {
+    @synchronized (UIFont.class) {
+        if (atomic_load_explicit(&sFontCallerHeader, memory_order_acquire)) return;
+        const RUINVersionMapping *version = RUINMappingForInfo(NSBundle.mainBundle.infoDictionary);
+        RUINMainExecutableImage native = {0};
+        RUINHostIdentity nativeHost = {0};
+        NSString *nativeUUID = nil;
+        if (!version) {
+            // Keep version-independent native UI support. Metadata alone never
+            // admits an unknown LC guest: this fallback must remain process-main.
+            if (!RUINResolveMainExecutableImage(&native)) {
+                atomic_store(&sFontImageStatus, "mappingUnavailable"); return;
+            }
+            nativeUUID = [[NSUUID alloc] initWithUUIDBytes:native.uuid].UUIDString;
+            nativeHost.uuid = nativeUUID.UTF8String;
+        }
+        RUINFeatureImage image = {0};
+        // Prove the original class owner, including LC's MH_EXECUTE rewrite.
+        // A successful proof owns its loader reference for the hooks' lifetime.
+        if (!RUINResolveFeatureImage(version ? &version->host : &nativeHost,
+            objc_getClass("_TtC4LINE11AppDelegate"), &image)) {
+            atomic_store(&sFontImageStatus, "ownerImageUnavailable");
+            return;
+        }
+        if (!version && (image.convertedExecutable || image.image.header != native.header)) {
+            RUINReleaseFeatureImage(&image);
+            atomic_store(&sFontImageStatus, "nativeImageRejected"); return;
+        }
+        sFontImage = image;
+        atomic_store(&sFontImageStatus, "resolved");
+        atomic_store_explicit(&sFontCallerHeader, image.image.header, memory_order_release);
+    }
+}
 
 static UIFont *RUINReplaceTextFont(UIFont *original, void *caller) {
     atomic_fetch_add(&sFontFactoryCalls, 1);
     if (!original || sReplacingFont) return original;
     if (!RUINLocalFontIsRegistered()) { atomic_fetch_add(&sFontInactiveCalls, 1); return original; }
     Dl_info image;
-    RUINMainExecutableImage mainImage;
-    if (!dladdr(caller, &image) || !image.dli_fbase ||
-        ((const struct mach_header_64 *)image.dli_fbase)->filetype != MH_EXECUTE ||
-        !RUINResolveMainExecutableImage(&mainImage) || image.dli_fbase != (const void *)mainImage.header) return original;
+    const void *header = atomic_load_explicit(&sFontCallerHeader, memory_order_acquire);
+    if (!header || !dladdr(caller, &image) || image.dli_fbase != header) return original;
     sReplacingFont = YES;
-    UIFont *replacement = RUINLocalFontAtSize(original.pointSize);
-    sReplacingFont = NO;
+    UIFont *replacement = nil;
+    @try { replacement = RUINLocalFontAtSize(original.pointSize); }
+    @finally { sReplacingFont = NO; }
     if (replacement) atomic_fetch_add(&sFontReplacements, 1);
     return replacement ?: original;
 }
@@ -120,26 +159,32 @@ static BOOL RUINIsSystemTextFont(UIFont *font) {
 }
 + (UIFont *)fontWithName:(NSString *)name size:(CGFloat)size {
     UIFont *original = %orig;
-    if (!RUINIsSystemTextFont(original)) return original;
+    if (!RUINLocalFontIsRegistered() || !RUINIsSystemTextFont(original)) return original;
     return RUINReplaceTextFont(original, __builtin_return_address(0));
 }
 + (UIFont *)fontWithDescriptor:(UIFontDescriptor *)descriptor size:(CGFloat)size {
     UIFont *original = %orig;
     // Named icon/symbol fonts retain their own glyphs. LINE's basic text font
     // uses the system descriptor; only direct calls from LINE are replaced.
-    if (!RUINIsSystemTextFont(original)) return original;
+    if (!RUINLocalFontIsRegistered() || !RUINIsSystemTextFont(original)) return original;
     return RUINReplaceTextFont(original, __builtin_return_address(0));
 }
 %end
 %end
 
 void RUINInstallLocalFontHooks(void) {
+    // One proof attempt per explicit install/activation, never per font call.
+    RUINRefreshFontCallerImage();
     static dispatch_once_t once;
     dispatch_once(&once, ^{ %init(RUINLocalTextFont); });
 }
 
 NSDictionary *RUINLocalFontHookDiagnostics(void) {
+    BOOL ready = atomic_load_explicit(&sFontCallerHeader, memory_order_acquire) != NULL;
     return @{@"factoryCalls":@(atomic_load(&sFontFactoryCalls)), @"inactiveCalls":@(atomic_load(&sFontInactiveCalls)),
         @"factoryReplacements":@(atomic_load(&sFontReplacements)),
+        @"callerImageResolution":@(atomic_load(&sFontImageStatus)), @"callerImageProven":@(ready),
+        @"callerImageConvertedExecutable":@(ready && sFontImage.convertedExecutable),
+        @"callerImageLoaderPinned":@(ready && sFontImage.loaderReference != NULL),
         @"scope":@"LINE system text font factories", @"namedIconFontsReplaced":@NO};
 }

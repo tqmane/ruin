@@ -271,6 +271,7 @@ static void RUINApplicationDidBecomeActive(void) {
         RUINInstallLocalNotifications();
         RUINInstallLocalAppearance();
         RUINInstallLocalFont();
+        RUINInstallLocalFontHooks();
         RUINInstallNativeMuteSend();
     }
     static BOOL selfTestAttempted;
