@@ -100,9 +100,11 @@ static void RUINRememberLoginGuestImage(Class welcome) {
 static BOOL RUINLoginCallerIsLINE(void *caller) {
     Dl_info info;
     if (!dladdr(caller, &info)) return NO;
+    // The verified guest already identifies LINE. A strict MH_EXECUTE lookup
+    // cannot resolve this MH_DYLIB and must not run on every UIKit idiom query.
+    if (verifiedLoginGuestImage) return info.dli_fbase == verifiedLoginGuestImage;
     RUINMainExecutableImage image;
-    return (RUINResolveMainExecutableImage(&image) && info.dli_fbase == (const void *)image.header) ||
-        (verifiedLoginGuestImage && info.dli_fbase == verifiedLoginGuestImage);
+    return RUINResolveMainExecutableImage(&image) && info.dli_fbase == (const void *)image.header;
 }
 
 %group RUINSecondaryDeviceRole
