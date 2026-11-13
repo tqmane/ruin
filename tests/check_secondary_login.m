@@ -3,6 +3,14 @@
 #import <assert.h>
 #import <stdio.h>
 #import "TargetMetadata.h"
+#import <stdatomic.h>
+#import <dlfcn.h>
+
+static atomic_uint_fast64_t strictImageResolutions;
+static BOOL CountMainExecutableResolution(RUINMainExecutableImage *image) {
+    atomic_fetch_add(&strictImageResolutions, 1);
+    return RUINResolveMainExecutableImage(image);
+}
 
 static char traitsKey, frameKey, hiddenKey, elementsKey;
 static NSUInteger fixtureSynchronizeCount, syncCountAtLastAlertPresentation;
@@ -119,7 +127,9 @@ BOOL RUINKeychainCompatibilityReady(void) { return keychainReady; }
 
 #define NSUserDefaults RUINSecondaryFixtureDefaults
 #define NSBundle RUINSecondaryFixtureBundle
+#define RUINResolveMainExecutableImage CountMainExecutableResolution
 #import "SecondaryLoginUnderTest.m"
+#undef RUINResolveMainExecutableImage
 #undef NSBundle
 #undef NSUserDefaults
 
@@ -146,6 +156,26 @@ static void NativeLogin(__unused id self, __unused SEL selector) {
 }
 static void NativeQR(__unused id self, __unused SEL selector) { qrCalls++; actionIdiom = UIDevice.currentDevice.userInterfaceIdiom; }
 static void NativePrimaryDeviceLogin(__unused id self, __unused SEL selector) { primaryDeviceLoginCalls++; }
+static void CheckVerifiedGuestCallerFastPath(void) {
+    Dl_info guest, framework;
+    assert(dladdr((const void *)NativeLogin, &guest));
+    assert(dladdr((const void *)NSClassFromString, &framework));
+    assert(guest.dli_fbase != framework.dli_fbase);
+    const struct mach_header_64 *saved = verifiedLoginGuestImage;
+    // Model an already-verified owner. UUID/type verification remains in the
+    // production discovery path; this fixture checks subsequent caller queries.
+    verifiedLoginGuestImage = guest.dli_fbase;
+    uint64_t before = atomic_load(&strictImageResolutions);
+    for (NSUInteger i = 0; i < 1000; i++) {
+        assert(RUINLoginCallerIsLINE((void *)NativeLogin));
+        assert(!RUINLoginCallerIsLINE((void *)NSClassFromString));
+    }
+    assert(atomic_load(&strictImageResolutions) == before);
+    verifiedLoginGuestImage = saved;
+    assert(RUINLoginCallerIsLINE((void *)NativeLogin));
+    assert(atomic_load(&strictImageResolutions) == before + 1);
+    puts("PASS verified guest: 2000 caller queries, zero strict image scans; native fallback preserved");
+}
 static Class RegisterController(const char *name, SEL selector, IMP implementation, const char *encoding) {
     Class cls = objc_allocateClassPair(UIViewController.class, name, 0);
     assert(cls && class_addMethod(cls, selector, implementation, encoding));
@@ -169,6 +199,7 @@ static void DrainMainQueue(void) {
 }
 
 int main(int argc, const char **argv) { @autoreleasepool {
+    CheckVerifiedGuestCallerFastPath();
     BOOL enabled = argc < 2 || strcmp(argv[1], "normal") != 0;
     BOOL mismatch = argc > 1 && strcmp(argv[1], "abi") == 0;
     RUINSecondaryFixtureDefaults *defaults = RUINSecondaryFixtureDefaults.standardUserDefaults;
