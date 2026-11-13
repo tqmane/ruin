@@ -73,15 +73,18 @@ void RUINOpenLocalFontSettings(UIViewController *presenter) {
 #import <mach-o/dyld.h>
 #import <stdatomic.h>
 
-static atomic_uint_fast64_t sFontReplacements;
+static atomic_uint_fast64_t sFontReplacements, sFontFactoryCalls, sFontInactiveCalls;
 static _Thread_local BOOL sReplacingFont;
 
 static UIFont *RUINReplaceTextFont(UIFont *original, void *caller) {
-    if (!original || sReplacingFont || !RUINLocalFontIsRegistered()) return original;
+    atomic_fetch_add(&sFontFactoryCalls, 1);
+    if (!original || sReplacingFont) return original;
+    if (!RUINLocalFontIsRegistered()) { atomic_fetch_add(&sFontInactiveCalls, 1); return original; }
     Dl_info image;
     RUINMainExecutableImage mainImage;
-    if (!RUINResolveMainExecutableImage(&mainImage) ||
-        !dladdr(caller, &image) || image.dli_fbase != (const void *)mainImage.header) return original;
+    if (!dladdr(caller, &image) || !image.dli_fbase ||
+        ((const struct mach_header_64 *)image.dli_fbase)->filetype != MH_EXECUTE ||
+        !RUINResolveMainExecutableImage(&mainImage) || image.dli_fbase != (const void *)mainImage.header) return original;
     sReplacingFont = YES;
     UIFont *replacement = RUINLocalFontAtSize(original.pointSize);
     sReplacingFont = NO;
@@ -136,6 +139,7 @@ void RUINInstallLocalFontHooks(void) {
 }
 
 NSDictionary *RUINLocalFontHookDiagnostics(void) {
-    return @{@"factoryReplacements":@(atomic_load(&sFontReplacements)),
+    return @{@"factoryCalls":@(atomic_load(&sFontFactoryCalls)), @"inactiveCalls":@(atomic_load(&sFontInactiveCalls)),
+        @"factoryReplacements":@(atomic_load(&sFontReplacements)),
         @"scope":@"LINE system text font factories", @"namedIconFontsReplaced":@NO};
 }
