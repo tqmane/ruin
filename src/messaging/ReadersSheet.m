@@ -29,10 +29,10 @@ static long long RUINReaderMilliseconds(id value)
         ? [value longLongValue] : 0;
 }
 
-static NSDateFormatter *RUINReaderDateFormatter(NSTimeZone *timeZone)
+static NSDateFormatter *RUINReaderDateFormatter(NSTimeZone *timeZone, NSLocale *locale)
 {
     NSDateFormatter *formatter = [NSDateFormatter new];
-    formatter.locale = [NSLocale localeWithLocaleIdentifier:@"ja_JP"];
+    formatter.locale = locale ?: NSLocale.currentLocale;
     formatter.calendar = [[NSCalendar alloc] initWithCalendarIdentifier:NSCalendarIdentifierGregorian];
     formatter.timeZone = timeZone;
     formatter.dateFormat = @"yyyy/MM/dd HH:mm:ss z";
@@ -383,7 +383,9 @@ void RUINPresentReadersSheetWithLoader(UIViewController *source, NSArray<NSDicti
     controller.resolving = ids.count > 0;
     controller.profileAction = profileAction;
     controller.source = source; controller.loader = loader;
-    controller.dateFormatter = RUINReaderDateFormatter(NSTimeZone.localTimeZone);
+    NSString *language = RUINLocalizationDiagnostics()[@"language"];
+    controller.dateFormatter = RUINReaderDateFormatter(NSTimeZone.localTimeZone,
+        language.length ? [NSLocale localeWithLocaleIdentifier:language] : NSLocale.currentLocale);
     UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:controller];
     nav.modalPresentationStyle = UIModalPresentationPageSheet;
     nav.sheetPresentationController.detents = @[UISheetPresentationControllerDetent.mediumDetent, UISheetPresentationControllerDetent.largeDetent];
@@ -458,7 +460,8 @@ int main(void)
         assert(([RUINReaderNamesWithProfile(@[selfMID], @{selfMID:@"既存の別名"}, profile, @{})[selfMID] isEqual:@"既存の別名"]));
         assert(!RUINReaderNamesWithProfile(@[@"other"], @{}, profile, @{})[selfMID]);
         assert((!RUINReaderNamesWithProfile(@[selfMID], @{}, @{@"mid":selfMID,@"name":selfMID}, @{})[selfMID]));
-        NSDateFormatter *formatter = RUINReaderDateFormatter([NSTimeZone timeZoneWithName:@"Asia/Tokyo"]);
+        NSDateFormatter *formatter = RUINReaderDateFormatter([NSTimeZone timeZoneWithName:@"Asia/Tokyo"],
+            [NSLocale localeWithLocaleIdentifier:@"ja_JP"]);
         NSDictionary *event = @{@"readAtMilliseconds": @1700000000000LL, @"observedAtMilliseconds": @1700000010000LL, @"timeSource": @"server_event"};
         NSString *date = RUINReaderDateLabel(event, formatter);
         assert([date hasPrefix:@"既読日時：2023/11/15 07:13:20"] && [date containsString:@"JST"]);
@@ -470,6 +473,22 @@ int main(void)
         assert([RUINReaderDateLabel(@{}, formatter) isEqual:@"日時不明"]);
         assert(!RUINReaderMilliseconds(@YES) && !RUINReaderMilliseconds(@(-1)) && !RUINReaderMilliseconds(@(NAN)) && !RUINReaderMilliseconds(@"1700000000000"));
         assert([event[@"observedAtMilliseconds"] isEqual:@1700000010000LL]);
+        NSDictionary *originalEvent = [event copy];
+        for (NSString *language in @[@"ja", @"en", @"ko", @"zh-Hans", @"zh-Hant"]) {
+            NSLocale *locale = [NSLocale localeWithLocaleIdentifier:language];
+            for (NSString *zone in @[@"Asia/Tokyo", @"Asia/Seoul", @"America/Los_Angeles"]) {
+                NSDateFormatter *localized = RUINReaderDateFormatter([NSTimeZone timeZoneWithName:zone], locale);
+                assert([localized.locale.localeIdentifier isEqual:locale.localeIdentifier]);
+                NSString *stamp = [localized stringFromDate:[NSDate dateWithTimeIntervalSince1970:1700000000]];
+                NSString *wall = [zone isEqual:@"America/Los_Angeles"] ? @"2023/11/14 14:13:20" : @"2023/11/15 07:13:20";
+                assert([stamp hasPrefix:wall] && stamp.length > wall.length);
+                assert(fabs([[localized dateFromString:stamp] timeIntervalSince1970] - 1700000000) < 0.001);
+                assert([RUINReaderDateLabel(event, localized) containsString:stamp]);
+                assert([event isEqual:originalEvent]);
+            }
+        }
+        assert([RUINReaderDateFormatter(NSTimeZone.localTimeZone, nil).locale.localeIdentifier
+            isEqual:NSLocale.currentLocale.localeIdentifier]);
         NSManagedObjectContext *context = RUINReaderTestContext(YES);
         NSManagedObjectContext *wrongStore = RUINReaderTestContext(NO);
         [context performBlockAndWait:^{
@@ -490,7 +509,7 @@ int main(void)
         for (NSUInteger attempts = 0; !done && attempts < 100; attempts++)
             [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.02]];
         assert(done && atomic_load(&gReaderSchemaRejected) == 1 && !atomic_load(&gReaderFetchFailures));
-        puts("PASS read/observation provenance, unknown dates preserved, JST conversion, cached alias-aware names, raw MID rejection, asynchronous owner-queue fetch, wrong-store rejection");
+        puts("PASS read/observation provenance, unknown dates preserved, five date locales/three timezones, cached alias-aware names, raw MID rejection, asynchronous owner-queue fetch, wrong-store rejection");
     }
     return 0;
 }

@@ -1297,10 +1297,11 @@ static BOOL RUINShouldHideTab(RUINTabKind kind)
         case RUINTabAppsKind: return [defaults boolForKey:RUINHideAppsTabDefaultsKey];
         case RUINTabNewsKind:
         case RUINTabCallKind: return [defaults boolForKey:RUINHideNewsCallTabsDefaultsKey];
-        case RUINTabSettingsKind:
-            return ([RUINNativeEntryDiagnostics()[@"homeHookInstalled"] boolValue] ||
-                [RUINNativeEntryDiagnostics()[@"friendHomeHookInstalled"] boolValue]) &&
+        case RUINTabSettingsKind: {
+            NSDictionary *entry = RUINNativeEntryDiagnostics();
+            return [entry[@"homeEntryAvailable"] boolValue] &&
                 [defaults boolForKey:RUINHideSettingsTabDefaultsKey];
+        }
         default: return NO;
     }
 }
@@ -1381,22 +1382,32 @@ static void RUINKeepSelectionValid(UITabBarController *controller, NSArray *filt
 static void RUINApplyStartupSelection(UITabBarController *controller, NSArray *controllers)
 {
     if ([objc_getAssociatedObject(controller, &gStartupSelectionAppliedKey) boolValue]) return;
-    objc_setAssociatedObject(controller, &gStartupSelectionAppliedKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
     if (![defaults boolForKey:RUINStartupTabFixedDefaultsKey]) {
+        objc_setAssociatedObject(controller, &gStartupSelectionAppliedKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         atomic_store(&gStartupStatus, 1); // disabled
         return;
     }
     RUINTabKind wanted = RUINKindForIdentifier([defaults stringForKey:RUINStartupTabDefaultsKey] ?: @"");
     if (wanted == RUINTabUnknown) {
+        objc_setAssociatedObject(controller, &gStartupSelectionAppliedKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         atomic_store(&gStartupStatus, 3); // invalid selection
         return;
     }
     for (UIViewController *candidate in controllers) {
-        if (RUINKindForTabController(candidate) == wanted) {
-            controller.selectedViewController = candidate;
-            atomic_store(&gStartupStatus, 2); // applied
+        if ([controller.viewControllers containsObject:candidate] &&
+            RUINKindForTabController(candidate) == wanted) {
+            // Native selection can synchronously reenter tab setup.
+            objc_setAssociatedObject(controller, &gStartupSelectionAppliedKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            BOOL applied = NO;
+            @try {
+                controller.selectedViewController = candidate;
+                applied = controller.selectedViewController == candidate;
+            } @finally {
+                if (!applied) objc_setAssociatedObject(controller, &gStartupSelectionAppliedKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            }
+            atomic_store(&gStartupStatus, applied ? 2 : 4);
             return;
         }
     }
@@ -1410,6 +1421,7 @@ static void RUINApplyRequestedControllers(UITabBarController *controller, BOOL a
     NSArray *native = [controller.viewControllers copy] ?: @[];
     BOOL nativeGeneration = [RUINNativeTabAvailabilityDiagnostics()[@"status"] intValue] == 5;
     NSArray *allowed = nativeGeneration ? native : RUINFilteredControllers(native);
+    NSArray *startupSelectable = nativeGeneration ? RUINFilteredControllers(native) : allowed;
     NSArray<UITab *> *tabs = controller.tabs;
     atomic_store(&gNativeTabCount, native.count);
     atomic_store(&gUIKitTabCount, tabs.count);
@@ -1423,14 +1435,14 @@ static void RUINApplyRequestedControllers(UITabBarController *controller, BOOL a
             atomic_fetch_add(&gTabReapplications, 1);
         }
         atomic_store(&gTabVisibilityStatus, 1);
-        if (allowStartup) RUINApplyStartupSelection(controller, native);
+        if (allowStartup) RUINApplyStartupSelection(controller, startupSelectable);
         return;
     }
     if (!tabs.count || tabs.count != native.count) {
         // Keep LINE's existing tab view and renderer. This legacy layout needs
         // a verified native visibility boundary; never replace its UI.
         atomic_store(&gTabVisibilityStatus, 3);
-        if (allowStartup) RUINApplyStartupSelection(controller, native);
+        if (allowStartup) RUINApplyStartupSelection(controller, startupSelectable);
         return;
     }
     NSMutableArray<NSString *> *identifiers = [NSMutableArray array];
@@ -1440,13 +1452,18 @@ static void RUINApplyRequestedControllers(UITabBarController *controller, BOOL a
         UIViewController *view = tab.viewController;
         if (![native containsObject:view] || !tab.identifier.length || [seen containsObject:tab.identifier]) {
             atomic_store(&gTabVisibilityStatus, 4);
+            if (allowStartup) RUINApplyStartupSelection(controller, startupSelectable);
             return;
         }
         [seen addObject:tab.identifier];
         if ([allowed containsObject:view] && (!original || [original containsObject:tab.identifier]))
             [identifiers addObject:tab.identifier];
     }
-    if (!identifiers.count) { atomic_store(&gTabVisibilityStatus, 4); return; }
+    if (!identifiers.count) {
+        atomic_store(&gTabVisibilityStatus, 4);
+        if (allowStartup) RUINApplyStartupSelection(controller, startupSelectable);
+        return;
+    }
     if (!saved) objc_setAssociatedObject(controller, &gOriginalCompactTabsKey,
         original ?: NSNull.null, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     NSArray *previousIdentifiers = controller.compactTabIdentifiers;
@@ -1456,13 +1473,14 @@ static void RUINApplyRequestedControllers(UITabBarController *controller, BOOL a
         if (![controller.viewControllers isEqualToArray:native]) {
             controller.compactTabIdentifiers = previousIdentifiers;
             atomic_store(&gTabVisibilityStatus, 5);
+            if (allowStartup) RUINApplyStartupSelection(controller, startupSelectable);
             return;
         }
         atomic_fetch_add(&gTabReapplications, 1);
     }
     atomic_store(&gTabVisibilityStatus, 2);
     RUINKeepSelectionValid(controller, allowed, controller.selectedViewController);
-    if (allowStartup) RUINApplyStartupSelection(controller, allowed);
+    if (allowStartup) RUINApplyStartupSelection(controller, startupSelectable);
 }
 
 static void RUINSetViewControllers(id self, SEL selector, NSArray *controllers)
@@ -1479,7 +1497,7 @@ static void RUINSetViewControllers(id self, SEL selector, NSArray *controllers)
     UITabBarController *tabs = (UITabBarController *)self;
     RUINRecordRequestedControllers(tabs, controllers);
     ((void (*)(id, SEL, NSArray *))original)(self, selector, controllers);
-    RUINApplyRequestedControllers(tabs, NO);
+    RUINApplyRequestedControllers(tabs, YES);
     gTabSetterDepth--;
 }
 
@@ -1497,7 +1515,7 @@ static void RUINSetViewControllersAnimated(id self, SEL selector, NSArray *contr
     UITabBarController *tabs = (UITabBarController *)self;
     RUINRecordRequestedControllers(tabs, controllers);
     ((void (*)(id, SEL, NSArray *, BOOL))original)(self, selector, controllers, animated);
-    RUINApplyRequestedControllers(tabs, NO);
+    RUINApplyRequestedControllers(tabs, YES);
     gTabSetterDepth--;
 }
 

@@ -44,7 +44,7 @@ typedef NS_ENUM(NSInteger, RUINMenuExtrasErrorCode) {
 };
 
 static atomic_bool sInstallAttempted = ATOMIC_VAR_INIT(false);
-static atomic_bool sMenuInspectionPending = ATOMIC_VAR_INIT(false);
+static atomic_bool sMenuInspectionAttempted = ATOMIC_VAR_INIT(false);
 static atomic_int sMenuHookStatus = ATOMIC_VAR_INIT(0);
 static atomic_int sCalloutSurfaceHookStatus = ATOMIC_VAR_INIT(0);
 static atomic_int sCalloutGridHookStatus = ATOMIC_VAR_INIT(0);
@@ -522,8 +522,16 @@ static NSDictionary *RUINMenuExtrasVisibleMenuSnapshot(void)
     };
 }
 
+static BOOL RUINMenuExtrasInspectionEnabled(void)
+{
+    const char *value = getenv("RUIN_ENABLE_RUNTIME_INSPECTOR");
+    return value && !strcmp(value, "1");
+}
+
 NSDictionary *RUINMenuExtrasRuntimeMenuSignatures(void)
 {
+    if (!RUINMenuExtrasInspectionEnabled())
+        return @{@"available":@NO, @"reason":@"runtime-inspector-disabled"};
     if (!RUINMenuExtrasTargetMatches())
         return @{@"available":@NO, @"reason":@"exact-bundle-version-build-gate-failed"};
 
@@ -655,7 +663,7 @@ NSDictionary *RUINMenuExtrasRuntimeMenuSignatures(void)
 
 static BOOL RUINMenuExtrasWriteMenuInspection(void)
 {
-    if (!RUINMenuExtrasTargetMatches()) return NO;
+    if (!RUINMenuExtrasInspectionEnabled() || !RUINMenuExtrasTargetMatches()) return NO;
     NSDictionary *inspection = RUINMenuExtrasRuntimeMenuSignatures();
     NSDictionary *snapshot = inspection[@"visibleMenuSnapshot"];
     if (![snapshot[@"menuOpenObserved"] boolValue]) return NO;
@@ -683,21 +691,21 @@ static BOOL RUINMenuExtrasMenuIsOpen(void)
 static void RUINMenuExtrasCheckForOpenedMenu(NSUInteger attempt)
 {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 100 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+        if (!RUINMenuExtrasInspectionEnabled()) return;
         if (RUINMenuExtrasMenuIsOpen()) {
             RUINMenuExtrasWriteMenuInspection();
-            atomic_store_explicit(&sMenuInspectionPending, false, memory_order_release);
         } else if (attempt < 11) {
             RUINMenuExtrasCheckForOpenedMenu(attempt + 1);
-        } else {
-            atomic_store_explicit(&sMenuInspectionPending, false, memory_order_release);
         }
     });
 }
 
 static void RUINMenuExtrasScheduleInspection(void)
 {
+    if (!RUINMenuExtrasInspectionEnabled()) return;
+    // One bounded polling window per process, even if no menu opens or IO fails.
     bool expected = false;
-    if (!atomic_compare_exchange_strong_explicit(&sMenuInspectionPending, &expected, true,
+    if (!atomic_compare_exchange_strong_explicit(&sMenuInspectionAttempted, &expected, true,
                                                  memory_order_acq_rel, memory_order_relaxed)) return;
     dispatch_async(dispatch_get_main_queue(), ^{ RUINMenuExtrasCheckForOpenedMenu(0); });
 }
@@ -1170,6 +1178,23 @@ static void RUINMenuExtrasPresentStickerGIFFailure(UIViewController *chatControl
     [chatController presentViewController:alert animated:YES completion:nil];
 }
 
+static RUINReaderLoader RUINMenuExtrasReadRangeLoader(NSDictionary *messageKey, id nativeChat)
+{
+    if (!RUINCanFetchReadRanges(messageKey, nativeChat)) return nil;
+    NSDictionary *copiedKey = [messageKey copy];
+    return ^(RUINReaderLoadCompletion completion) {
+        // Selection and sheet appearance are separated by native menu dismissal.
+        // Lost capture/identity readiness means local-only, never an unscoped RPC.
+        if (!RUINCanFetchReadRanges(copiedKey, nativeChat)) {
+            completion(RUINReadUsersForMessageKey(copiedKey), nil);
+            return;
+        }
+        RUINFetchReadRanges(copiedKey, nativeChat, ^(NSError *error) {
+            completion(error ? @[] : RUINReadUsersForMessageKey(copiedKey), error);
+        });
+    };
+}
+
 static void RUINMenuExtrasPresentReaders(UIViewController *chatController,
                                           NSArray<NSDictionary *> *readers, RUINReaderLoader loader)
 {
@@ -1276,13 +1301,7 @@ static void RUINMenuExtrasPresentReaders(UIViewController *chatController,
         return;
     }
     NSArray<NSDictionary *> *readers = RUINReadUsersForMessageKey(messageKey);
-    NSDictionary *copiedKey = [messageKey copy];
-    id boundChat = nativeChat;
-    RUINReaderLoader loader = ^(RUINReaderLoadCompletion completion) {
-        RUINFetchReadRanges(copiedKey, boundChat, ^(NSError *error) {
-            completion(error ? @[] : RUINReadUsersForMessageKey(copiedKey), error);
-        });
-    };
+    RUINReaderLoader loader = RUINMenuExtrasReadRangeLoader(messageKey, nativeChat);
     [(id)self accessibilityPerformEscape];
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         RUINMenuExtrasPresentReaders(chatController, readers, loader);

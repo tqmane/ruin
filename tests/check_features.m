@@ -490,6 +490,49 @@ static int RUINRunChecks(void)
         RUINAllowReadAfterUserReply(firstChat);
         CHECK(RUINShouldSuppressReadForChat(firstChat), @"invalid boundary created an allowance");
         firstChat.lastReceivedMessageID = 100;
+        NSString *accountA = @"u00000000000000000000000000000000";
+        NSString *accountB = @"u11111111111111111111111111111111";
+        RUINRefreshFeaturesOnActivation(accountA);
+        NSDictionary *pendingReply = RUINCaptureReadOnReplyToken(firstChat);
+        RUINRefreshFeaturesOnActivation(accountA);
+        CHECK(RUINAllowReadAfterUserReplyWithToken(firstChat, pendingReply),
+              @"unchanged foreground activation invalidated an in-flight reply");
+        RUINRefreshFeaturesOnActivation(accountA);
+        CHECK(RUINReadOnReplyTokenIsAllowed(pendingReply) && !RUINShouldSuppressReadForChat(firstChat),
+              @"unchanged foreground activation discarded a granted reply allowance");
+        RUINRefreshFeaturesOnActivation(accountB);
+        CHECK(!RUINReadOnReplyTokenIsAllowed(pendingReply) &&
+              !RUINAllowReadAfterUserReplyWithToken(firstChat, pendingReply),
+              @"account change retained the previous account's reply token");
+        RUINRefreshFeaturesOnActivation(accountA);
+        CHECK(!RUINAllowReadAfterUserReplyWithToken(firstChat, pendingReply),
+              @"returning to an earlier account revived its stale token");
+        NSDictionary *policyReply = RUINCaptureReadOnReplyToken(firstChat);
+        [defaults setObject:@[@"chat:chat-2"] forKey:RUINReadExceptionsDefaultsKey];
+        RUINRefreshFeaturesOnActivation(accountA);
+        CHECK(!RUINAllowReadAfterUserReplyWithToken(firstChat, policyReply),
+              @"changed read exceptions retained an old reply token");
+        [defaults setObject:@[] forKey:RUINReadExceptionsDefaultsKey];
+        RUINRefreshFeaturesOnActivation(accountA);
+        NSDictionary *logoutReply = RUINCaptureReadOnReplyToken(firstChat);
+        RUINRefreshFeaturesOnActivation(nil);
+        CHECK(!RUINAllowReadAfterUserReplyWithToken(firstChat, logoutReply),
+              @"unresolved/logout account retained its reply token");
+        RUINRefreshFeaturesOnActivation(accountA);
+        RUINInstallFeatures();
+        NSDictionary *afterReloadReply = RUINCaptureReadOnReplyToken(firstChat);
+        RUINRefreshFeaturesOnActivation(accountA);
+        CHECK(RUINAllowReadAfterUserReplyWithToken(firstChat, afterReloadReply),
+              @"a later activation reset a reply captured after an explicit reload");
+        [defaults setObject:@"invalid-exception-policy" forKey:RUINReadExceptionsDefaultsKey];
+        RUINRefreshFeaturesOnActivation(accountA);
+        CHECK(!RUINAllowReadAfterUserReplyWithToken(firstChat, afterReloadReply),
+              @"malformed exception policy preserved a previous reply token");
+        NSDictionary *malformedPolicyReply = RUINCaptureReadOnReplyToken(firstChat);
+        [defaults setObject:@[] forKey:RUINReadExceptionsDefaultsKey];
+        RUINRefreshFeaturesOnActivation(accountA);
+        CHECK(!RUINAllowReadAfterUserReplyWithToken(firstChat, malformedPolicyReply),
+              @"repairing malformed policy retained its stale reply token");
         RUINAllowReadAfterUserReply(firstChat);
         RUINInstallFeatures();
         CHECK(RUINShouldSuppressReadForChat(firstChat), @"preference reload retained a transient allowance");

@@ -158,7 +158,7 @@ static void RUINNativeChatViewDidAppear(id self, SEL selector, BOOL animated);
 static void RUINNativeChatViewDidLayoutSubviews(id self, SEL selector);
 static void RUINToggleReadException(id self, SEL selector, id sender);
 static void RUINTitleLongPressed(id self, SEL selector, id sender);
-static void RUINRefreshNativeTitleAlias(UIViewController *controller);
+static void RUINRefreshNativeTitleAlias(UIViewController *controller, BOOL force);
 
 typedef void (^RUINNativeChatIdentityCompletion)(RUINNativeChatIdentity * _Nullable identity,
                                                   NSString * _Nullable failure);
@@ -578,11 +578,12 @@ static UIView *RUINCurrentTitleView(UIViewController *controller)
 }
 
 static void RUINApplyNativeTitleAliasRecord(UIViewController *controller,
-                                            RUINNativeTitleAliasRecord *record)
+                                            UILabel *label,
+                                            RUINNativeTitleAliasRecord *record,
+                                            NSDictionary *savedAliases)
 {
-    UILabel *label = RUINCurrentVerifiedTitleLabel(controller);
     id chat = RUINNativeChatObject(controller);
-    if (!label || label != record.label || chat != record.chatObject ||
+    if (!label || !label.window || label != record.label || chat != record.chatObject ||
         !RUINNativeControllerIsCurrent(controller, chat) || !record.identityKey.length) return;
 
     NSString *currentTitle = label.text ?: @"";
@@ -591,8 +592,7 @@ static void RUINApplyNativeTitleAliasRecord(UIViewController *controller,
             record.nativeTitle = RUINNativeOriginalTitle(currentTitle, record.originalName, [record.identityKey hasPrefix:@"group:"]);
     }
 
-    NSDictionary *saved = [NSUserDefaults.standardUserDefaults dictionaryForKey:RUINLocalNamesByIdentityDefaultsKey] ?: @{};
-    id stored = saved[record.identityKey];
+    id stored = savedAliases[record.identityKey];
     NSString *alias = [stored isKindOfClass:NSString.class] && [(NSString *)stored length] ? stored : nil;
     if (alias) {
         NSString *rendered = [alias stringByAppendingString:RUINNativeMemberSuffix(record.nativeTitle, [record.identityKey hasPrefix:@"group:"])];
@@ -631,18 +631,26 @@ static void RUINResolveTitleAlias(UIViewController *controller,
         record.originalName = [identity.localNameOriginalText copy];
         record.nativeTitle = RUINNativeOriginalTitle(currentTitle.length ? currentTitle : titleAtStart,
             record.originalName, [record.identityKey hasPrefix:@"group:"]);
-        RUINApplyNativeTitleAliasRecord(controller, record);
+        NSDictionary *savedAliases = [NSUserDefaults.standardUserDefaults dictionaryForKey:RUINLocalNamesByIdentityDefaultsKey] ?: @{};
+        RUINApplyNativeTitleAliasRecord(controller, label, record, savedAliases);
     });
 }
 
-static void RUINRefreshNativeTitleAlias(UIViewController *controller)
+static void RUINRefreshNativeTitleAlias(UIViewController *controller, BOOL force)
 {
     if (![NSThread isMainThread] || !controller.isViewLoaded || !controller.view.window) return;
-    UILabel *label = RUINCurrentVerifiedTitleLabel(controller);
+    RUINNativeTitleAliasRecord *record = objc_getAssociatedObject(controller, &gTitleAliasRecordKey);
+    if (!force && !record.appliedAlias) return;
+    NSDictionary *savedAliases = [NSUserDefaults.standardUserDefaults dictionaryForKey:RUINLocalNamesByIdentityDefaultsKey] ?: @{};
+    if (!savedAliases.count && !record.appliedAlias) return;
     id chat = RUINNativeChatObject(controller);
+    id configured = record.identityKey ? savedAliases[record.identityKey] : nil;
+    BOOL hasConfiguredAlias = [configured isKindOfClass:NSString.class] && [(NSString *)configured length] > 0;
+    if (record.resolved && record.chatObject == chat && !record.appliedAlias && !hasConfiguredAlias) return;
+
+    UILabel *label = RUINCurrentVerifiedTitleLabel(controller);
     if (!label || !chat || !RUINNativeControllerIsCurrent(controller, chat)) return;
 
-    RUINNativeTitleAliasRecord *record = objc_getAssociatedObject(controller, &gTitleAliasRecordKey);
     if (!record || record.chatObject != chat || (record.resolving && record.label != label)) {
         record = [RUINNativeTitleAliasRecord new];
         record.chatObject = chat;
@@ -657,7 +665,7 @@ static void RUINRefreshNativeTitleAlias(UIViewController *controller)
 
     if (record.resolving) return;
     if (record.resolved) {
-        RUINApplyNativeTitleAliasRecord(controller, record);
+        RUINApplyNativeTitleAliasRecord(controller, label, record, savedAliases);
         return;
     }
     RUINResolveTitleAlias(controller, label, chat, record);
@@ -687,7 +695,8 @@ static void RUINApplySavedNativeTitleAlias(UIViewController *controller,
     record.resolved = YES;
     if (!record.appliedAlias) record.nativeTitle = [label.text copy] ?: [nativeTitle copy] ?:
         [identity.localNameOriginalText copy] ?: @"";
-    RUINApplyNativeTitleAliasRecord(controller, record);
+    NSDictionary *savedAliases = [NSUserDefaults.standardUserDefaults dictionaryForKey:RUINLocalNamesByIdentityDefaultsKey] ?: @{};
+    RUINApplyNativeTitleAliasRecord(controller, label, record, savedAliases);
 }
 
 static void RUINDetachTitleGesture(UIViewController *controller)
@@ -872,7 +881,7 @@ static void RUINUpdateNativeChatControls(UIViewController *controller)
     if (![NSThread isMainThread] || !controller.isViewLoaded || !controller.view.window) return;
     RUINAttachTitleGesture(controller);
     RUINAttachReadExceptionButton(controller);
-    RUINRefreshNativeTitleAlias(controller);
+    RUINRefreshNativeTitleAlias(controller, YES);
 }
 
 static void RUINNativeChatViewDidAppear(id self, SEL selector, BOOL animated)
@@ -887,7 +896,7 @@ static void RUINNativeChatViewDidLayoutSubviews(id self, SEL selector)
 {
     IMP original = atomic_load_explicit(&gOriginalChatViewDidLayoutSubviews, memory_order_acquire);
     if (original) ((void (*)(id, SEL))original)(self, selector);
-    RUINRefreshNativeTitleAlias((UIViewController *)self);
+    RUINRefreshNativeTitleAlias((UIViewController *)self, NO);
 }
 
 static void RUINPresentLocalNameEditor(UIViewController *controller, UIView *titleView,

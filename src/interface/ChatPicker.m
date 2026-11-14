@@ -42,6 +42,24 @@ static BOOL PickerContains(NSString *text, NSString *query) {
     return !query.length || [text rangeOfString:query options:NSCaseInsensitiveSearch | NSDiacriticInsensitiveSearch | NSWidthInsensitiveSearch].location != NSNotFound;
 }
 
+static NSString *PickerAvatarRequestKey(NSString *account, NSURL *url) {
+    return account.length && url.absoluteString.length ?
+        [NSString stringWithFormat:@"%@\n%@", account, url.absoluteString] : nil;
+}
+
+static BOOL PickerCanLoadAvatar(NSString *key, NSSet *pending, NSSet *failed) {
+    return key.length && ![pending containsObject:key] && ![failed containsObject:key];
+}
+
+static void PickerFinishAvatarRequest(NSMutableSet *pending, NSMutableSet *failed,
+                                     NSString *key, BOOL success, BOOL accountIsCurrent) {
+    if (!key.length) return;
+    [pending removeObject:key];
+    if (!accountIsCurrent) return;
+    if (success) [failed removeObject:key];
+    else [failed addObject:key];
+}
+
 #if !defined(RUIN_CHAT_PICKER_HOST_CHECK)
 #import <UIKit/UIKit.h>
 #import "ChatCatalog.h"
@@ -53,7 +71,7 @@ static BOOL PickerContains(NSString *text, NSString *query) {
 @property(nonatomic, copy) dispatch_block_t changed;
 @property(nonatomic, copy) NSArray<NSDictionary *> *catalog, *rows, *visible;
 @property(nonatomic, copy) NSDictionary *aliases;
-@property(nonatomic, strong) NSMutableSet *selected, *pendingImages;
+@property(nonatomic, strong) NSMutableSet *selected, *pendingImages, *failedImages;
 @property(nonatomic, strong) NSCache *images;
 @end
 
@@ -87,12 +105,15 @@ static NSURL *PickerAvatarURL(NSDictionary *item) {
     self.definesPresentationContext = YES;
     self.images = [NSCache new]; self.images.countLimit = 200;
     self.pendingImages = [NSMutableSet set];
+    self.failedImages = [NSMutableSet set];
     self.tableView.rowHeight = UITableViewAutomaticDimension; self.tableView.estimatedRowHeight = 70;
     self.refreshControl = [UIRefreshControl new];
     [self.refreshControl addTarget:self action:@selector(loadChats) forControlEvents:UIControlEventValueChanged];
     [self loadChats];
 }
 - (void)loadChats {
+    // loadChats is called at entry and by the explicit pull-to-refresh control.
+    [self.failedImages removeAllObjects];
     self.loading = YES; [self applySearch];
     __weak typeof(self) weak = self;
     RUINLoadChatCatalog(^(NSArray *items, NSString *account) {
@@ -145,7 +166,9 @@ static NSURL *PickerAvatarURL(NSDictionary *item) {
     else if ([row[@"kind"] isEqual:@"square"]) content.secondaryText = RUINLocalizedString(@"オープンチャット");
     else if ([row[@"kind"] isEqual:@"oneOnOne"]) content.secondaryText = RUINLocalizedString(@"1対1トーク");
     NSURL *url = PickerAvatarURL(row);
-    content.image = url ? [self.images objectForKey:url.absoluteString] : nil;
+    NSString *account = [self.account copy];
+    NSString *requestKey = PickerAvatarRequestKey(account, url);
+    content.image = requestKey ? [self.images objectForKey:requestKey] : nil;
     if (!content.image) content.image = [UIImage systemImageNamed:[row[@"kind"] isEqual:@"group"] ? @"person.2.circle.fill" : @"person.crop.circle.fill"
         withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:44 weight:UIImageSymbolWeightRegular]];
     content.imageProperties.maximumSize = CGSizeMake(44, 44); content.imageProperties.cornerRadius = 22;
@@ -156,16 +179,21 @@ static NSURL *PickerAvatarURL(NSDictionary *item) {
         [self.selected containsObject:row[@"key"]] ? UITableViewCellAccessoryCheckmark : UITableViewCellAccessoryNone;
     cell.accessibilityTraits = UIAccessibilityTraitButton |
         (!self.names && [self.selected containsObject:row[@"key"]] ? UIAccessibilityTraitSelected : 0);
-    if (url && ![self.images objectForKey:url.absoluteString] && ![self.pendingImages containsObject:url.absoluteString]) {
-        [self.pendingImages addObject:url.absoluteString];
+    if (url && requestKey && ![self.images objectForKey:requestKey] &&
+        PickerCanLoadAvatar(requestKey, self.pendingImages, self.failedImages)) {
+        [self.pendingImages addObject:requestKey];
         __weak typeof(self) weak = self;
         [[NSURLSession.sharedSession dataTaskWithURL:url completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
             UIImage *image = !error && data.length <= 4 * 1024 * 1024 && [response.MIMEType hasPrefix:@"image/"] ? [UIImage imageWithData:data] : nil;
             if (image.size.width > 4096 || image.size.height > 4096) image = nil;
             dispatch_async(dispatch_get_main_queue(), ^{
-                RUINChatPicker *owner = weak; if (!owner || !image) return;
-                [owner.images setObject:image forKey:url.absoluteString];
-                [owner.pendingImages removeObject:url.absoluteString];
+                RUINChatPicker *owner = weak; if (!owner) return;
+                BOOL accountIsCurrent = [owner.account isEqualToString:account] &&
+                    [RUINChatCatalogAccount() isEqualToString:account];
+                PickerFinishAvatarRequest(owner.pendingImages, owner.failedImages, requestKey,
+                    image != nil, accountIsCurrent);
+                if (!accountIsCurrent || !image) return;
+                [owner.images setObject:image forKey:requestKey];
                 // Reconfigure current rows; never assign a late avatar to a reused cell.
                 [owner.tableView reloadData];
             });
@@ -238,6 +266,21 @@ int main(void) {
         assert(PickerContains(@"Alice", @"ALICE") && !PickerContains(@"Alice", @"chat:internal"));
         assert(PickerSavedKeys(@[@"chat:missing", @7, @"squareChat:room", @"user:other", @"chat:missing"]).count == 2);
         assert(PickerSavedAliases(@{@"user:internal":@"Local", @"group:bad":@7}).count == 1);
+        NSURL *avatarURL = [NSURL URLWithString:@"https://profile.line-scdn.net/avatar/small"];
+        NSString *accountA = PickerAvatarRequestKey(@"u111", avatarURL);
+        NSString *accountB = PickerAvatarRequestKey(@"u222", avatarURL);
+        assert(![accountA isEqualToString:accountB]);
+        NSMutableSet *pending = [NSMutableSet setWithObject:accountA];
+        NSMutableSet *failed = [NSMutableSet set];
+        assert(!PickerCanLoadAvatar(accountA, pending, failed));
+        PickerFinishAvatarRequest(pending, failed, accountA, NO, YES);
+        assert(![pending containsObject:accountA] && [failed containsObject:accountA]);
+        assert(!PickerCanLoadAvatar(accountA, pending, failed)); // No layout-driven retry loop.
+        [failed removeAllObjects]; // Explicit refresh permits retry.
+        assert(PickerCanLoadAvatar(accountA, pending, failed));
+        [pending addObject:accountA];
+        PickerFinishAvatarRequest(pending, failed, accountA, NO, NO);
+        assert(![pending containsObject:accountA] && ![failed containsObject:accountA]); // Stale account.
         puts("PASS visual picker keeps unavailable saved rules and aliases; names/search do not expose identifiers");
     }
 }

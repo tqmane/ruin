@@ -6,6 +6,8 @@
 #import "ThemeFeatures.h"
 #import "SwiftFields.h"
 #import "ThemeVersion.h"
+#import "ThemeProductIdentity.h"
+#import "../core/Localization.h"
 #import "RuntimeInspector.h"
 #import "ThemeApplyEvent.h"
 #import "NativeThemeValidation.h"
@@ -57,7 +59,7 @@ static void RUINThemeFinishPendingReset(uint64_t requestID, BOOL applied, NSErro
 static NSString *RUINThemeNativeUnavailableReason(NSString *operation)
 {
     if ([operation isEqualToString:@"Shop download hook"]) {
-        return @"LINE 26.16 exposes no Objective-C onButtonTapped: implementation to bind. The verified LineShopProductDetail priceTier display gate is installed separately.";
+        return @"LINE exposes no Objective-C onButtonTapped: implementation to bind. The verified LineShopProductDetail priceTier display gate is installed separately.";
     }
     if ([operation isEqualToString:@"Theme removal"]) {
         return @"LINE's theme resource remover is Swift-only metadata here, with no verified Objective-C method ABI. No package file is deleted.";
@@ -77,7 +79,7 @@ static NSString *RUINThemeNativeUnavailableReason(NSString *operation)
         return @"The catalog, public asset download, and display gate are platform-neutral; reset uses LINE's visible native screen action, while direct apply, removal, and startup random selection remain unavailable.";
     }
     return [NSString stringWithFormat:
-        @"%@ is unavailable: LINE 26.16.0 exposes the theme engine as Swift-only metadata without a verified Objective-C method ABI. No network request, archive extraction, filesystem change, preference change, or theme application was attempted.",
+        @"%@ is unavailable: LINE exposes the theme engine as Swift-only metadata without a verified Objective-C method ABI. No network request, archive extraction, filesystem change, preference change, or theme application was attempted.",
         operation];
 }
 
@@ -512,7 +514,7 @@ static NSArray<NSDictionary<NSString *, id> *> *RUINThemeReadProductStoreBody(NS
                     continue;
 
                 NSMutableDictionary *item = [@{
-                    @"productID": productID,
+                    @"productID": RUINCanonicalThemeProductID(productID),
                     @"sourceStore": storeName,
                     @"sourceEntity": @"OwnedThemeProduct",
                     @"packageArchiveValidated": @NO,
@@ -565,6 +567,7 @@ static BOOL RUINThemeSafeURLComponent(NSString *value, BOOL digitsOnly)
 
 static NSURL *RUINThemePublicAssetURL(NSString *productID, NSString *version)
 {
+    productID = RUINCanonicalThemeProductID(productID);
     NSString *prefix = [productID substringToIndex:6];
     NSString *path = [NSString stringWithFormat:@"/themeshop/v1/products/%@/%@/%@/%@/%@/IOS/theme.zip",
         [prefix substringWithRange:NSMakeRange(0, 2)],
@@ -768,7 +771,7 @@ static BOOL RUINThemeValidateArchiveData(NSData *archive, NSError **error)
      displayName:(NSString *)displayName
       completion:(RUINThemeDownloadCompletion)completion
 {
-    self.productID = productID;
+    self.productID = RUINCanonicalThemeProductID(productID);
     self.version = version;
     self.displayName = displayName;
     self.completion = completion;
@@ -948,7 +951,7 @@ static NSArray<NSDictionary<NSString *, id> *> *RUINThemeDownloadedAssetCatalog(
             ![[displayName stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] length])
             displayName = productDirectory.lastPathComponent;
         [packages addObject:@{
-            @"productID": productDirectory.lastPathComponent,
+            @"productID": RUINCanonicalThemeProductID(productDirectory.lastPathComponent),
             @"name": displayName,
             @"version": versionDirectory.lastPathComponent,
             @"versionString": RUINThemeDisplayVersion(versionDirectory.lastPathComponent) ?: versionDirectory.lastPathComponent,
@@ -1260,14 +1263,14 @@ NSDictionary<NSString *, id> *RUINThemeDiagnostics(void)
                 @"installationConfirmed": @NO,
                 @"reason": manualDownloadAvailable
                     ? @"Uses only the statically recovered anonymous CDN GET when enableThemeDL is on. It does not request an order, write ownership/grant records, or claim installation."
-                    : @"This public-asset adapter is gated to LINE 26.16.0 build 2026.1006.1718."
+                    : RUINLocalizedString(@"このLINEバージョンでは、この画面からのダウンロードを利用できません。")
             },
             @"localCatalog": @{
                 @"available": @(catalogAvailable),
                 @"status": catalogAvailable ? @"validated_downloads_plus_read_only_coredata" : @"unavailable",
                 @"reason": catalogAvailable
                     ? @"Includes validated local .linetheme archives and, when the Theme 2 model is present, read-only native records with a positive installedTime. Downloaded archives are not marked installed."
-                    : @"The catalog is gated to LINE 26.16.0 build 2026.1006.1718."
+                    : RUINLocalizedString(@"このLINEバージョンでは着せかえ一覧を取得できません。")
             },
             @"apply": RUINThemeOperation(@"Theme apply", nil),
             @"remove": RUINThemeOperation(@"Theme removal", nil),
@@ -1308,7 +1311,7 @@ NSDictionary<NSString *, id> *RUINThemeDiagnostics(void)
 NSArray<NSDictionary<NSString *, id> *> *RUINThemeCatalog(NSError **error)
 {
     if (!RUINThemeTargetMatches()) {
-        if (error) *error = RUINThemeStoreError(@"The read-only theme catalog is gated to LINE 26.16.0 build 2026.1006.1718.", nil);
+        if (error) *error = RUINThemeStoreError(RUINLocalizedString(@"このLINEバージョンでは着せかえ一覧を取得できません。"), nil);
         return nil;
     }
     NSMutableArray<NSDictionary<NSString *, id> *> *packages = [NSMutableArray array];
@@ -1424,7 +1427,7 @@ static void RUINDownloadThemeAsset(NSString *name,
     }
     if (!RUINThemeTargetMatches()) {
         NSError *error = RUINThemeError(RUINThemeErrorNativeAPIUnavailable,
-            @"Manual name/ID/version download", @"This download adapter is gated to LINE 26.16.0 build 2026.1006.1718.");
+            @"Manual name/ID/version download", RUINLocalizedString(@"このLINEバージョンでは、この画面からのダウンロードを利用できません。"));
         dispatch_async(dispatch_get_main_queue(), ^{ completion(nil, error); });
         return;
     }
@@ -1434,6 +1437,7 @@ static void RUINDownloadThemeAsset(NSString *name,
         dispatch_async(dispatch_get_main_queue(), ^{ completion(nil, error); });
         return;
     }
+    productID = RUINCanonicalThemeProductID(productID);
     NSURL *assetURL = RUINThemePublicAssetURL(productID, version);
     if (!assetURL) {
         NSError *error = RUINThemeError(RUINThemeErrorInvalidArgument,
