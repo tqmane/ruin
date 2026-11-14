@@ -21,6 +21,9 @@ static NSString *identityStatus = @"not_requested";
 static NSString *cfBindingStatus = @"NotAttempted";
 static BOOL cfBindingInstalled;
 static BOOL verifiedBinary;
+static NSString *mainPreferenceIdentifier;
+static BOOL mainPreferencesInstalled;
+static NSString *mainPreferencesStatus = @"not_requested";
 
 typedef NS_ENUM(NSInteger, RUINCFBindingPlan) {
     RUINCFBindingPlanNativePassthrough = 0,
@@ -100,11 +103,10 @@ NSDictionary *RUINBundleIdentityDiagnostics(void) {
         @"cfInfoDictionaryReads":@(atomic_load(&cfReads)),
         @"lineCallerReads":@(atomic_load(&lineReads)),
         @"cfMainImageBinding":@(cfBindingInstalled), @"cfBindingStatus":cfBindingStatus,
+        @"mainPreferenceDomainAlias":mainPreferencesStatus,
+        @"mainPreferenceDomainAliasInstalled":@(mainPreferencesInstalled),
         @"signingMetadataChanged":@NO, @"scope":@"main bundle; verified LINE and RUIN callers only"};
 }
-
-#if !defined(RUIN_BUNDLE_IDENTITY_HOST_CHECK)
-#import "fishhook.h"
 
 static BOOL IdentityCaller(NSBundle *bundle, void *address) {
     Dl_info caller;
@@ -113,6 +115,57 @@ static BOOL IdentityCaller(NSBundle *bundle, void *address) {
     if (caller.dli_fbase == lineImage) atomic_fetch_add(&lineReads, 1);
     return YES;
 }
+
+static NSString *IdentityPreferenceName(id defaults, NSString *name, BOOL scoped) {
+    return scoped && mainPreferencesInstalled && [name isEqual:originalIdentifier] &&
+        defaults == NSUserDefaults.standardUserDefaults ? mainPreferenceIdentifier : name;
+}
+
+%group RUINMainPreferenceIdentity
+%hook RUINIdentityDefaults
+__attribute__((noinline, disable_tail_calls))
+- (NSDictionary *)persistentDomainForName:(NSString *)name {
+    return %orig(IdentityPreferenceName(self, name, IdentityCaller(identityMainBundle,
+        __builtin_extract_return_addr(__builtin_return_address(0)))));
+}
+__attribute__((noinline, disable_tail_calls))
+- (void)setPersistentDomain:(NSDictionary *)domain forName:(NSString *)name {
+    %orig(domain, IdentityPreferenceName(self, name, IdentityCaller(identityMainBundle,
+        __builtin_extract_return_addr(__builtin_return_address(0)))));
+}
+__attribute__((noinline, disable_tail_calls))
+- (void)removePersistentDomainForName:(NSString *)name {
+    %orig(IdentityPreferenceName(self, name, IdentityCaller(identityMainBundle,
+        __builtin_extract_return_addr(__builtin_return_address(0)))));
+}
+%end
+%end
+
+static void IdentityInstallMainPreferences(Class cls, BOOL lcGuestDomain) {
+    if (mainPreferencesInstalled) return;
+    if (lcGuestDomain) { mainPreferencesStatus = @"live_container_owned"; return; }
+    id actual = actualMainInfo[identifierKey];
+    if (![actual isKindOfClass:NSString.class] || ![actual length] || [actual isEqual:originalIdentifier]) {
+        mainPreferencesStatus = @"native_passthrough"; return;
+    }
+    if (!atomic_load(&identityReady) || !verifiedBinary) return;
+    const SEL selectors[] = {@selector(persistentDomainForName:), @selector(setPersistentDomain:forName:),
+        @selector(removePersistentDomainForName:)};
+    const char *types[] = {"@24@0:8@16", "v32@0:8@16@24", "v24@0:8@16"};
+    for (unsigned i = 0; i < 3; i++) {
+        Method method = cls ? class_getInstanceMethod(cls, selectors[i]) : NULL;
+        if (!method || strcmp(method_getTypeEncoding(method), types[i]) || !method_getImplementation(method)) {
+            mainPreferencesStatus = @"preferences_abi_mismatch"; return;
+        }
+    }
+    mainPreferenceIdentifier = [actual copy];
+    %init(RUINMainPreferenceIdentity, RUINIdentityDefaults=cls);
+    mainPreferencesInstalled = YES;
+    mainPreferencesStatus = @"installed";
+}
+
+#if !defined(RUIN_BUNDLE_IDENTITY_HOST_CHECK)
+#import "fishhook.h"
 
 %group RUINBundleIdentity
 %hook RUINIdentityBundle
@@ -208,6 +261,8 @@ void RUINInstallBundleIdentity(void) {
             cfBindingStatus = RUINCFBindingStatusForPlan(cfPlan);
             atomic_store(&identityReady, YES);
             identityStatus = @"installed";
+            IdentityInstallMainPreferences(NSUserDefaults.class,
+                class_getClassMethod(NSUserDefaults.class, sel_registerName("lcGuestAppId")) != NULL);
             return;
         }
         struct rebinding binding = {"CFBundleGetInfoDictionary", (void *)IdentityCFInfo, (void **)&originalCFInfo};
@@ -217,10 +272,96 @@ void RUINInstallBundleIdentity(void) {
         if (!cfBindingInstalled) { identityStatus = @"cf_binding_unavailable"; return; }
         atomic_store(&identityReady, YES);
         identityStatus = @"installed";
+        IdentityInstallMainPreferences(NSUserDefaults.class,
+            class_getClassMethod(NSUserDefaults.class, sel_registerName("lcGuestAppId")) != NULL);
     });
 }
 #else
 #import <assert.h>
+@interface RUINIdentityTestDefaults : NSObject
+@property(nonatomic, strong) NSMutableDictionary *domains;
+@property(nonatomic, copy) NSString *lastDomain;
+@property(nonatomic) NSUInteger reads, writes, removes;
+- (NSDictionary *)persistentDomainForName:(NSString *)name;
+- (void)setPersistentDomain:(NSDictionary *)domain forName:(NSString *)name;
+- (void)removePersistentDomainForName:(NSString *)name;
+@end
+@implementation RUINIdentityTestDefaults
+- (instancetype)init { if ((self=[super init])) _domains=[NSMutableDictionary dictionary]; return self; }
+- (NSDictionary *)persistentDomainForName:(NSString *)name { self.reads++; self.lastDomain=name; return self.domains[name]; }
+- (void)setPersistentDomain:(NSDictionary *)domain forName:(NSString *)name { self.writes++; self.lastDomain=name; self.domains[name]=domain; }
+- (void)removePersistentDomainForName:(NSString *)name { self.removes++; self.lastDomain=name; [self.domains removeObjectForKey:name]; }
+@end
+static RUINIdentityTestDefaults *identityTestStandard;
+%group RUINIdentityTestStandardProvider
+%hook RUINIdentityTestDefaultsProvider
++ (NSUserDefaults *)standardUserDefaults { return (id)identityTestStandard; }
+%end
+%end
+
+static void IdentityCheckMainPreferences(void) {
+    identityTestStandard=[RUINIdentityTestDefaults new];
+    %init(RUINIdentityTestStandardProvider, RUINIdentityTestDefaultsProvider=NSUserDefaults.class);
+    Dl_info caller;
+    assert(dladdr((const void *)IdentityCheckMainPreferences, &caller));
+    lineImage=caller.dli_fbase; ruinImage=(void *)1;
+    atomic_store(&identityReady, YES); verifiedBinary=YES;
+    IdentityInstallMainPreferences(RUINIdentityTestDefaults.class, YES);
+    assert(!mainPreferencesInstalled && [mainPreferencesStatus isEqual:@"live_container_owned"] && atomic_load(&identityReady));
+    NSDictionary *saved=actualMainInfo;
+    actualMainInfo=@{identifierKey:originalIdentifier};
+    IdentityInstallMainPreferences(RUINIdentityTestDefaults.class, NO);
+    assert(!mainPreferencesInstalled && [mainPreferencesStatus isEqual:@"native_passthrough"]);
+    actualMainInfo=saved;
+    IdentityInstallMainPreferences(NSObject.class, NO);
+    assert(!mainPreferencesInstalled && atomic_load(&identityReady));
+    const SEL selectors[]={@selector(persistentDomainForName:),@selector(setPersistentDomain:forName:),@selector(removePersistentDomainForName:)};
+    const char *wrong[]={"v24@0:8@16","@32@0:8@16@24","@24@0:8@16"};
+    for (unsigned bad=0;bad<3;bad++) {
+        Class cls=objc_allocateClassPair(NSObject.class, [[NSString stringWithFormat:@"RUINIdentityBadDefaults%u",bad] UTF8String],0);
+        assert(cls);
+        for (unsigned i=0;i<3;i++) {
+            Method method=class_getInstanceMethod(RUINIdentityTestDefaults.class,selectors[i]);
+            assert(class_addMethod(cls,selectors[i],method_getImplementation(method),bad==i ? wrong[i] : method_getTypeEncoding(method)));
+        }
+        objc_registerClassPair(cls);
+        IdentityInstallMainPreferences(cls,NO);
+        assert(!mainPreferencesInstalled && atomic_load(&identityReady) && [mainPreferencesStatus isEqual:@"preferences_abi_mismatch"]);
+    }
+    IdentityInstallMainPreferences(RUINIdentityTestDefaults.class, NO);
+    IdentityInstallMainPreferences(RUINIdentityTestDefaults.class, NO); // No second Logos replacement.
+    assert(mainPreferencesInstalled && [mainPreferenceIdentifier isEqual:@"example.signed.line"]);
+    NSDictionary *value=@{@"fixture":@YES};
+    RUINIdentityTestDefaults *defaults=identityTestStandard, *suite=[RUINIdentityTestDefaults new];
+    [defaults setPersistentDomain:value forName:originalIdentifier];
+    assert(defaults.writes==1 && [defaults.lastDomain isEqual:mainPreferenceIdentifier]);
+    assert([defaults persistentDomainForName:originalIdentifier]==value && defaults.reads==1);
+    [defaults removePersistentDomainForName:originalIdentifier];
+    assert(defaults.removes==1 && [defaults.lastDomain isEqual:mainPreferenceIdentifier] && !defaults.domains.count);
+    lineImage=(void *)1; ruinImage=caller.dli_fbase; // Chained RUIN forwarding is in scope too.
+    [defaults setPersistentDomain:value forName:originalIdentifier];
+    assert(defaults.writes==2 && [defaults.lastDomain isEqual:mainPreferenceIdentifier]);
+    lineImage=(void *)1; ruinImage=(void *)2;
+    [defaults setPersistentDomain:value forName:originalIdentifier];
+    assert(defaults.writes==3 && [defaults.lastDomain isEqual:originalIdentifier]);
+    assert([defaults persistentDomainForName:originalIdentifier]==value && defaults.reads==2);
+    [defaults removePersistentDomainForName:originalIdentifier];
+    assert(defaults.removes==2 && [defaults.lastDomain isEqual:originalIdentifier]);
+    lineImage=caller.dli_fbase;
+    [suite setPersistentDomain:value forName:originalIdentifier];
+    assert(suite.writes==1 && [suite.lastDomain isEqual:originalIdentifier]);
+    for (NSString *name in @[@"group.com.linecorp.line",@"other.application",@"jp.naver.line.extra"]) {
+        NSUInteger reads=defaults.reads,writes=defaults.writes,removes=defaults.removes;
+        [defaults setPersistentDomain:value forName:name];
+        assert([defaults persistentDomainForName:name]==value);
+        [defaults removePersistentDomainForName:name];
+        assert([defaults.lastDomain isEqual:name] && defaults.reads==reads+1 && defaults.writes==writes+1 && defaults.removes==removes+1);
+    }
+    atomic_store(&identityReady,NO);
+    [defaults setPersistentDomain:value forName:originalIdentifier];
+    assert([defaults.lastDomain isEqual:originalIdentifier]);
+    puts("PASS main preference alias: generated get/set/remove original once; standard-only; LINE/RUIN scope; LC/native/ABI isolation");
+}
 void RUINInstallBundleIdentity(void) {}
 int main(void) {
     @autoreleasepool {
@@ -278,6 +419,7 @@ int main(void) {
         assert(IdentityDictionary(NO, actualMainInfo) == actualMainInfo);
         atomic_store(&identityReady, NO);
         assert(!IdentityScope(identityMainBundle, lineImage));
+        IdentityCheckMainPreferences();
         puts("PASS original bundle identity projection, raw signing view, caller/bundle isolation and binary gates");
     }
 }

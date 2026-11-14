@@ -13,6 +13,7 @@ static atomic_uint mappedGroupRequests;
 static atomic_uint mappedSuiteRequests;
 static BOOL installed;
 static BOOL suitesInstalled;
+static BOOL preferenceDomainsInstalled;
 static atomic_uint localContainerRequests;
 static NSDictionary<NSString *, NSURL *> *resolvedGroupURLs;
 static BOOL migrationReady;
@@ -25,6 +26,24 @@ static BOOL RUINLineGroupIdentifier(id identifier) {
         @"group.share.com.linecorp.line", @"group.com.linecorp.Line.encrypted.share",
         @"group.ly-app.family"
     ] containsObject:identifier];
+}
+
+static NSString *RUINMappedPreferencesDomain(NSString *name) {
+    NSString *mapped = [name isKindOfClass:NSString.class] ? groupMap[name] : nil;
+    if (mapped) atomic_fetch_add(&mappedSuiteRequests, 1);
+    return mapped ?: name;
+}
+
+static BOOL RUINPreferencesDomainMethodsMatch(Class cls) {
+    const SEL selectors[] = {@selector(persistentDomainForName:),
+        @selector(setPersistentDomain:forName:), @selector(removePersistentDomainForName:)};
+    const char *types[] = {"@24@0:8@16", "v32@0:8@16@24", "v24@0:8@16"};
+    for (NSUInteger i = 0; i < sizeof(selectors) / sizeof(selectors[0]); i++) {
+        Method method = cls ? class_getInstanceMethod(cls, selectors[i]) : NULL;
+        const char *encoding = method ? method_getTypeEncoding(method) : NULL;
+        if (!encoding || strcmp(encoding, types[i]) || !method_getImplementation(method)) return NO;
+    }
+    return YES;
 }
 
 static NSURL *RUINResolveGroupURL(NSFileManager *manager, NSString *identifier, NSURL *native, NSURL *support) {
@@ -166,9 +185,24 @@ static void RUINPrepareStorageBindings(NSDictionary *requestedMap) {
 %hook NSUserDefaults
 - (instancetype)initWithSuiteName:(NSString *)name
 {
-    NSString *mapped = [name isKindOfClass:NSString.class] ? groupMap[name] : nil;
-    if (mapped) atomic_fetch_add(&mappedSuiteRequests, 1);
-    return %orig(mapped ?: name);
+    return %orig(RUINMappedPreferencesDomain(name));
+}
+%end
+%end
+
+%group RUINPreferencesDomainMapping
+%hook NSUserDefaults
+- (NSDictionary *)persistentDomainForName:(NSString *)name
+{
+    return %orig(RUINMappedPreferencesDomain(name));
+}
+- (void)setPersistentDomain:(NSDictionary *)domain forName:(NSString *)name
+{
+    %orig(domain, RUINMappedPreferencesDomain(name));
+}
+- (void)removePersistentDomainForName:(NSString *)name
+{
+    %orig(RUINMappedPreferencesDomain(name));
 }
 %end
 %end
@@ -202,6 +236,11 @@ void RUINInstallCompatibility(void) {
             %init(RUINPreferencesSuiteMapping);
             suitesInstalled = YES;
         }
+        // A missing domain API must not disable the existing suite-init mapping.
+        if (suitesInstalled && RUINPreferencesDomainMethodsMatch(NSUserDefaults.class)) {
+            %init(RUINPreferencesDomainMapping);
+            preferenceDomainsInstalled = YES;
+        }
     });
 }
 #endif
@@ -212,6 +251,7 @@ NSDictionary *RUINCompatibilityDiagnostics(void) {
              @"mappedAppGroupRequests": @(atomic_load(&mappedGroupRequests)),
              @"localAppGroupFallbackRequests": @(atomic_load(&localContainerRequests)),
              @"appGroupPreferencesMappingInstalled": @(suitesInstalled),
+             @"appGroupPreferencesDomainMappingInstalled": @(preferenceDomainsInstalled),
              @"mappedPreferencesRequests": @(atomic_load(&mappedSuiteRequests)),
              @"storageMigrationReady":@(migrationReady), @"unsafeStorageBindings":@(unsafeStorageCount),
              @"resolvedStorageNamespaces":@(resolvedGroupURLs.count), @"storageBindingErrors":storageBindingErrors ?: @[]};
@@ -226,6 +266,18 @@ __attribute__((constructor)) static void RUINPrepareSideload(void) {
 #else
 #import <assert.h>
 int main(void) { @autoreleasepool {
+    groupMap = @{@"group.com.linecorp.line":@"group.fixture.authorized"};
+    assert([RUINMappedPreferencesDomain(@"group.com.linecorp.line") isEqual:@"group.fixture.authorized"]);
+    for (NSString *name in @[@"jp.naver.line", @"group.fixture.authorized", @"group.unrelated",
+        @"group.com.linecorp.line.extra", @"NSGlobalDomain", @"com.apple.fixture"]) {
+        assert(RUINMappedPreferencesDomain(name) == name);
+    }
+    assert(RUINMappedPreferencesDomain(nil) == nil);
+    assert(RUINPreferencesDomainMethodsMatch(NSUserDefaults.class));
+    assert(!RUINPreferencesDomainMethodsMatch(NSObject.class));
+    assert(!RUINPreferencesDomainMethodsMatch(Nil));
+    groupMap = nil;
+    assert([RUINMappedPreferencesDomain(@"group.com.linecorp.line") isEqual:@"group.com.linecorp.line"]);
     NSFileManager *manager = NSFileManager.defaultManager;
     NSURL *support = [[NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES]
         URLByAppendingPathComponent:NSUUID.UUID.UUIDString isDirectory:YES];
