@@ -249,7 +249,7 @@ static BOOL UIUpdateMedia(UICollectionViewCell *cell, UIView *bubble, NSDictiona
         button.preview.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
         [button addSubview:button.preview];
         [button addTarget:button action:@selector(openMedia) forControlEvents:UIControlEventTouchUpInside];
-        button.accessibilityLabel = RUINLocalizedString(@"menu.retainedMedia");
+        button.accessibilityLabel = RUINLocalizedString(@"menu.retained_media");
         button.accessibilityIdentifier = @"RUINRetainedMedia";
         objc_setAssociatedObject(cell, &UIMediaButtonKey, button, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
@@ -425,7 +425,7 @@ static void UIRefreshCellImpl(UICollectionViewCell *cell) {
         BOOL retainedMedia = mediaItems.count && UIUpdateMedia(cell, bubble, record.key, mediaItems);
         UILabel *badge = objc_getAssociatedObject(cell, &UIBadgeKey);
         if (!badge) {
-            NSString *markerLabel = RUINLocalizedString(@"取消済");
+            NSString *markerLabel = RUINLocalizedString(@"media.unsent_badge");
             badge = [UILabel new]; badge.text = markerLabel; badge.textAlignment = NSTextAlignmentCenter;
             badge.font = [UIFont preferredFontForTextStyle:UIFontTextStyleCaption2]; badge.adjustsFontForContentSizeCategory = YES;
             badge.textColor = UIColor.secondaryLabelColor; badge.backgroundColor = UIColor.tertiarySystemBackgroundColor;

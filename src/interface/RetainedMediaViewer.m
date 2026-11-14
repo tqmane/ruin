@@ -53,7 +53,7 @@ static NSArray<RUINRetainedPreviewItem *> *RUINValidatedPreviewItems(NSArray<NSD
         previewItem.URL = URL;
         previewItem.role = role;
         previewItem.title = [role isEqual:@"thumbnail"]
-            ? RUINLocalizedString(@"media.previewOnly") : RUINLocalizedString(@"menu.retainedMedia");
+            ? RUINLocalizedString(@"media.preview_only") : RUINLocalizedString(@"menu.retained_media");
         if (![QLPreviewController canPreviewItem:previewItem]) continue;
         [result addObject:previewItem];
     }
@@ -75,7 +75,7 @@ BOOL RUINPresentRetainedMediaViewer(UIViewController *source, NSArray<NSDictiona
     preview.dataSource = dataSource;
     objc_setAssociatedObject(preview, &sRetainedPreviewDataSourceKey, dataSource, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     BOOL previewOnly = previewItems.count == 1 && [previewItems.firstObject.role isEqual:@"thumbnail"];
-    preview.title = RUINLocalizedString(previewOnly ? @"media.previewOnly" : @"menu.retainedMedia");
+    preview.title = RUINLocalizedString(previewOnly ? @"media.preview_only" : @"menu.retained_media");
     [source presentViewController:preview animated:YES completion:nil];
     return YES;
 }

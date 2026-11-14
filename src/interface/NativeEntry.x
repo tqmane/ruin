@@ -41,7 +41,7 @@ static UITableView *RUINFindSettingsTable(UIView *view) {
 }
 
 static NSString *RUINSettingsEntryAccessibilityLabel(void) {
-    return RUINLocalizedString(@"RUINの設定と診断");
+    return RUINLocalizedString(@"settings.accessibility_label");
 }
 
 static void RUINAttachSettingsEntry(UIViewController *controller) {
@@ -78,7 +78,7 @@ static void RUINAttachSettingsEntry(UIViewController *controller) {
     title.textColor = UIColor.labelColor;
     title.isAccessibilityElement = NO;
     UILabel *subtitle = [UILabel new];
-    subtitle.text = RUINLocalizedString(@"ローカル設定・診断");
+    subtitle.text = RUINLocalizedString(@"settings.entry_subtitle");
     subtitle.font = [UIFont preferredFontForTextStyle:UIFontTextStyleSubheadline];
     subtitle.adjustsFontForContentSizeCategory = YES;
     subtitle.textColor = UIColor.secondaryLabelColor;

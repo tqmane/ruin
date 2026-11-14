@@ -196,10 +196,10 @@ void RUINOpenDownloadedThemes(UIViewController *owner)
     RUINInstallNativeThemeWorkflow();
     RUINOpenNativeMyThemes(owner, ^(NSError *error) {
         if (!error) return;
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:RUINLocalizedString(@"マイ着せかえを開けませんでした")
-            message:RUINLocalizedString(@"画面を閉じて、もう一度お試しください。ダウンロードしたファイルは保存されています。")
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:RUINLocalizedString(@"themes.my_themes_open_failed")
+            message:RUINLocalizedString(@"themes.apply_retry_message")
             preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"閉じる") style:UIAlertActionStyleCancel handler:nil]];
+        [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"common.close") style:UIAlertActionStyleCancel handler:nil]];
         if (owner.viewIfLoaded.window && !owner.presentedViewController) [owner presentViewController:alert animated:YES completion:nil];
     });
 }

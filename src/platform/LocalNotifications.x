@@ -144,7 +144,7 @@ static BOOL RUINLocalEvaluateSnapshot(NSDictionary *snapshot, BOOL enabled,
 
     NSString *digest = RUINLocalIdentityDigest(snapshot);
     NSString *title = RUINLocalDisplayText(snapshot[@"title"], kRUINLocalDefaultTitle, 120);
-    NSString *fallbackBody = contentType ? RUINLocalizedString(@"添付ファイルを受信しました") : RUINLocalizedString(@"新着メッセージを受信しました");
+    NSString *fallbackBody = contentType ? RUINLocalizedString(@"notifications.attachment_received") : RUINLocalizedString(@"notifications.new_message");
     NSString *body = RUINLocalDisplayText(snapshot[@"body"], fallbackBody, 500);
     if (!digest || !title || !body) return NO;
     if (digestOut) *digestOut = digest;

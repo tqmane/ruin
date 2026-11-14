@@ -1057,13 +1057,13 @@ static UICollectionViewCell *RUINMenuExtrasReadUsersCell(
 {
     UIImage *image = [[UIImage imageNamed:@"tabler-eye" inBundle:RUINResourceBundle() compatibleWithTraitCollection:nil]
         imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
-    return RUINMenuExtrasActionCell(collectionView, indexPath, RUINLocalizedString(@"既読者一覧"), image);
+    return RUINMenuExtrasActionCell(collectionView, indexPath, RUINLocalizedString(@"readers.title"), image);
 }
 
 static UICollectionViewCell *RUINMenuExtrasStickerGIFCell(
     UICollectionView *collectionView, NSIndexPath *indexPath)
 {
-    return RUINMenuExtrasActionCell(collectionView, indexPath, RUINLocalizedString(@"GIFでコピー"),
+    return RUINMenuExtrasActionCell(collectionView, indexPath, RUINLocalizedString(@"menu.copy_gif"),
         [UIImage systemImageNamed:@"doc.on.doc"]);
 }
 
@@ -1071,7 +1071,7 @@ static UICollectionViewCell *RUINMenuExtrasReadUntilCell(UICollectionView *colle
 {
     UIImage *image = [[UIImage imageNamed:@"tabler-checks" inBundle:RUINResourceBundle() compatibleWithTraitCollection:nil]
         imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
-    return RUINMenuExtrasActionCell(collectionView, indexPath, RUINLocalizedString(@"このメッセージまで既読"), image);
+    return RUINMenuExtrasActionCell(collectionView, indexPath, RUINLocalizedString(@"menu.mark_read_until"), image);
 }
 
 static UICollectionViewCell *RUINMenuExtrasRetainedMediaCell(
@@ -1080,7 +1080,7 @@ static UICollectionViewCell *RUINMenuExtrasRetainedMediaCell(
     UIImage *image = [[UIImage imageNamed:@"tabler-eye" inBundle:RUINResourceBundle() compatibleWithTraitCollection:nil]
         imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
     return RUINMenuExtrasActionCell(collectionView, indexPath,
-        RUINLocalizedString(@"menu.retainedMedia"), image);
+        RUINLocalizedString(@"menu.retained_media"), image);
 }
 
 static NSInteger RUINMenuExtrasAdditionalActionCount(RUINMenuExtrasContext *context)
@@ -1160,7 +1160,7 @@ static void RUINMenuExtrasPresentMessage(UIViewController *chatController, NSStr
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:title
                                                                     message:message
                                                              preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"OK") style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"common.ok") style:UIAlertActionStyleCancel handler:nil]];
     [chatController presentViewController:alert animated:YES completion:nil];
 }
 
@@ -1172,9 +1172,9 @@ static void RUINMenuExtrasPresentStickerGIFFailure(UIViewController *chatControl
         chatController.viewIfLoaded.window.windowScene.activationState != UISceneActivationStateForegroundActive)
         return;
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:nil
-                                                                   message:RUINLocalizedString(@"GIFをコピーできませんでした")
+                                                                   message:RUINLocalizedString(@"media.copy_gif_failed")
                                                             preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"OK") style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"common.ok") style:UIAlertActionStyleCancel handler:nil]];
     [chatController presentViewController:alert animated:YES completion:nil];
 }
 
@@ -1260,8 +1260,8 @@ static void RUINMenuExtrasPresentReaders(UIViewController *chatController,
         if (selectedRetainedMedia) return;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             RUINMenuExtrasPresentMessage(chatController,
-                RUINLocalizedString(selectedReadUntil ? @"このメッセージまで既読" : @"既読者一覧"),
-                RUINLocalizedString(selectedReadUntil ? @"既読にできませんでした。もう一度お試しください。" : @"取得できませんでした"));
+                RUINLocalizedString(selectedReadUntil ? @"menu.mark_read_until" : @"readers.title"),
+                RUINLocalizedString(selectedReadUntil ? @"readers.mark_read_failed" : @"common.fetch_failed"));
         });
         return;
     }
@@ -1294,8 +1294,8 @@ static void RUINMenuExtrasPresentReaders(UIViewController *chatController,
         RUINReadUntilMessage([messageKey copy], nativeChat, ^(NSError *error) {
             atomic_fetch_add(error ? &sReadUntilFailures : &sReadUntilSuccesses, 1);
             if (error) dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 250 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
-                RUINMenuExtrasPresentMessage(source, RUINLocalizedString(@"このメッセージまで既読"),
-                    RUINLocalizedString(@"既読にできませんでした。もう一度お試しください。"));
+                RUINMenuExtrasPresentMessage(source, RUINLocalizedString(@"menu.mark_read_until"),
+                    RUINLocalizedString(@"readers.mark_read_failed"));
             });
         });
         return;

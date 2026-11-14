@@ -443,7 +443,7 @@ static BOOL RetainedMarker(NSDictionary *key, BOOL write) {
                 id value = [(id<RUINMessagingMessageFields>)message plaintext];
                 if ([value isKindOfClass:NSString.class] && [value length]) text = [value copy];
             }];
-            if (text) { atomic_fetch_add(&displayReturns, 1); return [text stringByAppendingFormat:@"\n%@", RUINLocalizedString(@"取消済")]; }
+            if (text) { atomic_fetch_add(&displayReturns, 1); return [text stringByAppendingFormat:@"\n%@", RUINLocalizedString(@"media.unsent_badge")]; }
         } @catch (__unused NSException *exception) { atomic_fetch_add(&observationErrors, 1); }
         return actual;
     } @finally { displayDepth--; }
