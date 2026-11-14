@@ -111,6 +111,8 @@ check-mapping-manifest: build/export_version_mappings tests/fixtures/version-map
 	./build/export_version_mappings --check tests/fixtures/version-mappings.json
 
 check-host: check-portable check-mapping-manifest $(HOST_FIXTURES)
+	python3 tests/check_siri_compatibility.py
+	python3 tests/check_theme_store_web_notifications.py
 	@set -e; for fixture in $(filter build/%,$^); do codesign --force --sign - "$$fixture"; done
 	./build/check_native_tab_availability
 	./build/check_bundle_identity
@@ -383,7 +385,7 @@ build/$(1)/SwiftFields.o: $$(SWIFT_SOURCES) src/core/SwiftFields.h
 	xcrun --sdk iphoneos swiftc -sdk $$(SDK) -target $(1)-apple-ios18.0 -parse-as-library -whole-module-optimization -O -module-name RUINRuntime -emit-object $$(SWIFT_SOURCES) -o $$@
 
 build/$(1)/RUIN.dylib: $(call arch_objects,$(1))
-	xcrun --sdk iphoneos swiftc -sdk $$(SDK) -target $(1)-apple-ios18.0 -emit-library $$^ -framework Foundation -framework UIKit -framework AVFoundation -framework CoreText -framework WebKit -framework CoreGraphics -framework Security -framework CoreData -framework ImageIO -framework UniformTypeIdentifiers -framework UserNotifications -framework QuickLook -lsqlite3 -lz -Xlinker -install_name -Xlinker @rpath/RUIN.dylib -o $$@
+	xcrun --sdk iphoneos swiftc -sdk $$(SDK) -target $(1)-apple-ios18.0 -emit-library $$^ -framework Foundation -framework UIKit -framework AVFoundation -framework CoreText -framework WebKit -framework CoreGraphics -framework Security -framework CoreData -framework ImageIO -framework UniformTypeIdentifiers -framework UserNotifications -framework QuickLook -framework Intents -lsqlite3 -lz -Xlinker -install_name -Xlinker @rpath/RUIN.dylib -o $$@
 endef
 
 $(foreach arch,$(RUIN_ARCHS),$(eval $(call RUIN_ARCH_RULES,$(arch))))

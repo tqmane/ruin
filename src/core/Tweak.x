@@ -7,6 +7,7 @@
 #import "BundleIdentity.h"
 #import "Keychain.h"
 #import "Sideload.h"
+#import "SiriCompatibility.h"
 #import "Localization.h"
 #import "RUINSettings.h"
 #import "SecondaryLogin.h"
@@ -174,6 +175,7 @@ NSDictionary *RUINRuntimeDiagnostics(void) {
         @"themeShop": RUINThemeShopDiagnostics(),
         @"themeStoreDownload": RUINThemeStoreDownloadDiagnostics(),
         @"themeStoreWeb": RUINThemeStoreWebDiagnostics(),
+        @"siriCompatibility": RUINSiriCompatibilityDiagnostics(),
         @"themeStoreImages": RUINThemeStoreImagesDiagnostics(),
         @"nativeThemeImages": RUINNativeThemeImagesDiagnostics(),
         @"nativeThemeWorkflow": RUINNativeThemeWorkflowDiagnostics(),
@@ -284,6 +286,7 @@ static void RUINApplicationDidBecomeActive(void) {
         RUINLocalNamesDefaultsKey: @{}
     }];
     if (RUINIsCompatible()) {
+        RUINInstallSiriCompatibility();
         RUINInstallFeatures();
         RUINInstallReadBoundary();
         RUINInstallNativeEntry();
@@ -317,6 +320,7 @@ __attribute__((constructor)) static void RUINConstructor(void) {
     @autoreleasepool {
         RUINInstallBundleIdentity();
         if (RUINIsCompatible()) {
+            RUINInstallSiriCompatibility();
             // Establish storage and the native visibility boundary before any
             // LINE singleton can cache the root menu during feature setup.
             RUINInstallCompatibility();
