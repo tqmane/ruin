@@ -65,6 +65,7 @@ typedef NS_ENUM(NSInteger, RUINSettingsSection) {
     RUINSettingsSectionMIDLookup,
     RUINSettingsSectionNotifications,
     RUINSettingsSectionLineFeatures,
+    RUINSettingsSectionLinks,
     RUINSettingsSectionCount,
 };
 
@@ -80,6 +81,13 @@ typedef NS_ENUM(NSInteger, RUINSettingsSection) {
 @end
 
 static NSDictionary *Toggle(NSString *title, NSString *key) { return @{@"title":title, @"key":key}; }
+static NSArray<NSDictionary<NSString *, NSString *> *> *RUINCommunityLinks(void) {
+    return @[
+        @{@"title":@"GitHub", @"detail":@"tqmane", @"url":@"https://github.com/tqmane"},
+        @{@"title":@"X", @"detail":@"@tamany00", @"url":@"https://x.com/tamany00"},
+        @{@"title":@"Discord", @"detail":@"discord.gg/zJBrCaf6dz", @"url":@"https://discord.gg/zJBrCaf6dz"}
+    ];
+}
 static NSDictionary<NSString *, NSString *> *RUINTabTitles(void) {
     return @{@"home":RUINLocalizedString(@"tabs.home"), @"talk":RUINLocalizedString(@"tabs.talk"), @"shopping":RUINLocalizedString(@"tabs.shopping"),
         @"voom":@"VOOM", @"wallet":RUINLocalizedString(@"tabs.wallet"), @"news":RUINLocalizedString(@"tabs.news"),
@@ -158,6 +166,7 @@ static NSArray<NSDictionary *> *ToggleRows(NSInteger section) {
 }
 - (NSInteger)numberOfSectionsInTableView:(__unused UITableView *)tableView { return self.compatible ? RUINSettingsSectionCount : 1; }
 - (NSString *)tableView:(__unused UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
+    if (self.compatible && section == RUINSettingsSectionLinks) return RUINLocalizedString(@"settings.links");
     return self.compatible ? @[RUINLocalizedString(@"settings.version"), RUINLocalizedString(@"settings.read_controls"), RUINLocalizedString(@"settings.chat_names"), RUINLocalizedString(@"settings.confirmations"), RUINLocalizedString(@"settings.appearance"), RUINLocalizedString(@"settings.tabs"), RUINLocalizedString(@"settings.history"), RUINLocalizedString(@"settings.secondary_login"), RUINLocalizedString(@"settings.diagnostics"), RUINLocalizedString(@"settings.shops"), RUINLocalizedString(@"settings.user_search"), RUINLocalizedString(@"settings.notifications"), RUINLocalizedString(@"settings.line_features")][section] : RUINLocalizedString(@"settings.diagnostics");
 }
 - (NSString *)tableView:(__unused UITableView *)tableView titleForFooterInSection:(NSInteger)section {
@@ -191,6 +200,7 @@ static NSArray<NSDictionary *> *ToggleRows(NSInteger section) {
 }
 - (NSInteger)tableView:(__unused UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
     if (!self.compatible) return 1;
+    if (section == RUINSettingsSectionLinks) return RUINCommunityLinks().count;
     if (section == RUINSettingsSectionVersion && !self.fullySupported &&
         !RUINShouldSuppressPartialCompatibilityWarning()) return 2;
     if (section == RUINSettingsSectionLocalNames) return 1;
@@ -203,7 +213,12 @@ static NSArray<NSDictionary *> *ToggleRows(NSInteger section) {
     UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
     cell.textLabel.numberOfLines = 0; cell.detailTextLabel.numberOfLines = 2;
     NSArray *rows = ToggleRows(path.section);
-    if (!self.compatible || path.section == RUINSettingsSectionDiagnostics) {
+    if (self.compatible && path.section == RUINSettingsSectionLinks) {
+        NSDictionary *link = RUINCommunityLinks()[path.row];
+        cell.textLabel.text = link[@"title"];
+        cell.detailTextLabel.text = link[@"detail"];
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    } else if (!self.compatible || path.section == RUINSettingsSectionDiagnostics) {
         cell.textLabel.text = path.row == 0 ? RUINLocalizedString(@"diagnostics.runtime_title") : RUINLocalizedString(@"diagnostics.feature_matrix");
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     } else if (path.section == RUINSettingsSectionLineFeatures && (NSUInteger)path.row == ToggleRows(RUINSettingsSectionLineFeatures).count) {
@@ -272,7 +287,10 @@ static NSArray<NSDictionary *> *ToggleRows(NSInteger section) {
 }
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)path {
     [tableView deselectRowAtIndexPath:path animated:YES];
-    if (!self.compatible || path.section == RUINSettingsSectionDiagnostics) {
+    if (self.compatible && path.section == RUINSettingsSectionLinks) {
+        NSURL *URL = [NSURL URLWithString:RUINCommunityLinks()[path.row][@"url"]];
+        [UIApplication.sharedApplication openURL:URL options:@{} completionHandler:nil];
+    } else if (!self.compatible || path.section == RUINSettingsSectionDiagnostics) {
         RUINDiagnosticsViewController *viewer = [RUINDiagnosticsViewController new];
         if (path.row == 1) {
             viewer.document = RUINFeatureDiagnostics();

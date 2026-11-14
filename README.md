@@ -36,6 +36,15 @@ iOS 版 LINE 向けの非公式機能拡張（Tweak）です。
 | :---: | :---: | :---: |
 | <img src="docs/screenshots/local-font.png" width="240" alt="Local Font" /> | <img src="docs/screenshots/chat-menu.png" width="240" alt="Chat Menu" /> | <img src="docs/screenshots/mute-send.png" width="240" alt="Mute Send" /> |
 
+| このメッセージまで既読 | 既読者一覧 | テーマ詳細 |
+| :---: | :---: | :---: |
+| <img src="docs/screenshots/mark-read-until.png" alt="このメッセージまで既読" width="240"> | <img src="docs/screenshots/read-users.png" alt="既読者一覧" width="240"> | <img src="docs/screenshots/theme-detail.png" alt="テーマ詳細" width="240"> |
+| 長押しメニューから「このメッセージまで既読」を選択 | **自分以外が送信したメッセージ**でも、既読者と既読日時を確認できます。 | テーマストアの商品詳細ページ |
+
+<img src="docs/screenshots/ipad-theme-detail.png" alt="iPadでのテーマ商品詳細" width="640">
+
+iPadで表示したテーマ商品詳細
+
 ---
 
 ## 機能一覧

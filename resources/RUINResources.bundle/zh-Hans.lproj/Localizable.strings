@@ -158,6 +158,7 @@
 "settings.legacy_messaging" = "24小时撤回与静音消息";
 "settings.line_features" = "LINE功能（开发中）";
 "settings.line_features_footer" = "应用图标等功能在“本地LYP”中设置，24小时撤回与静音消息由独立开关设置（更改后请重启LINE）。静音消息请在确认输入后长按发送按钮约2秒。";
+"settings.links" = "链接";
 "settings.local_lyp" = "本地 LYP 功能";
 "settings.local_notifications" = "新消息本地通知";
 "settings.mark_read_on_reply" = "回复时标记已读";
