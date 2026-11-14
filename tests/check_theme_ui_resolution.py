@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run production URL completion/download guards and shop reason selection on Foundation."""
 from pathlib import Path
-import plistlib
+from test_localization import load_catalog
 import subprocess
 import tempfile
 
@@ -181,7 +181,7 @@ def main():
     title = shop.split("    UIAlertController *alert = [UIAlertController alertControllerWithTitle:", 1)[1].split("\n        message:message", 1)[0]
     shop_alert = "static NSDictionary *ShopAlert(BOOL sticker, RUINThemeShopStatus status) {\n" + message + '\nreturn @{@"title":' + title + ', @"message":message};\n}\n'
     for locale in ("ja", "en", "ko", "zh-Hans", "zh-Hant"):
-        catalog = plistlib.loads((ROOT / "resources/RUINResources.bundle" / f"{locale}.lproj/Localizable.strings").read_bytes())
+        catalog = load_catalog(ROOT / "resources/RUINResources.bundle" / f"{locale}.lproj/Localizable.strings")
         for key in ("shops.open_unavailable", "shops.open_rejected"):
             assert catalog[key] and all(catalog[key] != catalog[title] for title in
                 ("shops.sticker_open_failed", "shops.theme_open_failed")), (locale, key)

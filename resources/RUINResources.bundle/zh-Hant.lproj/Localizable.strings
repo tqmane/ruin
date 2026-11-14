@@ -1,528 +1,258 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-	<key>appearance.icon_change_failed</key>
-	<string>無法變更應用程式圖示。</string>
-	<key>chat_picker.account_changed</key>
-	<string>帳號已變更，請重新開啟聊天室清單。</string>
-	<key>chat_picker.direct_chat</key>
-	<string>一對一聊天</string>
-	<key>chat_picker.empty</key>
-	<string>找不到聊天室</string>
-	<key>chat_picker.group_chat</key>
-	<string>群組聊天</string>
-	<key>chat_picker.loading</key>
-	<string>正在載入聊天室…</string>
-	<key>chat_picker.open_chat</key>
-	<string>社群 (OpenChat)</string>
-	<key>chat_picker.open_list_first</key>
-	<string>請先開啟一次聊天室清單，然後再試一次。</string>
-	<key>chat_picker.read_exceptions_help</key>
-	<string>可透過名稱與大頭貼選擇正常傳送已讀標記的聊天室。變更將立即生效。</string>
-	<key>chat_picker.search_placeholder</key>
-	<string>依名稱或聊天室名稱搜尋</string>
-	<key>chat_picker.selected_count</key>
-	<string>已選取：%lu 個</string>
-	<key>chat_picker.unlisted_count</key>
-	<string>不在清單中的聊天室（%lu）</string>
-	<key>common.cancel</key>
-	<string>取消</string>
-	<key>common.close</key>
-	<string>關閉</string>
-	<key>common.confirm</key>
-	<string>確定</string>
-	<key>common.download</key>
-	<string>下載</string>
-	<key>common.end</key>
-	<string>結束</string>
-	<key>common.fetch_failed</key>
-	<string>無法取得</string>
-	<key>common.item_count</key>
-	<string>%lu項</string>
-	<key>common.label_value</key>
-	<string>%@：%@</string>
-	<key>common.member_count</key>
-	<string>%ld人</string>
-	<key>common.name</key>
-	<string>名稱</string>
-	<key>common.no_records</key>
-	<string>尚無紀錄</string>
-	<key>common.not_set</key>
-	<string>未設定</string>
-	<key>common.ok</key>
-	<string>確定</string>
-	<key>common.preview</key>
-	<string>預覽</string>
-	<key>common.processing</key>
-	<string>處理中</string>
-	<key>common.refresh</key>
-	<string>重新整理</string>
-	<key>common.save</key>
-	<string>儲存</string>
-	<key>common.saved</key>
-	<string>儲存完成</string>
-	<key>common.send</key>
-	<string>傳送</string>
-	<key>common.start</key>
-	<string>開始</string>
-	<key>common.this_chat</key>
-	<string>此聊天室</string>
-	<key>common.turn_on</key>
-	<string>開啟</string>
-	<key>common.unverified</key>
-	<string>未確認</string>
-	<key>common.view_reason</key>
-	<string>點擊以查看原因</string>
-	<key>compatibility.build_unsupported</key>
-	<string>在此LINE組建版本中無法啟用功能。</string>
-	<key>compatibility.partial.continue</key>
-	<string>繼續</string>
-	<key>compatibility.partial.message</key>
-	<string>LINE %@（內部版本 %@）尚未經過完整驗證，部分功能可能無法使用。</string>
-	<key>compatibility.partial.title</key>
-	<string>相容性提示</string>
-	<key>confirm.call_message</key>
-	<string>是否發起通話？</string>
-	<key>confirm.call_title</key>
-	<string>通話確認</string>
-	<key>confirm.camera_message</key>
-	<string>要開啟相機嗎？</string>
-	<key>confirm.camera_title</key>
-	<string>相機確認</string>
-	<key>confirm.disconnect_message</key>
-	<string>是否結束通話？</string>
-	<key>confirm.group_send_message</key>
-	<string>傳送至%ld人的群組？</string>
-	<key>confirm.invalid_member_count</key>
-	<string>請輸入0或以上的人數。</string>
-	<key>confirm.minimum_members_hint</key>
-	<string>包含自己在內的群組人數。設為 0 表示不設最低人數限制，對所有群組皆進行確認。</string>
-	<key>confirm.send_title</key>
-	<string>傳送確認</string>
-	<key>confirm.unknown_member_count</key>
-	<string>無法確認群組人數。是否傳送？</string>
-	<key>confirm.unknown_recipient</key>
-	<string>無法確認傳送對象類型。是否傳送？</string>
-	<key>diagnostics.export_description</key>
-	<string>RUIN執行環境、相容性及功能診斷JSON</string>
-	<key>diagnostics.feature_matrix</key>
-	<string>所有功能相容表</string>
-	<key>diagnostics.json_failed</key>
-	<string>無法將診斷轉換為JSON: %@</string>
-	<key>diagnostics.runtime_title</key>
-	<string>執行階段與功能診斷</string>
-	<key>errors.cancelled</key>
-	<string>通訊已中止。</string>
-	<key>errors.connection_lost</key>
-	<string>通訊中途斷線。請檢查連線後重試。</string>
-	<key>errors.offline</key>
-	<string>未連線至網際網路。請檢查網路連線後重試。</string>
-	<key>errors.operation_failed</key>
-	<string>無法完成處理。</string>
-	<key>errors.timeout</key>
-	<string>通訊逾時。請稍後再試。</string>
-	<key>errors.unknown</key>
-	<string>未知錯誤</string>
-	<key>font.applied</key>
-	<string>字型已套用。請重新開啟聊天。</string>
-	<key>font.available_by_default</key>
-	<string>預設可用</string>
-	<key>font.default</key>
-	<string>預設字型</string>
-	<key>font.help</key>
-	<string>套用OTF/TTF檔案。變更後請重新開啟聊天室或重啟應用程式。</string>
-	<key>font.load_failed</key>
-	<string>無法載入字型。請檢查 OTF/TTF 檔案。</string>
-	<key>font.reset</key>
-	<string>恢復預設</string>
-	<key>font.reset_done</key>
-	<string>已恢復為預設字型。請重新開啟聊天。</string>
-	<key>font.select</key>
-	<string>選取字型</string>
-	<key>font.title</key>
-	<string>自訂字型</string>
-	<key>login.data_protection_message</key>
-	<string>為保護現有的聊天紀錄與金鑰，無法開始此操作。請檢查簽名及儲存位置的診斷狀態。</string>
-	<key>login.data_protection_title</key>
-	<string>為保護資料無法開始</string>
-	<key>login.method_changed</key>
-	<string>已切換登入方式</string>
-	<key>login.method_title</key>
-	<string>登入方式</string>
-	<key>login.primary_action</key>
-	<string>一般iPhone登入</string>
-	<key>login.primary_mode</key>
-	<string>一般iPhone模式</string>
-	<key>login.restart_message</key>
-	<string>請完全關閉LINE並重新開啟。下次啟動時將套用所選的登入方式。</string>
-	<key>login.secondary_action</key>
-	<string>以iPad附屬裝置登入</string>
-	<key>login.secondary_help</key>
-	<string>在附屬裝置上，請使用目前的母裝置掃描行動條碼以核准登入。</string>
-	<key>login.secondary_mode</key>
-	<string>iPad附屬裝置模式</string>
-	<key>media.copy_gif_failed</key>
-	<string>無法複製GIF</string>
-	<key>media.history_footer</key>
-	<string>必須在訊息收回前開啟此設定，方可私密保留已接收至此裝置的文字及本機已下載的媒體（1對1與群組已驗證，OpenChat未驗證）。保留的媒體可在聊天中直接輕點開啟，長按選單僅作為輔助。收回前未下載的原始檔案無法復原，儲存的縮圖僅供預覽。已讀成員名單顯示此裝置記錄的名稱與時間，並保留先前已知的已讀時間戳記。</string>
-	<key>media.no_share_targets</key>
-	<string>找不到適用於此檔案的分享目標。</string>
-	<key>media.open_failed</key>
-	<string>無法開啟檔案</string>
-	<key>media.preview_only</key>
-	<string>僅預覽</string>
-	<key>media.preview_unavailable</key>
-	<string>不支援預覽此檔案。可透過分享選單操作此檔案。</string>
-	<key>media.share_action</key>
-	<string>分享 / 以其他應用程式開啟</string>
-	<key>media.share_failed</key>
-	<string>無法顯示分享選單</string>
-	<key>media.unsent_badge</key>
-	<string>已收回</string>
-	<key>menu.copy_gif</key>
-	<string>複製為GIF</string>
-	<key>menu.copy_mid</key>
-	<string>複製MID</string>
-	<key>menu.mark_read_until</key>
-	<string>已讀至此訊息</string>
-	<key>menu.retained_media</key>
-	<string>已儲存媒體</string>
-	<key>names.choose_chat</key>
-	<string>選擇要變更顯示名稱的聊天室</string>
-	<key>names.display_name_placeholder</key>
-	<string>在此裝置上顯示的名稱</string>
-	<key>names.edit_help</key>
-	<string>僅在此裝置上變更「%@」的顯示名稱。留空以清除，舊顯示名稱規則也不會套用於此ID。</string>
-	<key>names.invalid_name</key>
-	<string>請輸入不含換行且在 256 個字元以內的名稱。</string>
-	<key>names.local_display_name</key>
-	<string>此裝置上的顯示名稱</string>
-	<key>names.modified_chat_count</key>
-	<string>已變更 %lu 個聊天室</string>
-	<key>names.original_name</key>
-	<string>原始名稱：%@</string>
-	<key>names.reset_action</key>
-	<string>還原原始名稱</string>
-	<key>names.set_action</key>
-	<string>設定本機顯示名稱</string>
-	<key>names.title</key>
-	<string>本機顯示名稱</string>
-	<key>notifications.attachment_received</key>
-	<string>收到附件</string>
-	<key>notifications.new_message</key>
-	<string>收到新訊息</string>
-	<key>profile.invalid_mid</key>
-	<string>請輸入「u」後接32位數字及a～f（小寫字母）。</string>
-	<key>profile.mid_field_label</key>
-	<string>要搜尋的MID</string>
-	<key>profile.mid_placeholder</key>
-	<string>MID（u＋32位半形英數字）</string>
-	<key>profile.mid_search</key>
-	<string>MID搜尋</string>
-	<key>profile.open_by_mid</key>
-	<string>透過MID開啟個人檔案</string>
-	<key>profile.open_failed_message</key>
-	<string>無法開啟個人檔案。請檢查 MID 與連線狀態後再試一次。</string>
-	<key>profile.open_failed_title</key>
-	<string>無法開啟個人檔案</string>
-	<key>profile.open_requested</key>
-	<string>已請求LINE顯示個人檔案。若找不到或無法顯示，請檢查MID和網路連線。</string>
-	<key>profile.search_help</key>
-	<string>搜尋將在LINE內開啟個人檔案。不會新增好友或傳送訊息。</string>
-	<key>profile.search_prompt</key>
-	<string>請輸入欲查詢使用者的MID。MID是以「u」開頭的33字元識別碼，與LINE ID不同。</string>
-	<key>profile.unsupported</key>
-	<string>您目前的LINE版本不支援MID搜尋。</string>
-	<key>profile.view_action</key>
-	<string>查看個人檔案</string>
-	<key>profile.view_description</key>
-	<string>顯示個人檔案</string>
-	<key>read_control.chat_hint</key>
-	<string>僅切換此聊天室的已讀控制</string>
-	<key>read_control.disabled</key>
-	<string>全域已讀抑制已關閉。例外設定已儲存</string>
-	<key>read_control.enable_for_chat</key>
-	<string>啟用此聊天室的已讀抑制</string>
-	<key>read_control.exclude_chat</key>
-	<string>將此聊天室設為已讀抑制的例外</string>
-	<key>readers.fetch_failed</key>
-	<string>無法取得已讀資訊。請再試一次。</string>
-	<key>readers.loading</key>
-	<string>正在取得已讀資訊…</string>
-	<key>readers.mark_read_failed</key>
-	<string>無法標記為已讀。請再試一次。</string>
-	<key>readers.names_loading</key>
-	<string>正在檢查名稱…</string>
-	<key>readers.observed_at</key>
-	<string>確認時間</string>
-	<key>readers.range_read_at</key>
-	<string>已讀時間（範圍資訊）</string>
-	<key>readers.read_at</key>
-	<string>已讀時間</string>
-	<key>readers.timestamp_help</key>
-	<string>確認時間是指此裝置確認已讀資訊的時間。無法確定時間的紀錄將顯示為「時間未知」。</string>
-	<key>readers.title</key>
-	<string>已讀成員名單</string>
-	<key>readers.unknown_date</key>
-	<string>時間未知</string>
-	<key>readers.unknown_name</key>
-	<string>名稱未知</string>
-	<key>settings.accessibility_label</key>
-	<string>RUIN設定與診斷</string>
-	<key>settings.appearance</key>
-	<string>顯示管理</string>
-	<key>settings.appearance_footer</key>
-	<string>變更後請重新開啟聊天畫面。</string>
-	<key>settings.chat_names</key>
-	<string>聊天室顯示名稱</string>
-	<key>settings.chat_names_footer</key>
-	<string>僅變更此裝置上的顯示名稱，不會套用至對方。若清單未更新，請重新啟動LINE。</string>
-	<key>settings.confirm_call</key>
-	<string>發起通話確認</string>
-	<key>settings.confirm_camera_on</key>
-	<string>開啟相機前確認</string>
-	<key>settings.confirm_disconnect</key>
-	<string>結束通話確認</string>
-	<key>settings.confirm_group_send</key>
-	<string>群組傳送確認</string>
-	<key>settings.confirmations</key>
-	<string>確認操作</string>
-	<key>settings.confirmations_footer</key>
-	<string>執行傳送確認的最少人數為包含自己在內的群組人數。設為 0 表示不設最低人數限制，對所有群組皆進行確認。部分通話與傳送入口仍在驗證中。</string>
-	<key>settings.copy_sticker_gif</key>
-	<string>複製貼圖為GIF</string>
-	<key>settings.diagnostics</key>
-	<string>診斷</string>
-	<key>settings.diagnostics_footer</key>
-	<string>主題、貼圖GIF、MID搜尋等均在全功能支援範圍內。未完成的項目不會顯示為已支援。</string>
-	<key>settings.entry_subtitle</key>
-	<string>本機設定與診斷</string>
-	<key>settings.fixed_startup_tab</key>
-	<string>固定啟動分頁</string>
-	<key>settings.hide_ads</key>
-	<string>隱藏廣告</string>
-	<key>settings.hide_agent_bar</key>
-	<string>隱藏Agent-i列</string>
-	<key>settings.hide_read</key>
-	<string>隱藏已讀</string>
-	<key>settings.hide_recommendations</key>
-	<string>隱藏推薦欄</string>
-	<key>settings.hide_tab</key>
-	<string>隱藏%@</string>
-	<key>settings.hide_voice_input</key>
-	<string>隱藏語音輸入按鈕</string>
-	<key>settings.history</key>
-	<string>歷史紀錄與附加功能（開發中）</string>
-	<key>settings.keep_unsent_media</key>
-	<string>保留已收回文字與媒體</string>
-	<key>settings.legacy_messaging</key>
-	<string>24小時收回與無聲訊息</string>
-	<key>settings.line_features</key>
-	<string>LINE功能（開發中）</string>
-	<key>settings.line_features_footer</key>
-	<string>應用程式圖示等功能在「本機 LYP」中設定，24小時收回與無聲訊息由獨立開關設定（變更後請重新啟動LINE）。無聲訊息請在文字輸入確定後長按傳送按鈕約2秒。</string>
-	<key>settings.local_lyp</key>
-	<string>本機 LYP 功能</string>
-	<key>settings.local_notifications</key>
-	<string>新訊息本機通知</string>
-	<key>settings.mark_read_on_reply</key>
-	<string>回覆時標記已讀</string>
-	<key>settings.minimum_group_members</key>
-	<string>傳送確認最少人數</string>
-	<key>settings.notifications</key>
-	<string>通知</string>
-	<key>settings.notifications_footer</key>
-	<string>僅通知1對1和群組聊天的新訊息。不支援應用程式關閉時的即時接收。</string>
-	<key>settings.read_controls</key>
-	<string>已讀管理</string>
-	<key>settings.read_controls_footer</key>
-	<string>已於實體裝置上驗證1對1聊天中的已讀抑制、個別聊天例外及回覆時切換功能。群組、OpenChat及手動標記已讀仍在測試中。</string>
-	<key>settings.read_exceptions</key>
-	<string>正常傳送已讀的聊天</string>
-	<key>settings.secondary_login</key>
-	<string>附屬裝置登入</string>
-	<key>settings.secondary_login_footer</key>
-	<string>變更需在登出後，長按登入畫面中的「登入」進行。切換後需要重新啟動應用程式。</string>
-	<key>settings.shops</key>
-	<string>商店</string>
-	<key>settings.skip_age_verification</key>
-	<string>略過年齡驗證</string>
-	<key>settings.startup_tab</key>
-	<string>啟動時開啟的分頁</string>
-	<key>settings.tabs</key>
-	<string>管理分頁</string>
-	<key>settings.tabs_entry_not_ready</key>
-	<string>在主頁可以使用 RUIN 齒輪按鈕之前，「設定」分頁會保持顯示。請先開啟主頁。</string>
-	<key>settings.tabs_footer</key>
-	<string>只能設定目前可用的分頁。「主頁」與「聊天」無法隱藏。
-%@變更將在重啟應用程式後生效。</string>
-	<key>settings.tabs_hide_conflict</key>
-	<string>不能同時隱藏「%@」與「%@」。</string>
-	<key>settings.tabs_not_ready</key>
-	<string>在偵測到LINE分頁後可供選擇。</string>
-	<key>settings.tabs_required</key>
-	<string>應用程式運作所需的分頁將一律顯示。</string>
-	<key>settings.title</key>
-	<string>RUIN設定</string>
-	<key>settings.track_read_ranges</key>
-	<string>記錄已讀範圍</string>
-	<key>settings.user_search</key>
-	<string>搜尋使用者</string>
-	<key>settings.version</key>
-	<string>版本</string>
-	<key>shops.open_rejected</key>
-	<string>已請求LINE顯示商店，但未被接受。</string>
-	<key>shops.open_unavailable</key>
-	<string>此LINE版本不支援前往該商店。</string>
-	<key>shops.sticker_open_failed</key>
-	<string>無法開啟貼圖小舖</string>
-	<key>shops.sticker_title</key>
-	<string>貼圖小舖</string>
-	<key>shops.theme_open_failed</key>
-	<string>無法開啟主題小舖</string>
-	<key>shops.theme_title</key>
-	<string>主題小舖</string>
-	<key>tabs.apps</key>
-	<string>應用</string>
-	<key>tabs.call</key>
-	<string>通話</string>
-	<key>tabs.home</key>
-	<string>主頁</string>
-	<key>tabs.news</key>
-	<string>新聞</string>
-	<key>tabs.settings</key>
-	<string>設定</string>
-	<key>tabs.shopping</key>
-	<string>購物</string>
-	<key>tabs.talk</key>
-	<string>聊天</string>
-	<key>tabs.wallet</key>
-	<string>錢包</string>
-	<key>themes.add_to_native</key>
-	<string>新增至「我的主題」</string>
-	<key>themes.add_to_native_hint</key>
-	<string>新增至LINE我的主題後即可選擇並套用。</string>
-	<key>themes.apply_retry_message</key>
-	<string>請關閉畫面並重試。已下載的檔案已儲存。</string>
-	<key>themes.archive_validation_failed</key>
-	<string>找不到檔案或驗證檔案結構失敗。請重新整理清單。</string>
-	<key>themes.catalog_unavailable</key>
-	<string>此LINE版本無法取得主題清單。</string>
-	<key>themes.download_checking</key>
-	<string>正在檢查下載與檔案…</string>
-	<key>themes.download_failed</key>
-	<string>無法完成下載</string>
-	<key>themes.download_file</key>
-	<string>下載主題檔案</string>
-	<key>themes.download_from_url</key>
-	<string>從商店URL下載</string>
-	<key>themes.download_help</key>
-	<string>可從商店URL取得主題資訊並下載，亦可手動輸入名稱、商品ID和版本。</string>
-	<key>themes.download_not_ready</key>
-	<string>請檢查下載設定與目前處理狀態。</string>
-	<key>themes.download_start_failed</key>
-	<string>無法開始下載</string>
-	<key>themes.download_unavailable</key>
-	<string>此LINE版本不支援從此畫面下載。</string>
-	<key>themes.downloaded_file_details</key>
-	<string>商品ID: %@
-版本: %@%@</string>
-	<key>themes.downloaded_files_footer</key>
-	<string>下載的主題會在開啟「我的主題」時顯示於清單中。您可以選取並套用。</string>
-	<key>themes.downloads_title</key>
-	<string>已下載與儲存的主題</string>
-	<key>themes.enable_downloads</key>
-	<string>啟用主題下載</string>
-	<key>themes.expired_record</key>
-	<string>已過期紀錄</string>
-	<key>themes.file_checking</key>
-	<string>正在檢查檔案…</string>
-	<key>themes.file_saved</key>
-	<string>檔案已儲存</string>
-	<key>themes.file_saved_help</key>
-	<string>檔案已儲存。開啟「我的主題」即可選取並套用主題。</string>
-	<key>themes.invalid_product_id</key>
-	<string>商品ID可使用半形英數字、連字號、底線和句點。</string>
-	<key>themes.invalid_store_url</key>
-	<string>請輸入有效的LINE STORE主題URL。</string>
-	<key>themes.list_fetch_error</key>
-	<string>無法取得主題清單。</string>
-	<key>themes.list_fetch_failed</key>
-	<string>無法取得清單</string>
-	<key>themes.list_loading</key>
-	<string>正在載入清單…</string>
-	<key>themes.list_refresh_failed</key>
-	<string>無法重新整理清單</string>
-	<key>themes.list_update_failed</key>
-	<string>更新清單失敗。正在顯示上次取得的內容。</string>
-	<key>themes.manual_download</key>
-	<string>指定名稱、商品ID與版本</string>
-	<key>themes.manual_download_help</key>
-	<string>取得並儲存檔案。此操作不會新增或套用至 LINE。</string>
-	<key>themes.manual_download_hint</key>
-	<string>手動下載檔案</string>
-	<key>themes.manual_fields_required</key>
-	<string>請輸入名稱、商品ID與版本編號。</string>
-	<key>themes.my_themes_open_failed</key>
-	<string>無法開啟「我的主題」</string>
-	<key>themes.name_required</key>
-	<string>請輸入名稱。</string>
-	<key>themes.native_record_count</key>
-	<string>LINE主題紀錄（%lu）</string>
-	<key>themes.native_record_details</key>
-	<string>商品ID: %@
-版本: %@
-%@
-
-此為 LINE 的儲存紀錄。未確認目前的套用狀態。</string>
-	<key>themes.native_records_failed</key>
-	<string>無法取得LINE主題紀錄</string>
-	<key>themes.native_records_footer</key>
-	<string>這是LINE儲存的紀錄。未確認目前的套用狀態和檔案是否存在。</string>
-	<key>themes.native_records_unavailable</key>
-	<string>在此環境下無法取得LINE主題紀錄。</string>
-	<key>themes.no_native_records</key>
-	<string>尚無主題紀錄</string>
-	<key>themes.no_saved_files</key>
-	<string>沒有已儲存的檔案</string>
-	<key>themes.open_my_themes</key>
-	<string>開啟「我的主題」</string>
-	<key>themes.open_shop</key>
-	<string>開啟LINE主題小舖</string>
-	<key>themes.owned</key>
-	<string>已擁有</string>
-	<key>themes.preview_failed</key>
-	<string>無法顯示預覽</string>
-	<key>themes.product_id</key>
-	<string>商品ID</string>
-	<key>themes.product_id_length</key>
-	<string>請輸入 6 到 128 個字元的商品ID。</string>
-	<key>themes.refresh_list</key>
-	<string>重新整理主題清單</string>
-	<key>themes.saved_file_count</key>
-	<string>已儲存檔案（%lu）</string>
-	<key>themes.saved_file_missing</key>
-	<string>無法確認已儲存檔案的位置。</string>
-	<key>themes.store_info_failed</key>
-	<string>無法取得商店資訊。請檢查URL與網路連線。</string>
-	<key>themes.store_info_loading</key>
-	<string>正在取得商店資訊…</string>
-	<key>themes.store_url_hint</key>
-	<string>請輸入LINE STORE主題URL。</string>
-	<key>themes.title</key>
-	<string>主題</string>
-	<key>themes.unnamed</key>
-	<string>未命名主題</string>
-	<key>themes.url_download_hint</key>
-	<string>從商店URL取得名稱、商品ID和版本</string>
-	<key>themes.usage_unverified</key>
-	<string>使用狀況未確認</string>
-	<key>themes.version_placeholder</key>
-	<string>版本（例：V1.30）</string>
-	<key>themes.version_required</key>
-	<string>請輸入版本（例：V1.30）或發布編號。</string>
-	<key>themes.within_expiry</key>
-	<string>有效期限內</string>
-</dict>
-</plist>
+"appearance.icon_change_failed" = "無法變更應用程式圖示。";
+"chat_picker.account_changed" = "帳號已變更，請重新開啟聊天室清單。";
+"chat_picker.direct_chat" = "一對一聊天";
+"chat_picker.empty" = "找不到聊天室";
+"chat_picker.group_chat" = "群組聊天";
+"chat_picker.loading" = "正在載入聊天室…";
+"chat_picker.open_chat" = "社群 (OpenChat)";
+"chat_picker.open_list_first" = "請先開啟一次聊天室清單，然後再試一次。";
+"chat_picker.read_exceptions_help" = "可透過名稱與大頭貼選擇正常傳送已讀標記的聊天室。變更將立即生效。";
+"chat_picker.search_placeholder" = "依名稱或聊天室名稱搜尋";
+"chat_picker.selected_count" = "已選取：%lu 個";
+"chat_picker.unlisted_count" = "不在清單中的聊天室（%lu）";
+"common.cancel" = "取消";
+"common.close" = "關閉";
+"common.confirm" = "確定";
+"common.download" = "下載";
+"common.end" = "結束";
+"common.fetch_failed" = "無法取得";
+"common.item_count" = "%lu項";
+"common.label_value" = "%@：%@";
+"common.member_count" = "%ld人";
+"common.name" = "名稱";
+"common.no_records" = "尚無紀錄";
+"common.not_set" = "未設定";
+"common.ok" = "確定";
+"common.preview" = "預覽";
+"common.processing" = "處理中";
+"common.refresh" = "重新整理";
+"common.save" = "儲存";
+"common.saved" = "儲存完成";
+"common.send" = "傳送";
+"common.start" = "開始";
+"common.this_chat" = "此聊天室";
+"common.turn_on" = "開啟";
+"common.unverified" = "未確認";
+"common.view_reason" = "點擊以查看原因";
+"compatibility.build_unsupported" = "在此LINE組建版本中無法啟用功能。";
+"compatibility.partial.continue" = "繼續";
+"compatibility.partial.message" = "LINE %@（內部版本 %@）尚未經過完整驗證，部分功能可能無法使用。";
+"compatibility.partial.title" = "相容性提示";
+"confirm.call_message" = "是否發起通話？";
+"confirm.call_title" = "通話確認";
+"confirm.camera_message" = "要開啟相機嗎？";
+"confirm.camera_title" = "相機確認";
+"confirm.disconnect_message" = "是否結束通話？";
+"confirm.group_send_message" = "傳送至%ld人的群組？";
+"confirm.invalid_member_count" = "請輸入0或以上的人數。";
+"confirm.minimum_members_hint" = "包含自己在內的群組人數。設為 0 表示不設最低人數限制，對所有群組皆進行確認。";
+"confirm.send_title" = "傳送確認";
+"confirm.unknown_member_count" = "無法確認群組人數。是否傳送？";
+"confirm.unknown_recipient" = "無法確認傳送對象類型。是否傳送？";
+"diagnostics.export_description" = "RUIN執行環境、相容性及功能診斷JSON";
+"diagnostics.feature_matrix" = "所有功能相容表";
+"diagnostics.json_failed" = "無法將診斷轉換為JSON: %@";
+"diagnostics.runtime_title" = "執行階段與功能診斷";
+"errors.cancelled" = "通訊已中止。";
+"errors.connection_lost" = "通訊中途斷線。請檢查連線後重試。";
+"errors.offline" = "未連線至網際網路。請檢查網路連線後重試。";
+"errors.operation_failed" = "無法完成處理。";
+"errors.timeout" = "通訊逾時。請稍後再試。";
+"errors.unknown" = "未知錯誤";
+"font.applied" = "字型已套用。請重新開啟聊天。";
+"font.available_by_default" = "預設可用";
+"font.default" = "預設字型";
+"font.help" = "套用OTF/TTF檔案。變更後請重新開啟聊天室或重啟應用程式。";
+"font.load_failed" = "無法載入字型。請檢查 OTF/TTF 檔案。";
+"font.reset" = "恢復預設";
+"font.reset_done" = "已恢復為預設字型。請重新開啟聊天。";
+"font.select" = "選取字型";
+"font.title" = "自訂字型";
+"login.data_protection_message" = "為保護現有的聊天紀錄與金鑰，無法開始此操作。請檢查簽名及儲存位置的診斷狀態。";
+"login.data_protection_title" = "為保護資料無法開始";
+"login.method_changed" = "已切換登入方式";
+"login.method_title" = "登入方式";
+"login.primary_action" = "一般iPhone登入";
+"login.primary_mode" = "一般iPhone模式";
+"login.restart_message" = "請完全關閉LINE並重新開啟。下次啟動時將套用所選的登入方式。";
+"login.secondary_action" = "以iPad附屬裝置登入";
+"login.secondary_help" = "在附屬裝置上，請使用目前的母裝置掃描行動條碼以核准登入。";
+"login.secondary_mode" = "iPad附屬裝置模式";
+"media.copy_gif_failed" = "無法複製GIF";
+"media.history_footer" = "必須在訊息收回前開啟此設定，方可私密保留已接收至此裝置的文字及本機已下載的媒體（1對1與群組已驗證，OpenChat未驗證）。保留的媒體可在聊天中直接輕點開啟，長按選單僅作為輔助。收回前未下載的原始檔案無法復原，儲存的縮圖僅供預覽。已讀成員名單顯示此裝置記錄的名稱與時間，並保留先前已知的已讀時間戳記。";
+"media.no_share_targets" = "找不到適用於此檔案的分享目標。";
+"media.open_failed" = "無法開啟檔案";
+"media.preview_only" = "僅預覽";
+"media.preview_unavailable" = "不支援預覽此檔案。可透過分享選單操作此檔案。";
+"media.share_action" = "分享 / 以其他應用程式開啟";
+"media.share_failed" = "無法顯示分享選單";
+"media.unsent_badge" = "已收回";
+"menu.copy_gif" = "複製為GIF";
+"menu.copy_mid" = "複製MID";
+"menu.mark_read_until" = "已讀至此訊息";
+"menu.retained_media" = "已儲存媒體";
+"names.choose_chat" = "選擇要變更顯示名稱的聊天室";
+"names.display_name_placeholder" = "在此裝置上顯示的名稱";
+"names.edit_help" = "僅在此裝置上變更「%@」的顯示名稱。留空以清除，舊顯示名稱規則也不會套用於此ID。";
+"names.invalid_name" = "請輸入不含換行且在 256 個字元以內的名稱。";
+"names.local_display_name" = "此裝置上的顯示名稱";
+"names.modified_chat_count" = "已變更 %lu 個聊天室";
+"names.original_name" = "原始名稱：%@";
+"names.reset_action" = "還原原始名稱";
+"names.set_action" = "設定本機顯示名稱";
+"names.title" = "本機顯示名稱";
+"notifications.attachment_received" = "收到附件";
+"notifications.new_message" = "收到新訊息";
+"profile.invalid_mid" = "請輸入「u」後接32位數字及a～f（小寫字母）。";
+"profile.mid_field_label" = "要搜尋的MID";
+"profile.mid_placeholder" = "MID（u＋32位半形英數字）";
+"profile.mid_search" = "MID搜尋";
+"profile.open_by_mid" = "透過MID開啟個人檔案";
+"profile.open_failed_message" = "無法開啟個人檔案。請檢查 MID 與連線狀態後再試一次。";
+"profile.open_failed_title" = "無法開啟個人檔案";
+"profile.open_requested" = "已請求LINE顯示個人檔案。若找不到或無法顯示，請檢查MID和網路連線。";
+"profile.search_help" = "搜尋將在LINE內開啟個人檔案。不會新增好友或傳送訊息。";
+"profile.search_prompt" = "請輸入欲查詢使用者的MID。MID是以「u」開頭的33字元識別碼，與LINE ID不同。";
+"profile.unsupported" = "您目前的LINE版本不支援MID搜尋。";
+"profile.view_action" = "查看個人檔案";
+"profile.view_description" = "顯示個人檔案";
+"read_control.chat_hint" = "僅切換此聊天室的已讀控制";
+"read_control.disabled" = "全域已讀抑制已關閉。例外設定已儲存";
+"read_control.enable_for_chat" = "啟用此聊天室的已讀抑制";
+"read_control.exclude_chat" = "將此聊天室設為已讀抑制的例外";
+"readers.fetch_failed" = "無法取得已讀資訊。請再試一次。";
+"readers.loading" = "正在取得已讀資訊…";
+"readers.mark_read_failed" = "無法標記為已讀。請再試一次。";
+"readers.names_loading" = "正在檢查名稱…";
+"readers.observed_at" = "確認時間";
+"readers.range_read_at" = "已讀時間（範圍資訊）";
+"readers.read_at" = "已讀時間";
+"readers.timestamp_help" = "確認時間是指此裝置確認已讀資訊的時間。無法確定時間的紀錄將顯示為「時間未知」。";
+"readers.title" = "已讀成員名單";
+"readers.unknown_date" = "時間未知";
+"readers.unknown_name" = "名稱未知";
+"settings.accessibility_label" = "RUIN設定與診斷";
+"settings.appearance" = "顯示管理";
+"settings.appearance_footer" = "變更後請重新開啟聊天畫面。";
+"settings.chat_names" = "聊天室顯示名稱";
+"settings.chat_names_footer" = "僅變更此裝置上的顯示名稱，不會套用至對方。若清單未更新，請重新啟動LINE。";
+"settings.confirm_call" = "發起通話確認";
+"settings.confirm_camera_on" = "開啟相機前確認";
+"settings.confirm_disconnect" = "結束通話確認";
+"settings.confirm_group_send" = "群組傳送確認";
+"settings.confirmations" = "確認操作";
+"settings.confirmations_footer" = "執行傳送確認的最少人數為包含自己在內的群組人數。設為 0 表示不設最低人數限制，對所有群組皆進行確認。部分通話與傳送入口仍在驗證中。";
+"settings.copy_sticker_gif" = "複製貼圖為GIF";
+"settings.diagnostics" = "診斷";
+"settings.diagnostics_footer" = "主題、貼圖GIF、MID搜尋等均在全功能支援範圍內。未完成的項目不會顯示為已支援。";
+"settings.entry_subtitle" = "本機設定與診斷";
+"settings.fixed_startup_tab" = "固定啟動分頁";
+"settings.hide_ads" = "隱藏廣告";
+"settings.hide_agent_bar" = "隱藏Agent-i列";
+"settings.hide_read" = "隱藏已讀";
+"settings.hide_recommendations" = "隱藏推薦欄";
+"settings.hide_tab" = "隱藏%@";
+"settings.hide_voice_input" = "隱藏語音輸入按鈕";
+"settings.history" = "歷史紀錄與附加功能（開發中）";
+"settings.keep_unsent_media" = "保留已收回文字與媒體";
+"settings.legacy_messaging" = "24小時收回與無聲訊息";
+"settings.line_features" = "LINE功能（開發中）";
+"settings.line_features_footer" = "應用程式圖示等功能在「本機 LYP」中設定，24小時收回與無聲訊息由獨立開關設定（變更後請重新啟動LINE）。無聲訊息請在文字輸入確定後長按傳送按鈕約2秒。";
+"settings.local_lyp" = "本機 LYP 功能";
+"settings.local_notifications" = "新訊息本機通知";
+"settings.mark_read_on_reply" = "回覆時標記已讀";
+"settings.minimum_group_members" = "傳送確認最少人數";
+"settings.notifications" = "通知";
+"settings.notifications_footer" = "僅通知1對1和群組聊天的新訊息。不支援應用程式關閉時的即時接收。";
+"settings.read_controls" = "已讀管理";
+"settings.read_controls_footer" = "已於實體裝置上驗證1對1聊天中的已讀抑制、個別聊天例外及回覆時切換功能。群組、OpenChat及手動標記已讀仍在測試中。";
+"settings.read_exceptions" = "正常傳送已讀的聊天";
+"settings.secondary_login" = "附屬裝置登入";
+"settings.secondary_login_footer" = "變更需在登出後，長按登入畫面中的「登入」進行。切換後需要重新啟動應用程式。";
+"settings.shops" = "商店";
+"settings.skip_age_verification" = "略過年齡驗證";
+"settings.startup_tab" = "啟動時開啟的分頁";
+"settings.tabs" = "管理分頁";
+"settings.tabs_entry_not_ready" = "在主頁可以使用 RUIN 齒輪按鈕之前，「設定」分頁會保持顯示。請先開啟主頁。";
+"settings.tabs_footer" = "只能設定目前可用的分頁。「主頁」與「聊天」無法隱藏。\n%@變更將在重啟應用程式後生效。";
+"settings.tabs_hide_conflict" = "不能同時隱藏「%@」與「%@」。";
+"settings.tabs_not_ready" = "在偵測到LINE分頁後可供選擇。";
+"settings.tabs_required" = "應用程式運作所需的分頁將一律顯示。";
+"settings.title" = "RUIN設定";
+"settings.track_read_ranges" = "記錄已讀範圍";
+"settings.user_search" = "搜尋使用者";
+"settings.version" = "版本";
+"shops.open_rejected" = "已請求LINE顯示商店，但未被接受。";
+"shops.open_unavailable" = "此LINE版本不支援前往該商店。";
+"shops.sticker_open_failed" = "無法開啟貼圖小舖";
+"shops.sticker_title" = "貼圖小舖";
+"shops.theme_open_failed" = "無法開啟主題小舖";
+"shops.theme_title" = "主題小舖";
+"tabs.apps" = "應用";
+"tabs.call" = "通話";
+"tabs.home" = "主頁";
+"tabs.news" = "新聞";
+"tabs.settings" = "設定";
+"tabs.shopping" = "購物";
+"tabs.talk" = "聊天";
+"tabs.wallet" = "錢包";
+"themes.add_to_native" = "新增至「我的主題」";
+"themes.add_to_native_hint" = "新增至LINE我的主題後即可選擇並套用。";
+"themes.apply_retry_message" = "請關閉畫面並重試。已下載的檔案已儲存。";
+"themes.archive_validation_failed" = "找不到檔案或驗證檔案結構失敗。請重新整理清單。";
+"themes.catalog_unavailable" = "此LINE版本無法取得主題清單。";
+"themes.download_checking" = "正在檢查下載與檔案…";
+"themes.download_failed" = "無法完成下載";
+"themes.download_file" = "下載主題檔案";
+"themes.download_from_url" = "從商店URL下載";
+"themes.download_help" = "可從商店URL取得主題資訊並下載，亦可手動輸入名稱、商品ID和版本。";
+"themes.download_not_ready" = "請檢查下載設定與目前處理狀態。";
+"themes.download_start_failed" = "無法開始下載";
+"themes.download_unavailable" = "此LINE版本不支援從此畫面下載。";
+"themes.downloaded_file_details" = "商品ID: %@\n版本: %@%@";
+"themes.downloaded_files_footer" = "下載的主題會在開啟「我的主題」時顯示於清單中。您可以選取並套用。";
+"themes.downloads_title" = "已下載與儲存的主題";
+"themes.enable_downloads" = "啟用主題下載";
+"themes.expired_record" = "已過期紀錄";
+"themes.file_checking" = "正在檢查檔案…";
+"themes.file_saved" = "檔案已儲存";
+"themes.file_saved_help" = "檔案已儲存。開啟「我的主題」即可選取並套用主題。";
+"themes.invalid_product_id" = "商品ID可使用半形英數字、連字號、底線和句點。";
+"themes.invalid_store_url" = "請輸入有效的LINE STORE主題URL。";
+"themes.list_fetch_error" = "無法取得主題清單。";
+"themes.list_fetch_failed" = "無法取得清單";
+"themes.list_loading" = "正在載入清單…";
+"themes.list_refresh_failed" = "無法重新整理清單";
+"themes.list_update_failed" = "更新清單失敗。正在顯示上次取得的內容。";
+"themes.manual_download" = "指定名稱、商品ID與版本";
+"themes.manual_download_help" = "取得並儲存檔案。此操作不會新增或套用至 LINE。";
+"themes.manual_download_hint" = "手動下載檔案";
+"themes.manual_fields_required" = "請輸入名稱、商品ID與版本編號。";
+"themes.my_themes_open_failed" = "無法開啟「我的主題」";
+"themes.name_required" = "請輸入名稱。";
+"themes.native_record_count" = "LINE主題紀錄（%lu）";
+"themes.native_record_details" = "商品ID: %@\n版本: %@\n%@\n\n此為 LINE 的儲存紀錄。未確認目前的套用狀態。";
+"themes.native_records_failed" = "無法取得LINE主題紀錄";
+"themes.native_records_footer" = "這是LINE儲存的紀錄。未確認目前的套用狀態和檔案是否存在。";
+"themes.native_records_unavailable" = "在此環境下無法取得LINE主題紀錄。";
+"themes.no_native_records" = "尚無主題紀錄";
+"themes.no_saved_files" = "沒有已儲存的檔案";
+"themes.open_my_themes" = "開啟「我的主題」";
+"themes.open_shop" = "開啟LINE主題小舖";
+"themes.owned" = "已擁有";
+"themes.preview_failed" = "無法顯示預覽";
+"themes.product_id" = "商品ID";
+"themes.product_id_length" = "請輸入 6 到 128 個字元的商品ID。";
+"themes.refresh_list" = "重新整理主題清單";
+"themes.saved_file_count" = "已儲存檔案（%lu）";
+"themes.saved_file_missing" = "無法確認已儲存檔案的位置。";
+"themes.store_info_failed" = "無法取得商店資訊。請檢查URL與網路連線。";
+"themes.store_info_loading" = "正在取得商店資訊…";
+"themes.store_url_hint" = "請輸入LINE STORE主題URL。";
+"themes.title" = "主題";
+"themes.unnamed" = "未命名主題";
+"themes.url_download_hint" = "從商店URL取得名稱、商品ID和版本";
+"themes.usage_unverified" = "使用狀況未確認";
+"themes.version_placeholder" = "版本（例：V1.30）";
+"themes.version_required" = "請輸入版本（例：V1.30）或發布編號。";
+"themes.within_expiry" = "有效期限內";

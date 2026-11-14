@@ -28,7 +28,7 @@ RUIN/
 │   ├── messaging/    # メッセージ送受信制御、既読管理、送信取消保持、ミュート送信・送信取消制御
 │   ├── platform/     # AppGroupStorage.{h,m} (保存先ポリシー)、Sideload.x + Keychain.m (署名・保存互換)、fishhook等
 │   └── themes/       # ネイティブ着せかえ制御
-├── resources/        # RUINResources.bundle (Tablerアイコン、Localizable.strings XML plist)
+├── resources/        # RUINResources.bundle (Tablerアイコン、UTF-8 Localizable.strings)
 ├── tools/            # パッケージング・署名準備スクリプト (package.py)、原IPA整合性検証 (macho_integrity.py)
 ├── tests/            # ホストテスト、パッケージ検査、ポータブル検査、フィクスチャ検証
 └── docs/             # 仕様書、リファレンス、スクリーンショット (docs/screenshots/)
@@ -92,12 +92,12 @@ RUIN/
 
 ## 5. ローカライズ (Localizable.strings) 規約
 
-- **リソース形式**: UIローカライズリソースは `resources/RUINResources.bundle/<locale>.lproj/Localizable.strings` (XML Property List形式) で管理します。既存のXML plist形式およびBundle探索方法は変更しません。
+- **リソース形式**: UIローカライズリソースは `resources/RUINResources.bundle/<locale>.lproj/Localizable.strings` で管理します。従来のXML Property List形式は廃止し、UTF-8のiOS標準形式（引用符付きキー・値・セミコロン、例: `"settings.hide_read" = "既読を隠す";`）に統一します。キーの順序はアルファベット順に整列します。本文の引用符、バックスラッシュ、改行、タブには標準の `.strings` エスケープを使用し、Unicode本文はエスケープせずUTF-8のまま可読に記述します。Bundle探索および読み込みは既存の `RUINResources.bundle` および `NSBundle` の標準機構を利用し、読み込みのためにアプリ独自パーサーを追加しません。旧XML形式に対する互換処理は不要です。なお、`Info.plist` や注入フィルタ等、`Localizable.strings` 以外のplistの形式は変更しません。
 - **キー命名規則 (意味キーへの全面移行)**: 日本語本文をキーにする方式は廃止し、ドットで連結した `lower_snake_case` の機能別・意味ベースキー（例: `settings.hide_read`, `common.cancel`, `readers.read_at`, `themes.download_failed`）へ全面移行します。日本語文・表示本文・書式指定子はキーに含めず、表示文が変わってもキーは維持してください。汎用的な語句は `common` などへ集約します。
 - **バンドル参照・コード規約**: 文字列取得に `NSLocalizedString` (main bundle参照) を使用せず、必ず `RUINLocalizedString` を使用して `RUINResources.bundle` を参照します。ソースコード上では静的な文字列リテラル（または有限のリテラル条件分岐）を用い、キーの動的な組み立てや旧日本語キーへの互換辞書は作成しません。また、意味キーに `NS_FORMAT_ARGUMENT` 属性を付けてClangに表示本文形式と誤認させないでください。
 - **ネイティブ文字列照合**: LINEネイティブUIやシステムとの文字列照合・比較を行う際は、直接の翻訳文字列ではなく、LINEバンドル内の公式ローカライズキーを参照して照合すること。
 - **翻訳除外対象**: 内部プロトコルキー、LINE内部の文字列比較用定数、SQLクエリ、ユーザーの入力・表示コンテンツは翻訳対象外です。
-- **5言語の同期更新とフォールバック**: 全5言語のキー集合を厳密に一致させ、新規UI文字列の追加・更新時は以下の全5言語を同時に更新してください（今回のキー移行では既存の翻訳値を保持します）。
+- **5言語の同期更新とフォールバック**: 全5言語のキー集合を厳密に一致させ、新規UI文字列の追加・更新時は以下の全5言語を同時に更新してください。
   - `ja` (日本語)
   - `en` (英語 - フォールバック基準)
   - `ko` (韓国語)
@@ -108,9 +108,10 @@ RUIN/
   - 引数を消費する書式指定子（`%@`, `%ld`, `%lu` など）の型と引数の数は、キー名ではなく `en` の翻訳値を基準として全言語で厳密に一致させてください。
   - 引数を消費しないエスケープ（`%%`）や改行文字（`\n`）の有無・構成も、`en` を基準に各言語で意図通り保持されていることを確認してください。
   - 参照先が存在しないキー、コードから未参照のキー、重複キー、空翻訳、意味キー規約違反を検査します。
-  - 未使用の廃止文言やテスト専用文言を本番カタログへ残さないでください。
+  - 未使用の廃止文言やテスト専用文言を本番カタログへ残さないでください。未使用エントリを削除する際は、直接呼び出しだけでなく、条件分岐や間接参照の有無、テスト用リソースやユーザー入力・表示コンテンツとの区別も再確認してください（一時的な監査結果等の特定の件数を恒久ルールに含めないこと）。
 - **検証およびビルド**:
-  - ローカライズ検証: `python3 -m unittest discover -s tests -p 'test_localization.py' -v`
+  - ローカライズ検証 (macOS): `plutil -lint` による構文チェック、および `Foundation`/`NSBundle` による実際の読み込み確認
+  - ローカライズ検証 (移植可能テスト): 既存の最小限の検査（`python3 -m unittest discover -s tests -p 'test_localization.py' -v`）を再利用
   - 静的整合性チェック: `make check-host` / `make check-portable`
   - 実装ビルド: `make -j4 all`
   - ※文書内に環境固有パスや端末情報を記載しないでください。
