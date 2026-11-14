@@ -67,7 +67,7 @@ static NSString *RUINThemeStoreWebJavaScript(BOOL enabled, BOOL announceReady)
         "  const pageProductID = raw => { try { const u = new URL(raw, location.href); return allowedURL(u) ? productRouteID(u) : null; } catch (_) { return null; } };\n"
         "  const storeProductID = raw => { try { const u = new URL(raw, location.href); return u.hostname.toLowerCase() === \"store.line.me\" ? productRouteID(u) : null; } catch (_) { return null; } };\n"
         "  const selectedProductID = () => { const ids = []; const direct = pageProductID(location.href); if (direct) ids.push(direct); const u = new URL(location.href); for (const key of [\"id\", \"productId\", \"productID\"]) { const value = u.searchParams.get(key); if (value && validUUID.test(value)) ids.push(value.toLowerCase()); } const canonical = document.querySelector(\"link[rel='canonical']\"); const og = document.querySelector(\"meta[property='og:url']\"); for (const value of [canonical && canonical.href, og && og.content]) { const id = value && storeProductID(value); if (id) ids.push(id); } const unique = Array.from(new Set(ids)); return unique.length === 1 ? unique[0] : null; };\n"
-        "  const isPurchaseLabel = value => /^(購入する|purchase|buy)$/i.test(String(value || \"\").replace(/\\s+/g, \" \").trim());\n"
+        "  const isPurchaseLabel = value => /^(購入する|purchase|buy|구매하기|购买|購買)$/i.test(String(value || \"\").replace(/\\s+/g, \" \").trim());\n"
         "  const original = new WeakMap();\n"
         "  const changed = [];\n"
         "  let enabled = requestedEnabled && nativeAvailable;\n"

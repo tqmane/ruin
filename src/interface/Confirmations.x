@@ -105,6 +105,7 @@ struct RUINConfirmationHook {
 @property(nonatomic, strong, nullable) id argument1;
 @property(nonatomic, assign) SEL selector;
 @property(nonatomic, assign) SEL dispatchedAction;
+@property(nonatomic, strong, nullable) UIView *sendComposer;
 @property(nonatomic, assign) IMP original;
 @property(nonatomic, strong) UIWindow *window;
 @property(nonatomic, strong) UIViewController *anchorController;
@@ -795,6 +796,8 @@ static BOOL RUINCameraStillTurnsOn(RUINConfirmationPending *pending)
     return RUINCameraSenderClassification(pending.target, pending.argument0) == RUINConfirmationActionProtected;
 }
 
+static UIView *RUINComposerForSendControl(id control, id actionTarget, SEL action);
+
 static BOOL RUINValidatePendingContext(RUINConfirmationPending *pending)
 {
     if (![NSThread isMainThread] || !RUINWindowIsActive(pending.window)) return NO;
@@ -803,6 +806,9 @@ static BOOL RUINValidatePendingContext(RUINConfirmationPending *pending)
     if (!pending.presenter.isViewLoaded || pending.presenter.view.window != pending.window) return NO;
     if (pending.threadMID && !RUINThreadStillMatches(pending)) return NO;
     if (pending.contextIdentity && RUINCurrentContextIdentity(pending) != pending.contextIdentity) return NO;
+    if (pending.hook == &gControlSendActionHook && (!pending.sendComposer ||
+        RUINComposerForSendControl(pending.target, pending.argument0, pending.dispatchedAction) != pending.sendComposer))
+        return NO;
     return RUINCameraStillTurnsOn(pending);
 }
 
@@ -832,11 +838,11 @@ static BOOL RUINSenderMatchesHook(RUINConfirmationHook *hook, id target, id send
     return YES;
 }
 
-static BOOL RUINIsComposerSendControl(id control, id actionTarget, SEL action)
+static UIView *RUINComposerForSendControl(id control, id actionTarget, SEL action)
 {
     Class inputClass = objc_getClass(RUINChatInputBarClass);
     BOOL isControl = [control isKindOfClass:UIControl.class];
-    if (!inputClass || !isControl) return RUINConfirmationIsComposerControl(isControl, NO, NO, NO);
+    if (!inputClass || !isControl) return nil;
     UIView *composer = nil;
     for (UIView *view = (UIView *)control; view; view = view.superview) {
         if ([view isKindOfClass:inputClass]) {
@@ -844,10 +850,10 @@ static BOOL RUINIsComposerSendControl(id control, id actionTarget, SEL action)
             break;
         }
     }
-    if (!composer) return RUINConfirmationIsComposerControl(YES, NO, NO, NO);
+    if (!composer) return nil;
 
-    BOOL targetsInputBarSend = [actionTarget isKindOfClass:inputClass] && action == sel_registerName("send:");
-    if (targetsInputBarSend) return RUINConfirmationIsComposerControl(YES, YES, YES, NO);
+    BOOL targetsInputBarSend = actionTarget == composer && action == sel_registerName("send:");
+    if (targetsInputBarSend) return composer;
 
     id sendButton = RUINObjectIvar(composer, RUINChatInputBarClass, "$__lazy_storage_$_sendButton");
     if (sendButton == control) {
@@ -855,7 +861,7 @@ static BOOL RUINIsComposerSendControl(id control, id actionTarget, SEL action)
     }
     if (!sendButton && atomic_load(&gSendButtonIvarState) == 0)
         atomic_store(&gSendButtonIvarState, -1);
-    return RUINConfirmationIsComposerControl(YES, YES, NO, sendButton == control);
+    return RUINConfirmationIsComposerControl(YES, YES, NO, sendButton == control) ? composer : nil;
 }
 
 static NSString *RUINPreferenceKey(RUINConfirmationKind kind)
@@ -1256,8 +1262,7 @@ static BOOL RUINIsApprovedSendReentry(RUINConfirmationHook *hook, id self, SEL s
     RUINConfirmationSendPermit *permit = gApprovedSendPermit;
     RUINConfirmationPending *pending = permit ? permit->pending : nil;
     if (!pending) return NO;
-    Class inputClass = objc_getClass(RUINChatInputBarClass);
-    if (!inputClass || ![pending.argument0 isKindOfClass:inputClass]) return NO;
+    if (!pending.sendComposer || !pending.dispatchedAction) return NO;
 
     os_unfair_lock_lock(&gPendingLock);
     BOOL invoking = RUINPendingIsCurrentLocked(pending, permit->ticket) &&
@@ -1268,8 +1273,9 @@ static BOOL RUINIsApprovedSendReentry(RUINConfirmationHook *hook, id self, SEL s
     return RUINConfirmationConsumeSendReentry(&permit->consumed,
         permit->ticket, pending.ownerTicket,
         pending.hook == &gControlSendActionHook, hook == &gChatInputSendHook,
-        (__bridge const void *)pending.argument0, (__bridge const void *)pending.target,
-        (const void *)pending.dispatchedAction, (__bridge const void *)self,
+        RUINValidatePendingContext(pending),
+        (__bridge const void *)pending.sendComposer, (__bridge const void *)pending.target,
+        (__bridge const void *)self,
         (__bridge const void *)argument0, (const void *)selector,
         (const void *)sel_registerName("send:"));
 }
@@ -1278,7 +1284,7 @@ static RUINConfirmationActionClass RUINClassifyHookAction(RUINConfirmationHook *
     id self, id argument0, SEL dispatchedAction)
 {
     BOOL requiresBoundary = (hook->flags & RUINHookComposerControlBoundary) != 0;
-    BOOL boundaryMatched = !requiresBoundary || RUINIsComposerSendControl(self, argument0, dispatchedAction);
+    BOOL boundaryMatched = !requiresBoundary || RUINComposerForSendControl(self, argument0, dispatchedAction) != nil;
     BOOL requiresSender = hook->senderIvar || hook->senderArrayGetter || hook->senderContainerGetter;
     BOOL senderMatched = !requiresSender || RUINSenderMatchesHook(hook, self, argument0);
     if ((requiresBoundary && !boundaryMatched) || (requiresSender && !senderMatched)) {
@@ -1340,6 +1346,9 @@ static void RUINHandleHook(RUINConfirmationHook *hook, id self, SEL selector, id
     pending.argument1 = argument1;
     pending.selector = selector;
     pending.dispatchedAction = dispatchedAction;
+    // Retain the composer observed at entry, never infer it from a later relay target.
+    if (hook == &gControlSendActionHook)
+        pending.sendComposer = RUINComposerForSendControl(self, argument0, dispatchedAction);
     pending.original = atomic_load_explicit(&hook->original, memory_order_acquire);
     pending.approveTitle = RUINApproveTitle(hook->kind);
     pending.cameraToggleMustTurnOn = (hook->flags & RUINHookCameraToggle) != 0;

@@ -287,7 +287,7 @@ static void RUINApplicationDidBecomeActive(void) {
     }];
     if (RUINIsCompatible()) {
         RUINInstallSiriCompatibility();
-        RUINInstallFeatures();
+        RUINRefreshFeaturesOnActivation(RUINChatCatalogAccount());
         RUINInstallReadBoundary();
         RUINInstallNativeEntry();
         RUINInstallSecondaryLogin();

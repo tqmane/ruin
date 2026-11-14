@@ -118,6 +118,12 @@ Unsent</string>
 	<string>Retain Unsent Text and Media</string>
 	<key>menu.retainedMedia</key>
 	<string>Saved Media</string>
+	<key>settings.tabs.entryNotReady</key>
+	<string>The Settings tab stays visible until the RUIN gear button is available on Home. Open Home first.</string>
+	<key>shops.openRejected</key>
+	<string>Requested LINE to open the shop, but the request was not accepted.</string>
+	<key>shops.openUnavailable</key>
+	<string>Opening this shop is not available on this LINE version.</string>
 	<key>「%@」と「%@」を同時に非表示にできません。</key>
 	<string>Cannot hide "%@" and "%@" simultaneously.</string>
 	<key>「%@」の表示名をこの端末だけ変更します。空欄で解除し、旧表示名ルールもこのIDには適用しません。</key>
@@ -431,7 +437,7 @@ Version: %@%@</string>
 	<key>操作確認</key>
 	<string>Confirm Action</string>
 	<key>新着のローカル通知</key>
-	<string>New Local Notification</string>
+	<string>New Message Local Notifications</string>
 	<key>新着メッセージを受信しました</key>
 	<string>New message received</string>
 	<key>既存のトーク履歴と鍵を保護するため、操作を開始できません。署名および保存先の診断状態を確認してください。</key>
@@ -465,7 +471,7 @@ Version: %@%@</string>
 	<key>日時不明</key>
 	<string>Unknown date/time</string>
 	<key>更新</key>
-	<string>Update</string>
+	<string>Refresh</string>
 	<key>未確認</key>
 	<string>Unconfirmed</string>
 	<key>未設定</key>
@@ -487,7 +493,8 @@ Version: %@%@</string>
 	<key>添付ファイルを受信しました</key>
 	<string>Attachment received</string>
 	<key>現在利用可能なタブのみ設定できます。「ホーム」と「トーク」は非表示にできません。%@変更はアプリの再起動後に反映されます。</key>
-	<string>Only currently available tabs can be configured. "Home" and "Chats" cannot be hidden. %@Changes will take effect after restarting the app.</string>
+	<string>Only currently available tabs can be configured. "Home" and "Chats" cannot be hidden.
+%@Changes will take effect after restarting the app.</string>
 	<key>画面を閉じて、もう一度お試しください。ダウンロードしたファイルは保存されています。</key>
 	<string>Please close this screen and try again. The downloaded file has been saved.</string>
 	<key>着せかえ</key>
@@ -511,7 +518,7 @@ Version: %@%@</string>
 	<key>着せかえ記録はありません</key>
 	<string>No theme records</string>
 	<key>確認</key>
-	<string>Confirm</string>
+	<string>OK</string>
 	<key>確認したいユーザーのMIDを1件入力してください。MIDは「u」で始まる33文字の識別子です。LINE IDとは異なります。</key>
 	<string>Please enter the MID of the user you want to check. An MID is a 33-character identifier starting with "u". It differs from a LINE ID.</string>
 	<key>確認日時</key>
@@ -535,7 +542,7 @@ Version: %@%@</string>
 	<key>自分の名前</key>
 	<string>My Name</string>
 	<key>自分を含むグループ人数。0は人数指定なし。</key>
-	<string>Group size including yourself. 0 specifies no limit.</string>
+	<string>Group size including yourself. Enter 0 for no minimum threshold (confirm for all groups).</string>
 	<key>表示の管理</key>
 	<string>Manage display</string>
 	<key>表示名を変更するトークを選ぶ</key>
@@ -569,7 +576,7 @@ Version: %@%@</string>
 	<key>送信確認の最低人数</key>
 	<string>Minimum members for send confirmation</string>
 	<key>送信確認を行う最低人数は、自分を含むグループ人数です。0は人数指定なし。通話・送信の一部の入口はまだ検証中です。</key>
-	<string>The minimum number of members for send confirmation is the group size including yourself. 0 specifies no limit. Some entry points for calls and sending are still under verification.</string>
+	<string>The minimum member count for send confirmation is the group size including yourself. Entering 0 sets no minimum threshold and confirms for all groups. Some entry points for calls and sending are still under verification.</string>
 	<key>通信がタイムアウトしました。時間をおいて、もう一度お試しください。</key>
 	<string>Connection timed out. Please wait a moment and try again.</string>
 	<key>通信が中止されました。</key>
