@@ -1,4 +1,4 @@
-name: Build RUIN distribution
+name: Release RUIN
 
 on:
   workflow_dispatch:
@@ -28,6 +28,7 @@ jobs:
           fi
           python3 -c 'import sys; sys.path.insert(0, "tools"); from distribute import validate_version; validate_version(sys.argv[1])' "$ruin_version"
           echo "value=$ruin_version" >> "$GITHUB_OUTPUT"
+          echo "RUIN_BUILD_VERSION=$ruin_version" >> "$GITHUB_ENV"
 
       - name: Build arm64+arm64e universal dylib
         env:
@@ -54,15 +55,27 @@ jobs:
           RUIN_VERSION: ${{ steps.version.outputs.value }}
         run: make dist RUIN_BUILD_VERSION="$RUIN_VERSION"
 
-      - name: Upload distribution artifacts
+      - name: Upload rootful artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ruin-${{ steps.version.outputs.value }}
-          path: |
-            dist/RUIN-${{ steps.version.outputs.value }}-rootful.deb
-            dist/RUIN-${{ steps.version.outputs.value }}-rootless.deb
-            dist/RUIN-${{ steps.version.outputs.value }}-jailed.deb
-            dist/SHA256SUMS
+          name: ruin-${{ steps.version.outputs.value }}-rootful
+          path: dist/RUIN-${{ steps.version.outputs.value }}-rootful.deb
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Upload rootless artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ruin-${{ steps.version.outputs.value }}-rootless
+          path: dist/RUIN-${{ steps.version.outputs.value }}-rootless.deb
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Upload jailed artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ruin-${{ steps.version.outputs.value }}-jailed
+          path: dist/RUIN-${{ steps.version.outputs.value }}-jailed.deb
           if-no-files-found: error
           compression-level: 0
 
@@ -72,13 +85,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RUIN_VERSION: ${{ steps.version.outputs.value }}
         run: |
-          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release create "$GITHUB_REF_NAME" \
+          release_files=(
+            "dist/RUIN-${RUIN_VERSION}-rootful.deb"
+            "dist/RUIN-${RUIN_VERSION}-rootless.deb"
+            "dist/RUIN-${RUIN_VERSION}-jailed.deb"
+            dist/SHA256SUMS
+          )
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "${release_files[@]}" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "${release_files[@]}" \
               --verify-tag --title "RUIN $GITHUB_REF_NAME" --generate-notes
           fi
-          gh release upload "$GITHUB_REF_NAME" \
-            "dist/RUIN-${RUIN_VERSION}-rootful.deb" \
-            "dist/RUIN-${RUIN_VERSION}-rootless.deb" \
-            "dist/RUIN-${RUIN_VERSION}-jailed.deb" \
-            dist/SHA256SUMS \
-            --clobber

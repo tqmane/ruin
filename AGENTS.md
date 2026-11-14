@@ -167,7 +167,7 @@ RUIN/
      - テストデータ: 秘密の原IPAや復号バイナリは使用せず、合成フィクスチャおよびホスト検証データのみを使用。
    - 保守エージェントは、特定の会話時点の状態に依存せず、実行結果を確認した上で成功報告を行う普遍的な運用手順を遵守してください。
 4. **リリースタグ運用と配布物**:
-   - リリース時は `vX.Y.Z` 形式のSemVerタグをpushします。`Build RUIN distribution` ワークフロー (`distribute.yml`) が起動し（手動実行 `workflow_dispatch` も可能）、プレフィックス `v` を除いたバージョン名で配布物が生成され、GitHub Releaseへ添付されます。
+   - リリース時は `vX.Y.Z` 形式のSemVerタグをpushします。`Release RUIN` ワークフロー (`release.yml`) が起動し（手動実行 `workflow_dispatch` も可能）、プレフィックス `v` を除いたバージョン名で配布物が生成され、GitHub Releaseへ添付されます。
    - 配布物は以下の3つのDEBパッケージおよびチェックサムファイルのみに限定されます（単体dylib、`manual-injection.zip`、単体ライセンスtxtは全て廃止。ローカルの `build/RUIN.dylib` はビルド中間物です）。
      - `RUIN-<version>-rootful.deb` (Architecture: `iphoneos-arm`、`/Library/MobileSubstrate/DynamicLibraries/` 配下、Debian Depends: `firmware (>=18.0), mobilesubstrate`)
      - `RUIN-<version>-rootless.deb` (Architecture: `iphoneos-arm64`、`/var/jb/Library/MobileSubstrate/DynamicLibraries/` 配下、Debian Depends: `firmware (>=18.0), mobilesubstrate`、`dladdr` による隣接リソース解決)
