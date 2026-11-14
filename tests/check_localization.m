@@ -72,9 +72,12 @@ int main(int argc, const char **argv) {
                 NSString *directory = [temporary stringByAppendingPathComponent:[language stringByAppendingString:@".lproj"]];
                 assert([files createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:nil error:NULL]);
                 NSDictionary *catalog = [language isEqual:@"en"]
-                    ? @{key:@"English fallback", @"tests.english_only":@"English only"}
+                    ? @{key:@"English fallback", @"tests.english_only":@"English only",
+                        @"tests.escaped":@"quote\" backslash\\ line\nnext\ttab 日本 😀"}
                     : @{@"tests.selected_only":expected[language]};
-                assert([catalog writeToFile:[directory stringByAppendingPathComponent:@"Localizable.strings"] atomically:YES]);
+                NSString *contents = catalog.descriptionInStringsFileFormat;
+                assert([contents writeToFile:[directory stringByAppendingPathComponent:@"Localizable.strings"]
+                    atomically:YES encoding:NSUTF8StringEncoding error:NULL]);
             }
             NSBundle *partial = [NSBundle bundleWithPath:temporary];
             assert(partial);
@@ -82,6 +85,8 @@ int main(int argc, const char **argv) {
                 assert([partial pathForResource:language ofType:@"lproj"]);
                 assert([RUINLocalizeInBundle(partial, key, @[language]) isEqual:@"English fallback"]);
                 assert([RUINLocalizeInBundle(partial, @"tests.english_only", @[language]) isEqual:@"English only"]);
+                assert([RUINLocalizeInBundle(partial, @"tests.escaped", @[language])
+                    isEqual:@"quote\" backslash\\ line\nnext\ttab 日本 😀"]);
                 NSString *selectedOnly = [language isEqual:@"en"] ? @"tests.selected_only" : expected[language];
                 assert([RUINLocalizeInBundle(partial, @"tests.selected_only", @[language]) isEqual:selectedOnly]);
                 assert([RUINLocalizeInBundle(partial, unknown, @[language]) isEqual:unknown]);

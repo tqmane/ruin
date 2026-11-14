@@ -1,528 +1,258 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-	<key>appearance.icon_change_failed</key>
-	<string>Failed to change app icon.</string>
-	<key>chat_picker.account_changed</key>
-	<string>Account changed. Please reopen your chat list.</string>
-	<key>chat_picker.direct_chat</key>
-	<string>Direct Chats</string>
-	<key>chat_picker.empty</key>
-	<string>No chats found</string>
-	<key>chat_picker.group_chat</key>
-	<string>Group Chats</string>
-	<key>chat_picker.loading</key>
-	<string>Loading chats…</string>
-	<key>chat_picker.open_chat</key>
-	<string>OpenChat</string>
-	<key>chat_picker.open_list_first</key>
-	<string>Please open your chat list once and try again.</string>
-	<key>chat_picker.read_exceptions_help</key>
-	<string>Select chats to send read receipts normally using names and icons. Changes take effect immediately.</string>
-	<key>chat_picker.search_placeholder</key>
-	<string>Search by name or chat title</string>
-	<key>chat_picker.selected_count</key>
-	<string>%lu selected</string>
-	<key>chat_picker.unlisted_count</key>
-	<string>Unlisted Chats (%lu)</string>
-	<key>common.cancel</key>
-	<string>Cancel</string>
-	<key>common.close</key>
-	<string>Close</string>
-	<key>common.confirm</key>
-	<string>OK</string>
-	<key>common.download</key>
-	<string>Download</string>
-	<key>common.end</key>
-	<string>End</string>
-	<key>common.fetch_failed</key>
-	<string>Could not retrieve</string>
-	<key>common.item_count</key>
-	<string>%lu items</string>
-	<key>common.label_value</key>
-	<string>%@: %@</string>
-	<key>common.member_count</key>
-	<string>%ld members</string>
-	<key>common.name</key>
-	<string>Name</string>
-	<key>common.no_records</key>
-	<string>No records</string>
-	<key>common.not_set</key>
-	<string>Not set</string>
-	<key>common.ok</key>
-	<string>OK</string>
-	<key>common.preview</key>
-	<string>Preview</string>
-	<key>common.processing</key>
-	<string>Processing</string>
-	<key>common.refresh</key>
-	<string>Refresh</string>
-	<key>common.save</key>
-	<string>Save</string>
-	<key>common.saved</key>
-	<string>Saved</string>
-	<key>common.send</key>
-	<string>Send</string>
-	<key>common.start</key>
-	<string>Start</string>
-	<key>common.this_chat</key>
-	<string>This Chat</string>
-	<key>common.turn_on</key>
-	<string>Turn On</string>
-	<key>common.unverified</key>
-	<string>Unconfirmed</string>
-	<key>common.view_reason</key>
-	<string>Tap to view reason</string>
-	<key>compatibility.build_unsupported</key>
-	<string>Cannot enable features on this LINE build.</string>
-	<key>compatibility.partial.continue</key>
-	<string>Continue</string>
-	<key>compatibility.partial.message</key>
-	<string>LINE %@ (Build %@) has not been fully verified. Some features may be unavailable.</string>
-	<key>compatibility.partial.title</key>
-	<string>Compatibility Notice</string>
-	<key>confirm.call_message</key>
-	<string>Start call?</string>
-	<key>confirm.call_title</key>
-	<string>Confirm call</string>
-	<key>confirm.camera_message</key>
-	<string>Turn on camera?</string>
-	<key>confirm.camera_title</key>
-	<string>Camera Confirmation</string>
-	<key>confirm.disconnect_message</key>
-	<string>End call?</string>
-	<key>confirm.group_send_message</key>
-	<string>Send to a group of %ld members?</string>
-	<key>confirm.invalid_member_count</key>
-	<string>Please enter 0 or more members.</string>
-	<key>confirm.minimum_members_hint</key>
-	<string>Group size including yourself. Enter 0 for no minimum threshold (confirm for all groups).</string>
-	<key>confirm.send_title</key>
-	<string>Confirm send</string>
-	<key>confirm.unknown_member_count</key>
-	<string>Unable to verify group member count. Send anyway?</string>
-	<key>confirm.unknown_recipient</key>
-	<string>Cannot verify recipient type. Send anyway?</string>
-	<key>diagnostics.export_description</key>
-	<string>JSON for RUIN runtime, compatibility, and feature diagnostics</string>
-	<key>diagnostics.feature_matrix</key>
-	<string>Feature Compatibility Chart</string>
-	<key>diagnostics.json_failed</key>
-	<string>Failed to convert diagnostics to JSON: %@</string>
-	<key>diagnostics.runtime_title</key>
-	<string>Runtime &amp; Feature Diagnostics</string>
-	<key>errors.cancelled</key>
-	<string>Connection was aborted.</string>
-	<key>errors.connection_lost</key>
-	<string>Connection was interrupted. Please check your connection and try again.</string>
-	<key>errors.offline</key>
-	<string>No internet connection. Please check your connection and try again.</string>
-	<key>errors.operation_failed</key>
-	<string>Could not complete the process.</string>
-	<key>errors.timeout</key>
-	<string>Connection timed out. Please wait a moment and try again.</string>
-	<key>errors.unknown</key>
-	<string>Unknown error</string>
-	<key>font.applied</key>
-	<string>Font applied. Please reopen the chat.</string>
-	<key>font.available_by_default</key>
-	<string>Available by default</string>
-	<key>font.default</key>
-	<string>Default font</string>
-	<key>font.help</key>
-	<string>Applies OTF/TTF files. After changing, please reopen the chat or restart the app.</string>
-	<key>font.load_failed</key>
-	<string>Could not load font. Please check the OTF/TTF file.</string>
-	<key>font.reset</key>
-	<string>Reset to default</string>
-	<key>font.reset_done</key>
-	<string>Reset to the default font. Please reopen the chat.</string>
-	<key>font.select</key>
-	<string>Select Font</string>
-	<key>font.title</key>
-	<string>Custom Font</string>
-	<key>login.data_protection_message</key>
-	<string>To protect existing chat history and keys, this operation cannot be started. Please check the signing and storage diagnostics.</string>
-	<key>login.data_protection_title</key>
-	<string>Unable to Proceed to Protect Data</string>
-	<key>login.method_changed</key>
-	<string>Switched login method</string>
-	<key>login.method_title</key>
-	<string>Login Method</string>
-	<key>login.primary_action</key>
-	<string>Standard iPhone login</string>
-	<key>login.primary_mode</key>
-	<string>Standard iPhone mode</string>
-	<key>login.restart_message</key>
-	<string>Please force close LINE completely and reopen it. The selected login method will apply from next launch.</string>
-	<key>login.secondary_action</key>
-	<string>Log In as Secondary Device (iPad)</string>
-	<key>login.secondary_help</key>
-	<string>On a secondary device, scan the QR code with your primary device to approve login.</string>
-	<key>login.secondary_mode</key>
-	<string>Secondary Device Mode (iPad)</string>
-	<key>media.copy_gif_failed</key>
-	<string>Failed to copy GIF</string>
-	<key>media.history_footer</key>
-	<string>Retention must be enabled before unsend to privately save text delivered to this device and locally downloaded media (verified in 1-on-1 and group chats; OpenChat is unverified). Retained media open with a normal tap in chat, while the long-press menu is supplementary. Original files not downloaded before unsend cannot be recovered, and saved thumbnails are preview only. The read-receipt sheet displays names and timestamps recorded on this device, preserving earlier known read times.</string>
-	<key>media.no_share_targets</key>
-	<string>No available sharing destinations found for this file.</string>
-	<key>media.open_failed</key>
-	<string>Could not open file</string>
-	<key>media.preview_only</key>
-	<string>Preview Only</string>
-	<key>media.preview_unavailable</key>
-	<string>Preview is not supported for this file. You can manage it from the share menu.</string>
-	<key>media.share_action</key>
-	<string>Share / Open in Another App</string>
-	<key>media.share_failed</key>
-	<string>Could not display share sheet</string>
-	<key>media.unsent_badge</key>
-	<string>Unsent</string>
-	<key>menu.copy_gif</key>
-	<string>Copy as GIF</string>
-	<key>menu.copy_mid</key>
-	<string>Copy MID</string>
-	<key>menu.mark_read_until</key>
-	<string>Mark Read to Here</string>
-	<key>menu.retained_media</key>
-	<string>Saved Media</string>
-	<key>names.choose_chat</key>
-	<string>Select a Chat to Rename</string>
-	<key>names.display_name_placeholder</key>
-	<string>Name to display on this device</string>
-	<key>names.edit_help</key>
-	<string>Changes the display name of "%@" on this device only. Leave empty to clear; legacy display name rules will not apply to this ID.</string>
-	<key>names.invalid_name</key>
-	<string>Please enter a name within 256 characters without line breaks.</string>
-	<key>names.local_display_name</key>
-	<string>Display Name on This Device</string>
-	<key>names.modified_chat_count</key>
-	<string>%lu chats modified</string>
-	<key>names.original_name</key>
-	<string>Original name: %@</string>
-	<key>names.reset_action</key>
-	<string>Reset to Original Name</string>
-	<key>names.set_action</key>
-	<string>Set Local Display Name</string>
-	<key>names.title</key>
-	<string>Local Display Name</string>
-	<key>notifications.attachment_received</key>
-	<string>Attachment received</string>
-	<key>notifications.new_message</key>
-	<string>New message received</string>
-	<key>profile.invalid_mid</key>
-	<string>Please enter "u" followed by 32 lowercase hex digits (0–9, a–f).</string>
-	<key>profile.mid_field_label</key>
-	<string>MID to search</string>
-	<key>profile.mid_placeholder</key>
-	<string>MID ("u" followed by 32 alphanumeric characters)</string>
-	<key>profile.mid_search</key>
-	<string>MID Search</string>
-	<key>profile.open_by_mid</key>
-	<string>Open Profile by MID</string>
-	<key>profile.open_failed_message</key>
-	<string>Could not open profile. Please check the MID and network connection, then try again.</string>
-	<key>profile.open_failed_title</key>
-	<string>Could not open profile</string>
-	<key>profile.open_requested</key>
-	<string>Requested LINE to show profile. If not found or unable to display, please check MID and network status.</string>
-	<key>profile.search_help</key>
-	<string>Searching will open the profile in LINE. It will not add friends or send messages.</string>
-	<key>profile.search_prompt</key>
-	<string>Please enter the MID of the user you want to check. An MID is a 33-character identifier starting with "u". It differs from a LINE ID.</string>
-	<key>profile.unsupported</key>
-	<string>MID search is not available on your version of LINE.</string>
-	<key>profile.view_action</key>
-	<string>View Profile</string>
-	<key>profile.view_description</key>
-	<string>Displays profile</string>
-	<key>read_control.chat_hint</key>
-	<string>Toggle read receipt control for this chat only</string>
-	<key>read_control.disabled</key>
-	<string>Global read receipt suppression is off. Exception settings are saved</string>
-	<key>read_control.enable_for_chat</key>
-	<string>Enable read receipt suppression for this chat</string>
-	<key>read_control.exclude_chat</key>
-	<string>Exclude this chat from read receipt suppression</string>
-	<key>readers.fetch_failed</key>
-	<string>Failed to retrieve read receipt information. Please try again.</string>
-	<key>readers.loading</key>
-	<string>Retrieving read receipt information…</string>
-	<key>readers.mark_read_failed</key>
-	<string>Could not mark as read. Please try again.</string>
-	<key>readers.names_loading</key>
-	<string>Checking name…</string>
-	<key>readers.observed_at</key>
-	<string>Checked timestamp</string>
-	<key>readers.range_read_at</key>
-	<string>Read timestamp (range info)</string>
-	<key>readers.read_at</key>
-	<string>Read timestamp</string>
-	<key>readers.timestamp_help</key>
-	<string>The checked timestamp is the date and time when this device confirmed read information. Records with indeterminable timestamps are displayed as "Unknown date/time".</string>
-	<key>readers.title</key>
-	<string>Readers list</string>
-	<key>readers.unknown_date</key>
-	<string>Unknown date/time</string>
-	<key>readers.unknown_name</key>
-	<string>Unknown Name</string>
-	<key>settings.accessibility_label</key>
-	<string>RUIN Settings &amp; Diagnostics</string>
-	<key>settings.appearance</key>
-	<string>Manage display</string>
-	<key>settings.appearance_footer</key>
-	<string>Please reopen the chat screen after making changes.</string>
-	<key>settings.chat_names</key>
-	<string>Chat Display Name</string>
-	<key>settings.chat_names_footer</key>
-	<string>Changes display names on this device only. Others will not see this change. If the list does not update, please restart LINE.</string>
-	<key>settings.confirm_call</key>
-	<string>Confirm starting call</string>
-	<key>settings.confirm_camera_on</key>
-	<string>Confirm before turning on camera</string>
-	<key>settings.confirm_disconnect</key>
-	<string>Confirm ending call</string>
-	<key>settings.confirm_group_send</key>
-	<string>Confirm Sending to Group</string>
-	<key>settings.confirmations</key>
-	<string>Confirm Action</string>
-	<key>settings.confirmations_footer</key>
-	<string>The minimum member count for send confirmation is the group size including yourself. Entering 0 sets no minimum threshold and confirms for all groups. Some entry points for calls and sending are still under verification.</string>
-	<key>settings.copy_sticker_gif</key>
-	<string>Copy Sticker as GIF</string>
-	<key>settings.diagnostics</key>
-	<string>Diagnostics</string>
-	<key>settings.diagnostics_footer</key>
-	<string>Themes, sticker GIFs, and MID search are also covered by full feature support. Incomplete items are not displayed as supported.</string>
-	<key>settings.entry_subtitle</key>
-	<string>Local Settings &amp; Diagnostics</string>
-	<key>settings.fixed_startup_tab</key>
-	<string>Lock startup tab</string>
-	<key>settings.hide_ads</key>
-	<string>Hide Ads</string>
-	<key>settings.hide_agent_bar</key>
-	<string>Hide Agent-i Bar</string>
-	<key>settings.hide_read</key>
-	<string>Suppress read receipts</string>
-	<key>settings.hide_recommendations</key>
-	<string>Hide Recommendations</string>
-	<key>settings.hide_tab</key>
-	<string>Hide %@</string>
-	<key>settings.hide_voice_input</key>
-	<string>Hide voice input button</string>
-	<key>settings.history</key>
-	<string>History &amp; Additional Features (In Development)</string>
-	<key>settings.keep_unsent_media</key>
-	<string>Retain Unsent Text and Media</string>
-	<key>settings.legacy_messaging</key>
-	<string>24h Unsend &amp; Silent Messages</string>
-	<key>settings.line_features</key>
-	<string>LINE Features (In Development)</string>
-	<key>settings.line_features_footer</key>
-	<string>App icons and other features are set in 'Local LYP', while 24-hour unsend and silent messaging use a separate switch (restart LINE after changes). To send silently, confirm text input and long-press the send button for about 2 seconds.</string>
-	<key>settings.local_lyp</key>
-	<string>Local LYP Features</string>
-	<key>settings.local_notifications</key>
-	<string>New Message Local Notifications</string>
-	<key>settings.mark_read_on_reply</key>
-	<string>Mark as read when replying</string>
-	<key>settings.minimum_group_members</key>
-	<string>Minimum members for send confirmation</string>
-	<key>settings.notifications</key>
-	<string>Notifications</string>
-	<key>settings.notifications_footer</key>
-	<string>Notifies only for new messages in 1-on-1 and group chats. Instant delivery while the app is closed is not supported.</string>
-	<key>settings.read_controls</key>
-	<string>Manage read receipts</string>
-	<key>settings.read_controls_footer</key>
-	<string>Read receipt suppression, per-chat exceptions, and reply switching have been verified on physical devices in 1-on-1 chats. Group chats, OpenChat, and manual mark-as-read are still under testing.</string>
-	<key>settings.read_exceptions</key>
-	<string>Chats to send read receipts normally</string>
-	<key>settings.secondary_login</key>
-	<string>Secondary Device Login</string>
-	<key>settings.secondary_login_footer</key>
-	<string>To change, log out and press and hold "Log in" on the login screen. Restarting the app is required after switching.</string>
-	<key>settings.shops</key>
-	<string>Shop</string>
-	<key>settings.skip_age_verification</key>
-	<string>Skip Age Verification</string>
-	<key>settings.startup_tab</key>
-	<string>Tab to open on startup</string>
-	<key>settings.tabs</key>
-	<string>Manage Tabs</string>
-	<key>settings.tabs_entry_not_ready</key>
-	<string>The Settings tab stays visible until the RUIN gear button is available on Home. Open Home first.</string>
-	<key>settings.tabs_footer</key>
-	<string>Only currently available tabs can be configured. "Home" and "Chats" cannot be hidden.
-%@Changes will take effect after restarting the app.</string>
-	<key>settings.tabs_hide_conflict</key>
-	<string>Cannot hide "%@" and "%@" simultaneously.</string>
-	<key>settings.tabs_not_ready</key>
-	<string>Available after LINE tabs are detected.</string>
-	<key>settings.tabs_required</key>
-	<string>Tabs required for app operation are always shown.</string>
-	<key>settings.title</key>
-	<string>RUIN Settings</string>
-	<key>settings.track_read_ranges</key>
-	<string>Record read range</string>
-	<key>settings.user_search</key>
-	<string>User Search</string>
-	<key>settings.version</key>
-	<string>Version</string>
-	<key>shops.open_rejected</key>
-	<string>Requested LINE to open the shop, but the request was not accepted.</string>
-	<key>shops.open_unavailable</key>
-	<string>Opening this shop is not available on this LINE version.</string>
-	<key>shops.sticker_open_failed</key>
-	<string>Unable to open Sticker Shop</string>
-	<key>shops.sticker_title</key>
-	<string>Sticker Shop</string>
-	<key>shops.theme_open_failed</key>
-	<string>Failed to open Theme Shop</string>
-	<key>shops.theme_title</key>
-	<string>Theme Shop</string>
-	<key>tabs.apps</key>
-	<string>Apps</string>
-	<key>tabs.call</key>
-	<string>Calls</string>
-	<key>tabs.home</key>
-	<string>Home</string>
-	<key>tabs.news</key>
-	<string>News</string>
-	<key>tabs.settings</key>
-	<string>Settings</string>
-	<key>tabs.shopping</key>
-	<string>Shopping</string>
-	<key>tabs.talk</key>
-	<string>Chats</string>
-	<key>tabs.wallet</key>
-	<string>Wallet</string>
-	<key>themes.add_to_native</key>
-	<string>Add to My Themes</string>
-	<key>themes.add_to_native_hint</key>
-	<string>Add to LINE My Themes to select and apply.</string>
-	<key>themes.apply_retry_message</key>
-	<string>Please close this screen and try again. The downloaded file has been saved.</string>
-	<key>themes.archive_validation_failed</key>
-	<string>File not found or failed to verify file structure. Please refresh the list.</string>
-	<key>themes.catalog_unavailable</key>
-	<string>Unable to retrieve theme list on this LINE version.</string>
-	<key>themes.download_checking</key>
-	<string>Checking download and files…</string>
-	<key>themes.download_failed</key>
-	<string>Could not complete download</string>
-	<key>themes.download_file</key>
-	<string>Download theme file</string>
-	<key>themes.download_from_url</key>
-	<string>Download from Store URL</string>
-	<key>themes.download_help</key>
-	<string>Retrieve theme info from a store URL to download. You can also enter the name, product ID, and version manually.</string>
-	<key>themes.download_not_ready</key>
-	<string>Please check your download settings and current status.</string>
-	<key>themes.download_start_failed</key>
-	<string>Could not start download</string>
-	<key>themes.download_unavailable</key>
-	<string>Downloading from this screen is not available on this LINE version.</string>
-	<key>themes.downloaded_file_details</key>
-	<string>Product ID: %@
-Version: %@%@</string>
-	<key>themes.downloaded_files_footer</key>
-	<string>Downloaded themes will appear in the list when you open My Themes. Select a theme to apply it.</string>
-	<key>themes.downloads_title</key>
-	<string>Downloaded &amp; saved themes</string>
-	<key>themes.enable_downloads</key>
-	<string>Enable theme downloads</string>
-	<key>themes.expired_record</key>
-	<string>Expired record</string>
-	<key>themes.file_checking</key>
-	<string>Checking file…</string>
-	<key>themes.file_saved</key>
-	<string>File saved</string>
-	<key>themes.file_saved_help</key>
-	<string>File saved. Open My Themes to select and apply the theme.</string>
-	<key>themes.invalid_product_id</key>
-	<string>Product ID can contain alphanumeric characters, hyphens, underscores, and periods.</string>
-	<key>themes.invalid_store_url</key>
-	<string>Please enter a valid LINE STORE theme URL.</string>
-	<key>themes.list_fetch_error</key>
-	<string>Failed to retrieve theme list.</string>
-	<key>themes.list_fetch_failed</key>
-	<string>Could not retrieve list</string>
-	<key>themes.list_loading</key>
-	<string>Loading list…</string>
-	<key>themes.list_refresh_failed</key>
-	<string>Could not refresh list</string>
-	<key>themes.list_update_failed</key>
-	<string>Failed to update the list. Showing previously retrieved content.</string>
-	<key>themes.manual_download</key>
-	<string>Specify Name, Product ID, and Version</string>
-	<key>themes.manual_download_help</key>
-	<string>Retrieves and saves the file. This does not add or apply it to LINE.</string>
-	<key>themes.manual_download_hint</key>
-	<string>Download File Manually</string>
-	<key>themes.manual_fields_required</key>
-	<string>Please enter the name, product ID, and version number.</string>
-	<key>themes.my_themes_open_failed</key>
-	<string>Could not open My Themes</string>
-	<key>themes.name_required</key>
-	<string>Please enter a name.</string>
-	<key>themes.native_record_count</key>
-	<string>LINE Theme Records (%lu)</string>
-	<key>themes.native_record_details</key>
-	<string>Product ID: %@
-Version: %@
-%@
-
-This is a saved record in LINE. Current applied status is unconfirmed.</string>
-	<key>themes.native_records_failed</key>
-	<string>Unable to retrieve LINE theme records</string>
-	<key>themes.native_records_footer</key>
-	<string>Records saved by LINE. Current application status and file existence are not verified.</string>
-	<key>themes.native_records_unavailable</key>
-	<string>Unable to retrieve LINE theme records in this environment.</string>
-	<key>themes.no_native_records</key>
-	<string>No theme records</string>
-	<key>themes.no_saved_files</key>
-	<string>No saved files</string>
-	<key>themes.open_my_themes</key>
-	<string>Open My Themes</string>
-	<key>themes.open_shop</key>
-	<string>Open LINE Theme Shop</string>
-	<key>themes.owned</key>
-	<string>Owned</string>
-	<key>themes.preview_failed</key>
-	<string>Could not display preview</string>
-	<key>themes.product_id</key>
-	<string>Product ID</string>
-	<key>themes.product_id_length</key>
-	<string>Please enter a product ID between 6 and 128 characters.</string>
-	<key>themes.refresh_list</key>
-	<string>Refresh theme list</string>
-	<key>themes.saved_file_count</key>
-	<string>Saved Files (%lu)</string>
-	<key>themes.saved_file_missing</key>
-	<string>Could not verify location of saved file.</string>
-	<key>themes.store_info_failed</key>
-	<string>Failed to retrieve store info. Please check the URL and network connection.</string>
-	<key>themes.store_info_loading</key>
-	<string>Retrieving store info…</string>
-	<key>themes.store_url_hint</key>
-	<string>Please enter the LINE STORE theme URL.</string>
-	<key>themes.title</key>
-	<string>Themes</string>
-	<key>themes.unnamed</key>
-	<string>Unnamed Theme</string>
-	<key>themes.url_download_hint</key>
-	<string>Get Name, Product ID, and Version from Store URL</string>
-	<key>themes.usage_unverified</key>
-	<string>Usage status unconfirmed</string>
-	<key>themes.version_placeholder</key>
-	<string>Version (e.g. V1.30)</string>
-	<key>themes.version_required</key>
-	<string>Please enter the version (e.g. V1.30) or delivery number.</string>
-	<key>themes.within_expiry</key>
-	<string>Within Expiry Date</string>
-</dict>
-</plist>
+"appearance.icon_change_failed" = "Failed to change app icon.";
+"chat_picker.account_changed" = "Account changed. Please reopen your chat list.";
+"chat_picker.direct_chat" = "Direct Chats";
+"chat_picker.empty" = "No chats found";
+"chat_picker.group_chat" = "Group Chats";
+"chat_picker.loading" = "Loading chats…";
+"chat_picker.open_chat" = "OpenChat";
+"chat_picker.open_list_first" = "Please open your chat list once and try again.";
+"chat_picker.read_exceptions_help" = "Select chats to send read receipts normally using names and icons. Changes take effect immediately.";
+"chat_picker.search_placeholder" = "Search by name or chat title";
+"chat_picker.selected_count" = "%lu selected";
+"chat_picker.unlisted_count" = "Unlisted Chats (%lu)";
+"common.cancel" = "Cancel";
+"common.close" = "Close";
+"common.confirm" = "OK";
+"common.download" = "Download";
+"common.end" = "End";
+"common.fetch_failed" = "Could not retrieve";
+"common.item_count" = "%lu items";
+"common.label_value" = "%@: %@";
+"common.member_count" = "%ld members";
+"common.name" = "Name";
+"common.no_records" = "No records";
+"common.not_set" = "Not set";
+"common.ok" = "OK";
+"common.preview" = "Preview";
+"common.processing" = "Processing";
+"common.refresh" = "Refresh";
+"common.save" = "Save";
+"common.saved" = "Saved";
+"common.send" = "Send";
+"common.start" = "Start";
+"common.this_chat" = "This Chat";
+"common.turn_on" = "Turn On";
+"common.unverified" = "Unconfirmed";
+"common.view_reason" = "Tap to view reason";
+"compatibility.build_unsupported" = "Cannot enable features on this LINE build.";
+"compatibility.partial.continue" = "Continue";
+"compatibility.partial.message" = "LINE %@ (Build %@) has not been fully verified. Some features may be unavailable.";
+"compatibility.partial.title" = "Compatibility Notice";
+"confirm.call_message" = "Start call?";
+"confirm.call_title" = "Confirm call";
+"confirm.camera_message" = "Turn on camera?";
+"confirm.camera_title" = "Camera Confirmation";
+"confirm.disconnect_message" = "End call?";
+"confirm.group_send_message" = "Send to a group of %ld members?";
+"confirm.invalid_member_count" = "Please enter 0 or more members.";
+"confirm.minimum_members_hint" = "Group size including yourself. Enter 0 for no minimum threshold (confirm for all groups).";
+"confirm.send_title" = "Confirm send";
+"confirm.unknown_member_count" = "Unable to verify group member count. Send anyway?";
+"confirm.unknown_recipient" = "Cannot verify recipient type. Send anyway?";
+"diagnostics.export_description" = "JSON for RUIN runtime, compatibility, and feature diagnostics";
+"diagnostics.feature_matrix" = "Feature Compatibility Chart";
+"diagnostics.json_failed" = "Failed to convert diagnostics to JSON: %@";
+"diagnostics.runtime_title" = "Runtime & Feature Diagnostics";
+"errors.cancelled" = "Connection was aborted.";
+"errors.connection_lost" = "Connection was interrupted. Please check your connection and try again.";
+"errors.offline" = "No internet connection. Please check your connection and try again.";
+"errors.operation_failed" = "Could not complete the process.";
+"errors.timeout" = "Connection timed out. Please wait a moment and try again.";
+"errors.unknown" = "Unknown error";
+"font.applied" = "Font applied. Please reopen the chat.";
+"font.available_by_default" = "Available by default";
+"font.default" = "Default font";
+"font.help" = "Applies OTF/TTF files. After changing, please reopen the chat or restart the app.";
+"font.load_failed" = "Could not load font. Please check the OTF/TTF file.";
+"font.reset" = "Reset to default";
+"font.reset_done" = "Reset to the default font. Please reopen the chat.";
+"font.select" = "Select Font";
+"font.title" = "Custom Font";
+"login.data_protection_message" = "To protect existing chat history and keys, this operation cannot be started. Please check the signing and storage diagnostics.";
+"login.data_protection_title" = "Unable to Proceed to Protect Data";
+"login.method_changed" = "Switched login method";
+"login.method_title" = "Login Method";
+"login.primary_action" = "Standard iPhone login";
+"login.primary_mode" = "Standard iPhone mode";
+"login.restart_message" = "Please force close LINE completely and reopen it. The selected login method will apply from next launch.";
+"login.secondary_action" = "Log In as Secondary Device (iPad)";
+"login.secondary_help" = "On a secondary device, scan the QR code with your primary device to approve login.";
+"login.secondary_mode" = "Secondary Device Mode (iPad)";
+"media.copy_gif_failed" = "Failed to copy GIF";
+"media.history_footer" = "Retention must be enabled before unsend to privately save text delivered to this device and locally downloaded media (verified in 1-on-1 and group chats; OpenChat is unverified). Retained media open with a normal tap in chat, while the long-press menu is supplementary. Original files not downloaded before unsend cannot be recovered, and saved thumbnails are preview only. The read-receipt sheet displays names and timestamps recorded on this device, preserving earlier known read times.";
+"media.no_share_targets" = "No available sharing destinations found for this file.";
+"media.open_failed" = "Could not open file";
+"media.preview_only" = "Preview Only";
+"media.preview_unavailable" = "Preview is not supported for this file. You can manage it from the share menu.";
+"media.share_action" = "Share / Open in Another App";
+"media.share_failed" = "Could not display share sheet";
+"media.unsent_badge" = "Unsent";
+"menu.copy_gif" = "Copy as GIF";
+"menu.copy_mid" = "Copy MID";
+"menu.mark_read_until" = "Mark Read to Here";
+"menu.retained_media" = "Saved Media";
+"names.choose_chat" = "Select a Chat to Rename";
+"names.display_name_placeholder" = "Name to display on this device";
+"names.edit_help" = "Changes the display name of \"%@\" on this device only. Leave empty to clear; legacy display name rules will not apply to this ID.";
+"names.invalid_name" = "Please enter a name within 256 characters without line breaks.";
+"names.local_display_name" = "Display Name on This Device";
+"names.modified_chat_count" = "%lu chats modified";
+"names.original_name" = "Original name: %@";
+"names.reset_action" = "Reset to Original Name";
+"names.set_action" = "Set Local Display Name";
+"names.title" = "Local Display Name";
+"notifications.attachment_received" = "Attachment received";
+"notifications.new_message" = "New message received";
+"profile.invalid_mid" = "Please enter \"u\" followed by 32 lowercase hex digits (0–9, a–f).";
+"profile.mid_field_label" = "MID to search";
+"profile.mid_placeholder" = "MID (\"u\" followed by 32 alphanumeric characters)";
+"profile.mid_search" = "MID Search";
+"profile.open_by_mid" = "Open Profile by MID";
+"profile.open_failed_message" = "Could not open profile. Please check the MID and network connection, then try again.";
+"profile.open_failed_title" = "Could not open profile";
+"profile.open_requested" = "Requested LINE to show profile. If not found or unable to display, please check MID and network status.";
+"profile.search_help" = "Searching will open the profile in LINE. It will not add friends or send messages.";
+"profile.search_prompt" = "Please enter the MID of the user you want to check. An MID is a 33-character identifier starting with \"u\". It differs from a LINE ID.";
+"profile.unsupported" = "MID search is not available on your version of LINE.";
+"profile.view_action" = "View Profile";
+"profile.view_description" = "Displays profile";
+"read_control.chat_hint" = "Toggle read receipt control for this chat only";
+"read_control.disabled" = "Global read receipt suppression is off. Exception settings are saved";
+"read_control.enable_for_chat" = "Enable read receipt suppression for this chat";
+"read_control.exclude_chat" = "Exclude this chat from read receipt suppression";
+"readers.fetch_failed" = "Failed to retrieve read receipt information. Please try again.";
+"readers.loading" = "Retrieving read receipt information…";
+"readers.mark_read_failed" = "Could not mark as read. Please try again.";
+"readers.names_loading" = "Checking name…";
+"readers.observed_at" = "Checked timestamp";
+"readers.range_read_at" = "Read timestamp (range info)";
+"readers.read_at" = "Read timestamp";
+"readers.timestamp_help" = "The checked timestamp is the date and time when this device confirmed read information. Records with indeterminable timestamps are displayed as \"Unknown date/time\".";
+"readers.title" = "Readers list";
+"readers.unknown_date" = "Unknown date/time";
+"readers.unknown_name" = "Unknown Name";
+"settings.accessibility_label" = "RUIN Settings & Diagnostics";
+"settings.appearance" = "Manage display";
+"settings.appearance_footer" = "Please reopen the chat screen after making changes.";
+"settings.chat_names" = "Chat Display Name";
+"settings.chat_names_footer" = "Changes display names on this device only. Others will not see this change. If the list does not update, please restart LINE.";
+"settings.confirm_call" = "Confirm starting call";
+"settings.confirm_camera_on" = "Confirm before turning on camera";
+"settings.confirm_disconnect" = "Confirm ending call";
+"settings.confirm_group_send" = "Confirm Sending to Group";
+"settings.confirmations" = "Confirm Action";
+"settings.confirmations_footer" = "The minimum member count for send confirmation is the group size including yourself. Entering 0 sets no minimum threshold and confirms for all groups. Some entry points for calls and sending are still under verification.";
+"settings.copy_sticker_gif" = "Copy Sticker as GIF";
+"settings.diagnostics" = "Diagnostics";
+"settings.diagnostics_footer" = "Themes, sticker GIFs, and MID search are also covered by full feature support. Incomplete items are not displayed as supported.";
+"settings.entry_subtitle" = "Local Settings & Diagnostics";
+"settings.fixed_startup_tab" = "Lock startup tab";
+"settings.hide_ads" = "Hide Ads";
+"settings.hide_agent_bar" = "Hide Agent-i Bar";
+"settings.hide_read" = "Suppress read receipts";
+"settings.hide_recommendations" = "Hide Recommendations";
+"settings.hide_tab" = "Hide %@";
+"settings.hide_voice_input" = "Hide voice input button";
+"settings.history" = "History & Additional Features (In Development)";
+"settings.keep_unsent_media" = "Retain Unsent Text and Media";
+"settings.legacy_messaging" = "24h Unsend & Silent Messages";
+"settings.line_features" = "LINE Features (In Development)";
+"settings.line_features_footer" = "App icons and other features are set in 'Local LYP', while 24-hour unsend and silent messaging use a separate switch (restart LINE after changes). To send silently, confirm text input and long-press the send button for about 2 seconds.";
+"settings.local_lyp" = "Local LYP Features";
+"settings.local_notifications" = "New Message Local Notifications";
+"settings.mark_read_on_reply" = "Mark as read when replying";
+"settings.minimum_group_members" = "Minimum members for send confirmation";
+"settings.notifications" = "Notifications";
+"settings.notifications_footer" = "Notifies only for new messages in 1-on-1 and group chats. Instant delivery while the app is closed is not supported.";
+"settings.read_controls" = "Manage read receipts";
+"settings.read_controls_footer" = "Read receipt suppression, per-chat exceptions, and reply switching have been verified on physical devices in 1-on-1 chats. Group chats, OpenChat, and manual mark-as-read are still under testing.";
+"settings.read_exceptions" = "Chats to send read receipts normally";
+"settings.secondary_login" = "Secondary Device Login";
+"settings.secondary_login_footer" = "To change, log out and press and hold \"Log in\" on the login screen. Restarting the app is required after switching.";
+"settings.shops" = "Shop";
+"settings.skip_age_verification" = "Skip Age Verification";
+"settings.startup_tab" = "Tab to open on startup";
+"settings.tabs" = "Manage Tabs";
+"settings.tabs_entry_not_ready" = "The Settings tab stays visible until the RUIN gear button is available on Home. Open Home first.";
+"settings.tabs_footer" = "Only currently available tabs can be configured. \"Home\" and \"Chats\" cannot be hidden.\n%@Changes will take effect after restarting the app.";
+"settings.tabs_hide_conflict" = "Cannot hide \"%@\" and \"%@\" simultaneously.";
+"settings.tabs_not_ready" = "Available after LINE tabs are detected.";
+"settings.tabs_required" = "Tabs required for app operation are always shown.";
+"settings.title" = "RUIN Settings";
+"settings.track_read_ranges" = "Record read range";
+"settings.user_search" = "User Search";
+"settings.version" = "Version";
+"shops.open_rejected" = "Requested LINE to open the shop, but the request was not accepted.";
+"shops.open_unavailable" = "Opening this shop is not available on this LINE version.";
+"shops.sticker_open_failed" = "Unable to open Sticker Shop";
+"shops.sticker_title" = "Sticker Shop";
+"shops.theme_open_failed" = "Failed to open Theme Shop";
+"shops.theme_title" = "Theme Shop";
+"tabs.apps" = "Apps";
+"tabs.call" = "Calls";
+"tabs.home" = "Home";
+"tabs.news" = "News";
+"tabs.settings" = "Settings";
+"tabs.shopping" = "Shopping";
+"tabs.talk" = "Chats";
+"tabs.wallet" = "Wallet";
+"themes.add_to_native" = "Add to My Themes";
+"themes.add_to_native_hint" = "Add to LINE My Themes to select and apply.";
+"themes.apply_retry_message" = "Please close this screen and try again. The downloaded file has been saved.";
+"themes.archive_validation_failed" = "File not found or failed to verify file structure. Please refresh the list.";
+"themes.catalog_unavailable" = "Unable to retrieve theme list on this LINE version.";
+"themes.download_checking" = "Checking download and files…";
+"themes.download_failed" = "Could not complete download";
+"themes.download_file" = "Download theme file";
+"themes.download_from_url" = "Download from Store URL";
+"themes.download_help" = "Retrieve theme info from a store URL to download. You can also enter the name, product ID, and version manually.";
+"themes.download_not_ready" = "Please check your download settings and current status.";
+"themes.download_start_failed" = "Could not start download";
+"themes.download_unavailable" = "Downloading from this screen is not available on this LINE version.";
+"themes.downloaded_file_details" = "Product ID: %@\nVersion: %@%@";
+"themes.downloaded_files_footer" = "Downloaded themes will appear in the list when you open My Themes. Select a theme to apply it.";
+"themes.downloads_title" = "Downloaded & saved themes";
+"themes.enable_downloads" = "Enable theme downloads";
+"themes.expired_record" = "Expired record";
+"themes.file_checking" = "Checking file…";
+"themes.file_saved" = "File saved";
+"themes.file_saved_help" = "File saved. Open My Themes to select and apply the theme.";
+"themes.invalid_product_id" = "Product ID can contain alphanumeric characters, hyphens, underscores, and periods.";
+"themes.invalid_store_url" = "Please enter a valid LINE STORE theme URL.";
+"themes.list_fetch_error" = "Failed to retrieve theme list.";
+"themes.list_fetch_failed" = "Could not retrieve list";
+"themes.list_loading" = "Loading list…";
+"themes.list_refresh_failed" = "Could not refresh list";
+"themes.list_update_failed" = "Failed to update the list. Showing previously retrieved content.";
+"themes.manual_download" = "Specify Name, Product ID, and Version";
+"themes.manual_download_help" = "Retrieves and saves the file. This does not add or apply it to LINE.";
+"themes.manual_download_hint" = "Download File Manually";
+"themes.manual_fields_required" = "Please enter the name, product ID, and version number.";
+"themes.my_themes_open_failed" = "Could not open My Themes";
+"themes.name_required" = "Please enter a name.";
+"themes.native_record_count" = "LINE Theme Records (%lu)";
+"themes.native_record_details" = "Product ID: %@\nVersion: %@\n%@\n\nThis is a saved record in LINE. Current applied status is unconfirmed.";
+"themes.native_records_failed" = "Unable to retrieve LINE theme records";
+"themes.native_records_footer" = "Records saved by LINE. Current application status and file existence are not verified.";
+"themes.native_records_unavailable" = "Unable to retrieve LINE theme records in this environment.";
+"themes.no_native_records" = "No theme records";
+"themes.no_saved_files" = "No saved files";
+"themes.open_my_themes" = "Open My Themes";
+"themes.open_shop" = "Open LINE Theme Shop";
+"themes.owned" = "Owned";
+"themes.preview_failed" = "Could not display preview";
+"themes.product_id" = "Product ID";
+"themes.product_id_length" = "Please enter a product ID between 6 and 128 characters.";
+"themes.refresh_list" = "Refresh theme list";
+"themes.saved_file_count" = "Saved Files (%lu)";
+"themes.saved_file_missing" = "Could not verify location of saved file.";
+"themes.store_info_failed" = "Failed to retrieve store info. Please check the URL and network connection.";
+"themes.store_info_loading" = "Retrieving store info…";
+"themes.store_url_hint" = "Please enter the LINE STORE theme URL.";
+"themes.title" = "Themes";
+"themes.unnamed" = "Unnamed Theme";
+"themes.url_download_hint" = "Get Name, Product ID, and Version from Store URL";
+"themes.usage_unverified" = "Usage status unconfirmed";
+"themes.version_placeholder" = "Version (e.g. V1.30)";
+"themes.version_required" = "Please enter the version (e.g. V1.30) or delivery number.";
+"themes.within_expiry" = "Within Expiry Date";

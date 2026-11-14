@@ -4,7 +4,6 @@ from pathlib import Path
 import re
 import tempfile
 import unittest
-import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 BUNDLE = ROOT / "resources/RUINResources.bundle"
@@ -189,24 +188,45 @@ def collect_references(source_root=ROOT / "src"):
     return references
 
 
-def load_catalog(path):
-    """Read XML .strings without plistlib's silent duplicate-key replacement."""
+def decode_strings_literal(text):
+    """Decode .strings escapes; Apple \\Uhhhh denotes one UTF-16 code unit."""
+    escapes = {'"':'"', "\\":"\\", "n":"\n", "r":"\r", "t":"\t"}
+
+    def replace(match):
+        escape = match[1]
+        if escape.startswith("U") and len(escape) == 5:
+            return chr(int(escape[1:], 16))
+        if escape in escapes:
+            return escapes[escape]
+        raise LocalizationError(f"unsupported .strings escape \\{escape}")
+
+    value = re.sub(r"\\(U[0-9a-fA-F]{4}|.)", replace, text[1:-1], flags=re.S)
     try:
-        root = ET.parse(path).getroot()
-    except ET.ParseError as error:
-        raise LocalizationError(f"{path}: invalid XML: {error}") from error
-    if root.tag != "plist" or len(root) != 1 or root[0].tag != "dict":
-        raise LocalizationError(f"{path}: expected one plist dictionary")
-    entries, catalog = list(root[0]), {}
-    if len(entries) % 2:
-        raise LocalizationError(f"{path}: incomplete dictionary pair")
-    for key, value in zip(entries[::2], entries[1::2]):
-        if key.tag != "key" or value.tag != "string" or len(key) or len(value):
-            raise LocalizationError(f"{path}: expected string key/value pairs")
-        name = key.text or ""
-        if name in catalog:
-            raise LocalizationError(f"{path}: duplicate XML key {name!r}")
-        catalog[name] = value.text or ""
+        return value.encode("utf-16-le", errors="surrogatepass").decode("utf-16-le")
+    except UnicodeDecodeError as error:
+        raise LocalizationError("unpaired UTF-16 .strings escape") from error
+
+
+def load_catalog(path):
+    """Read UTF-8 quoted key = value; pairs and comments, rejecting duplicates."""
+    try:
+        source = Path(path).read_text(encoding="utf-8-sig")
+    except UnicodeDecodeError as error:
+        raise LocalizationError(f"{path}: catalog is not valid UTF-8") from error
+    tokens, catalog = tokenize(source), {}
+    for i in range(0, len(tokens), 4):
+        pair = [token.text for token in tokens[i:i+4]]
+        line = source.count("\n", 0, tokens[i].start) + 1
+        if (len(pair) != 4 or pair[1] != "=" or pair[3] != ";" or
+                any(not re.fullmatch(r'"(?:\\.|[^"\\])*"', value, re.S) for value in pair[::2])):
+            raise LocalizationError(f"{path}:{line}: expected quoted key = quoted value; pair")
+        try:
+            key, value = (decode_strings_literal(value) for value in pair[::2])
+        except LocalizationError as error:
+            raise LocalizationError(f"{path}:{line}: {error}") from error
+        if key in catalog:
+            raise LocalizationError(f"{path}:{line}: duplicate .strings key {key!r}")
+        catalog[key] = value
     return catalog
 
 
@@ -456,15 +476,57 @@ class LocalizationTests(unittest.TestCase):
                 validate_catalogs(self.catalogs({key:"Readers"}),{key})
         validate_catalogs(self.catalogs({"read_control.reader_2.title":"Readers"}),{"read_control.reader_2.title"})
 
-    def test_duplicate_xml_keys_and_invalid_value_type(self):
+    def test_strings_pairs_comments_and_utf8(self):
+        source = r'''
+            // "ignored.comment" = "No";
+            /* "ignored.block" = "No"; */
+            "reader.title" /* between tokens */ = "既読者一覧 한국어 简体 繁體 😀";
+            "reader.escaped" = "line\nnext\ttab\rquote\"slash\\ // literal /* literal */";
+        '''
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory,"Localizable.strings")
-            path.write_text('<plist version="1.0"><dict><key>reader.title</key><string>A</string>'
-                            '<key>reader.title</key><string>B</string></dict></plist>')
-            with self.assertRaisesRegex(LocalizationError,"duplicate XML key"):
-                load_catalog(path)
-            path.write_text('<plist><dict><key>reader.title</key><integer>1</integer></dict></plist>')
-            with self.assertRaisesRegex(LocalizationError,"string key/value"):
+            path.write_text("\ufeff"+source, encoding="utf-8")
+            self.assertEqual(load_catalog(path), {
+                "reader.title":"既読者一覧 한국어 简体 繁體 😀",
+                "reader.escaped":'line\nnext\ttab\rquote"slash\\ // literal /* literal */',
+            })
+
+    def test_strings_unicode_escapes_are_utf16_units(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory,"Localizable.strings")
+            path.write_text(r'"reader.title" = "\U65e5\U672c \UD83D\UDE00 café \\U0041";'
+                            r'"reader.units" = "\U0001F600";', encoding="utf-8")
+            self.assertEqual(load_catalog(path), {
+                "reader.title":"日本 😀 café \\U0041",
+                "reader.units":"\x01F600",  # Four digits consumed, not C's eight-digit scalar.
+            })
+            self.assertEqual(decode_literal(r'"\U0001F600"'), "😀")
+
+    def test_duplicate_strings_keys(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory,"Localizable.strings")
+            for second in ('"reader.title"', r'"reader.\U0074itle"'):
+                path.write_text('"reader.title" = "A"; '+second+' = "B";', encoding="utf-8")
+                with self.subTest(second=second), self.assertRaisesRegex(LocalizationError,"duplicate .strings key"):
+                    load_catalog(path)
+
+    def test_malformed_strings_and_non_string_values(self):
+        malformed = (
+            '"reader.title" = "A"', '"reader.title" "A";', '"reader.title" = ;',
+            '"reader.title" = 1;', 'reader.title = "A";', '{"reader.title" = "A";}',
+            '"reader.title" = ("A");', '"reader.title" = "A;',
+            '"reader.title" = "A"; /* unclosed',
+            r'"reader.title" = "\x41";', r'"reader.title" = "\U12g4";',
+            r'"reader.title" = "\UD83D";', r'"reader.title" = "\UDE00";',
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory,"Localizable.strings")
+            for source in malformed:
+                path.write_text(source, encoding="utf-8")
+                with self.subTest(source=source), self.assertRaises(LocalizationError):
+                    load_catalog(path)
+            path.write_bytes(b'"reader.title" = "\xff";')
+            with self.assertRaisesRegex(LocalizationError,"not valid UTF-8"):
                 load_catalog(path)
 
     def test_english_format_contract_and_reordering(self):
