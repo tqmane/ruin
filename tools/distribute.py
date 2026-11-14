@@ -27,7 +27,7 @@ APPLE_DEPENDENCIES = {
     f"/System/Library/Frameworks/{name}.framework/{name}"
     for name in ("Foundation", "UIKit", "AVFoundation", "QuickLook", "CoreText", "WebKit", "CoreGraphics",
                  "Security", "CoreData", "ImageIO", "UniformTypeIdentifiers",
-                 "UserNotifications", "CoreFoundation")
+                 "UserNotifications", "CoreFoundation", "Intents")
 } | {
     "/usr/lib/libsqlite3.dylib", "/usr/lib/libz.1.dylib",
     "/usr/lib/libSystem.B.dylib", "/usr/lib/libobjc.A.dylib",

@@ -559,7 +559,10 @@ void RUINInstallThemeStoreWeb(void)
     static dispatch_once_t observerOnce;
     dispatch_once(&observerOnce, ^{
         gRUINThemeStoreWebDefaultsObserver = [NSNotificationCenter.defaultCenter
-            addObserverForName:NSUserDefaultsDidChangeNotification object:nil queue:NSOperationQueue.mainQueue
+            // Defaults notifications can arrive while LINE holds its impression
+            // monitor. Never make that posting thread wait for the main queue;
+            // the refresh helper forwards UI work asynchronously itself.
+            addObserverForName:NSUserDefaultsDidChangeNotification object:nil queue:nil
             usingBlock:^(__unused NSNotification *notification) { RUINThemeStoreWebRefreshTrackedControllers(); }];
     });
     if (![NSThread isMainThread]) {
