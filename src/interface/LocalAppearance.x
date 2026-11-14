@@ -183,7 +183,7 @@ static void RUINShowLocalIconError(UIViewController *owner, NSString *message)
     if (!owner || !owner.isViewLoaded || owner.presentedViewController) return;
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:nil
         message:message preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"OK") style:UIAlertActionStyleDefault handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"common.ok") style:UIAlertActionStyleDefault handler:nil]];
     [owner presentViewController:alert animated:YES completion:nil];
 }
 
@@ -266,7 +266,7 @@ static BOOL RUINApplyLocalIconName(NSString *modelName, UIViewController *owner,
 {
     if (!UIApplication.sharedApplication.supportsAlternateIcons) {
         atomic_fetch_add_explicit(&gApplyFailures, 1, memory_order_relaxed);
-        RUINShowLocalIconError(owner, RUINLocalizedString(@"アプリアイコンを変更できませんでした。"));
+        RUINShowLocalIconError(owner, RUINLocalizedString(@"appearance.icon_change_failed"));
         return YES;
     }
 
@@ -289,7 +289,7 @@ static BOOL RUINApplyLocalIconName(NSString *modelName, UIViewController *owner,
             } else {
                 atomic_fetch_add_explicit(&gApplyFailures, 1, memory_order_relaxed);
                 if (weakController)
-                    RUINShowLocalIconError(weakController, RUINLocalizedString(@"アプリアイコンを変更できませんでした。"));
+                    RUINShowLocalIconError(weakController, RUINLocalizedString(@"appearance.icon_change_failed"));
             }
         });
     }];

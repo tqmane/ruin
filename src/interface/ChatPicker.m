@@ -96,11 +96,11 @@ static NSURL *PickerAvatarURL(NSDictionary *item) {
 @implementation RUINChatPicker
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = RUINLocalizedString(self.names ? @"トークの表示名" : @"通常通り既読をつけるトーク");
+    self.title = RUINLocalizedString(self.names ? @"settings.chat_names" : @"settings.read_exceptions");
     self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeNever;
     UISearchController *search = [[UISearchController alloc] initWithSearchResultsController:nil];
     search.searchResultsUpdater = self; search.obscuresBackgroundDuringPresentation = NO;
-    search.searchBar.placeholder = RUINLocalizedString(@"名前やトーク名で検索");
+    search.searchBar.placeholder = RUINLocalizedString(@"chat_picker.search_placeholder");
     self.navigationItem.searchController = search; self.navigationItem.hidesSearchBarWhenScrolling = NO;
     self.definesPresentationContext = YES;
     self.images = [NSCache new]; self.images.countLimit = 200;
@@ -129,7 +129,7 @@ static NSURL *PickerAvatarURL(NSDictionary *item) {
     NSString *alias = self.aliases[row[@"aliasKey"] ?: row[@"key"]];
     if (alias.length) return alias;
     NSString *name = row[@"name"];
-    return name.length ? name : [NSString stringWithFormat:RUINLocalizedString(@"一覧にないトーク（%lu）"), (unsigned long)[row[@"unknownIndex"] unsignedIntegerValue]];
+    return name.length ? name : [NSString stringWithFormat:RUINLocalizedString(@"chat_picker.unlisted_count"), (unsigned long)[row[@"unknownIndex"] unsignedIntegerValue]];
 }
 - (void)applySearch {
     NSString *query = self.navigationItem.searchController.searchBar.text ?: @"";
@@ -137,20 +137,20 @@ static NSURL *PickerAvatarURL(NSDictionary *item) {
     for (NSDictionary *row in self.rows)
         if (PickerContains([self nameForRow:row], query) || PickerContains(row[@"name"] ?: @"", query)) [rows addObject:row];
     self.visible = rows;
-    self.navigationItem.prompt = self.names ? nil : [NSString stringWithFormat:RUINLocalizedString(@"選択中：%lu件"), (unsigned long)self.selected.count];
+    self.navigationItem.prompt = self.names ? nil : [NSString stringWithFormat:RUINLocalizedString(@"chat_picker.selected_count"), (unsigned long)self.selected.count];
     UILabel *empty = [UILabel new]; empty.numberOfLines = 0; empty.textAlignment = NSTextAlignmentCenter;
     empty.textColor = UIColor.secondaryLabelColor; empty.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
-    empty.text = self.loading ? RUINLocalizedString(@"トークを読み込み中…") :
-        self.catalog.count ? RUINLocalizedString(@"トークが見つかりません") :
-        RUINLocalizedString(@"トーク一覧を一度開いてから、もう一度お試しください。");
+    empty.text = self.loading ? RUINLocalizedString(@"chat_picker.loading") :
+        self.catalog.count ? RUINLocalizedString(@"chat_picker.empty") :
+        RUINLocalizedString(@"chat_picker.open_list_first");
     self.tableView.backgroundView = rows.count ? nil : empty;
     [self.tableView reloadData];
 }
 - (void)updateSearchResultsForSearchController:(__unused UISearchController *)search { [self applySearch]; }
 - (NSInteger)tableView:(__unused UITableView *)tableView numberOfRowsInSection:(__unused NSInteger)section { return self.visible.count; }
 - (NSString *)tableView:(__unused UITableView *)tableView titleForFooterInSection:(__unused NSInteger)section {
-    return self.names ? RUINLocalizedString(@"この端末での表示名だけを変更します。相手には反映されません。一覧に反映されない場合はLINEを再起動してください。") :
-        RUINLocalizedString(@"名前とアイコンから、通常通り既読をつけるトークを選べます。変更はすぐに反映されます。");
+    return self.names ? RUINLocalizedString(@"settings.chat_names_footer") :
+        RUINLocalizedString(@"chat_picker.read_exceptions_help");
 }
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)index {
     UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"chat"];
@@ -161,10 +161,10 @@ static NSURL *PickerAvatarURL(NSDictionary *item) {
     content.textProperties.numberOfLines = 2;
     NSString *native = row[@"name"];
     if (self.names && native.length && ![native isEqual:content.text])
-        content.secondaryText = [NSString stringWithFormat:RUINLocalizedString(@"元の名前：%@"), native];
-    else if ([row[@"kind"] isEqual:@"group"]) content.secondaryText = RUINLocalizedString(@"グループトーク");
-    else if ([row[@"kind"] isEqual:@"square"]) content.secondaryText = RUINLocalizedString(@"オープンチャット");
-    else if ([row[@"kind"] isEqual:@"oneOnOne"]) content.secondaryText = RUINLocalizedString(@"1対1トーク");
+        content.secondaryText = [NSString stringWithFormat:RUINLocalizedString(@"names.original_name"), native];
+    else if ([row[@"kind"] isEqual:@"group"]) content.secondaryText = RUINLocalizedString(@"chat_picker.group_chat");
+    else if ([row[@"kind"] isEqual:@"square"]) content.secondaryText = RUINLocalizedString(@"chat_picker.open_chat");
+    else if ([row[@"kind"] isEqual:@"oneOnOne"]) content.secondaryText = RUINLocalizedString(@"chat_picker.direct_chat");
     NSURL *url = PickerAvatarURL(row);
     NSString *account = [self.account copy];
     NSString *requestKey = PickerAvatarRequestKey(account, url);
@@ -204,8 +204,8 @@ static NSURL *PickerAvatarURL(NSDictionary *item) {
 - (BOOL)accountIsCurrent {
     if (self.account.length && [self.account isEqual:RUINChatCatalogAccount()]) return YES;
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"RUIN"
-        message:RUINLocalizedString(@"アカウントが変わりました。トーク一覧を開き直してください。") preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"確認") style:UIAlertActionStyleDefault handler:nil]];
+        message:RUINLocalizedString(@"chat_picker.account_changed") preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"common.confirm") style:UIAlertActionStyleDefault handler:nil]];
     [self presentViewController:alert animated:YES completion:nil];
     return NO;
 }
@@ -223,9 +223,9 @@ static NSURL *PickerAvatarURL(NSDictionary *item) {
         return;
     }
     UIAlertController *prompt = [UIAlertController alertControllerWithTitle:[self nameForRow:row]
-        message:RUINLocalizedString(@"この端末での表示名だけを変更します。相手には反映されません。一覧に反映されない場合はLINEを再起動してください。") preferredStyle:UIAlertControllerStyleAlert];
+        message:RUINLocalizedString(@"settings.chat_names_footer") preferredStyle:UIAlertControllerStyleAlert];
     [prompt addTextFieldWithConfigurationHandler:^(UITextField *field) {
-        field.placeholder = RUINLocalizedString(@"この端末での表示名");
+        field.placeholder = RUINLocalizedString(@"names.local_display_name");
         field.text = [self.aliases[key] length] ? self.aliases[key] : row[@"name"];
     }];
     __weak typeof(self) weak = self; __weak UIAlertController *weakPrompt = prompt;
@@ -235,11 +235,11 @@ static NSURL *PickerAvatarURL(NSDictionary *item) {
         owner.aliases = PickerSavedAliases([NSUserDefaults.standardUserDefaults objectForKey:RUINLocalNamesByIdentityDefaultsKey]);
         owner.rows = PickerRows(owner.catalog, YES, owner.selected, owner.aliases); [owner applySearch];
     };
-    [prompt addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"キャンセル") style:UIAlertActionStyleCancel handler:nil]];
-    [prompt addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"保存") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+    [prompt addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"common.cancel") style:UIAlertActionStyleCancel handler:nil]];
+    [prompt addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"common.save") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
         save([weakPrompt.textFields.firstObject.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet] ?: @"");
     }]];
-    [prompt addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"元の名前に戻す") style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) { save(@""); }]];
+    [prompt addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"names.reset_action") style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) { save(@""); }]];
     [self presentViewController:prompt animated:YES completion:nil];
 }
 @end

@@ -2,614 +2,527 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>
-一覧の更新に失敗しました。前回取得した内容を表示しています。</key>
-	<string>
-목록 업데이트에 실패했습니다. 이전에 가져온 내용을 표시하고 있습니다.</string>
-	<key>
-取消済</key>
-	<string>
-취소됨</string>
-	<key>%@を非表示</key>
-	<string>%@ 숨기기</string>
-	<key>%@：%@</key>
-	<string>%@: %@</string>
-	<key>%ld人</key>
-	<string>%ld명</string>
-	<key>%ld人のグループに送信しますか？</key>
-	<string>%ld명의 그룹에 전송하시겠습니까?</string>
-	<key>%lu件</key>
-	<string>%lu건</string>
-	<key>%lu件のトークを変更中</key>
-	<string>%lu개 대화방 변경됨</string>
-	<key>0以上の人数を入力してください。</key>
-	<string>0명 이상의 인원수를 입력해 주세요.</string>
-	<key>1対1のトークで、既読非表示・トーク別の例外・返信時の切替を実機で確認済みです。グループやオープンチャット、手動で既読にする操作は検証中です。</key>
-	<string>1:1 대화에서 읽음 확인 억제, 대화별 예외, 답장 시 전환 기능을 실제 기기에서 확인했습니다. 그룹, 오픈채팅 및 수동 읽음 처리는 검증 중입니다.</string>
-	<key>1対1トーク</key>
+	<key>appearance.icon_change_failed</key>
+	<string>앱 아이콘을 변경하지 못했습니다.</string>
+	<key>chat_picker.account_changed</key>
+	<string>계정이 변경되었습니다. 대화방 목록을 다시 열어 주세요.</string>
+	<key>chat_picker.direct_chat</key>
 	<string>1:1 대화</string>
-	<key>1対1トークでの受信済みテキスト保持と「取消済」表示を確認済みです。添付ファイル・グループ・オープンチャットでの保持は検証中です。既読者一覧には、この端末で記録した名前と日時を表示します。</key>
-	<string>1:1 대화에서 수신된 텍스트 보존 및 '취소됨' 표시를 확인했습니다. 첨부 파일, 그룹, 오픈채팅 보존은 검증 중입니다. 읽은 사람 목록에는 이 기기에서 기록한 이름과 일시가 표시됩니다.</string>
-	<key>1対1・グループトークの新着のみ通知します。アプリ停止中の即時受信には対応していません。</key>
-	<string>1:1 및 그룹 대화의 새 메시지만 알립니다. 앱이 종료된 상태에서의 즉시 수신은 지원하지 않습니다.</string>
-	<key>24h送信取消・ミュートメッセージ</key>
-	<string>24시간 보내기 취소 · 무음 메시지</string>
-	<key>Agent-iバーを非表示</key>
-	<string>Agent-i 바 숨기기</string>
-	<key>GIFでコピー</key>
-	<string>GIF로 복사</string>
-	<key>GIFをコピーできませんでした</key>
-	<string>GIF를 복사하지 못했습니다</string>
-	<key>ID別のローカル表示名</key>
-	<string>ID별 로컬 표시 이름</string>
-	<key>ID別の表示名を追加</key>
-	<string>ID별 표시 이름 추가</string>
-	<key>LINE %@（ビルド %@）は完全には検証されていないため、一部の機能を利用できない可能性があります。</key>
-	<string>LINE %@ (빌드 %@)은 완전히 검증되지 않아 일부 기능을 사용하지 못할 수 있습니다.</string>
-	<key>LINE STOREの着せかえURLを入力してください。</key>
-	<string>LINE STORE 테마 URL을 입력해 주세요.</string>
-	<key>LINEが保存している記録です。現在の適用状態とファイルの存在は確認していません。</key>
-	<string>LINE에 저장된 기록입니다. 현재 적용 상태 및 파일 존재 여부는 확인하지 않았습니다.</string>
-	<key>LINEにプロフィール表示を要求しました。見つからない場合や表示できない場合は、MIDと通信状態を確認してください。</key>
-	<string>LINE에 프로필 표시를 요청했습니다. 찾을 수 없거나 표시되지 않는 경우 MID와 네트워크 상태를 확인해 주세요.</string>
-	<key>LINEに着せかえショップの表示を要求しましたが、受け付けられませんでした。</key>
-	<string>LINE에 테마숍 표시를 요청했으나 처리되지 않았습니다.</string>
-	<key>LINEのタブを検出した後に選択できます。</key>
-	<string>LINE 탭이 감지된 후 선택할 수 있습니다.</string>
-	<key>LINEのマイ着せかえに追加すると、選択して適用できます。</key>
-	<string>LINE 마이 테마에 추가하면 선택하여 적용할 수 있습니다.</string>
-	<key>LINEの着せかえショップを開く</key>
-	<string>LINE 테마숍 열기</string>
-	<key>LINEの着せかえ記録を取得できません</key>
-	<string>LINE 테마 기록을 가져올 수 없습니다</string>
-	<key>LINEの着せかえ記録（%lu）</key>
-	<string>LINE 테마 기록 (%lu)</string>
-	<key>LINEを一度完全に終了して開き直してください。次回起動時から選んだログイン方法になります。</key>
-	<string>LINE을 완전히 종료한 후 다시 열어주세요. 다음 실행 시부터 선택한 로그인 방식이 적용됩니다.</string>
-	<key>LINE機能（開発中）</key>
-	<string>LINE 기능 (개발 중)</string>
-	<key>MIDでプロフィールを開く</key>
-	<string>MID로 프로필 열기</string>
-	<key>MIDをコピー</key>
-	<string>MID 복사</string>
-	<key>MID検索</key>
-	<string>MID 검색</string>
-	<key>MID（u＋32桁の半角英数字）</key>
-	<string>MID (u + 32자리 영숫자)</string>
-	<key>OK</key>
+	<key>chat_picker.empty</key>
+	<string>대화방을 찾을 수 없습니다</string>
+	<key>chat_picker.group_chat</key>
+	<string>그룹 대화</string>
+	<key>chat_picker.loading</key>
+	<string>대화방 불러오는 중…</string>
+	<key>chat_picker.open_chat</key>
+	<string>오픈채팅</string>
+	<key>chat_picker.open_list_first</key>
+	<string>대화방 목록을 한 번 연 후 다시 시도해 주세요.</string>
+	<key>chat_picker.read_exceptions_help</key>
+	<string>이름과 아이콘을 확인하여 평소처럼 읽음 처리를 보낼 대화방을 선택할 수 있습니다. 변경사항은 즉시 반영됩니다.</string>
+	<key>chat_picker.search_placeholder</key>
+	<string>이름 또는 대화방 이름으로 검색</string>
+	<key>chat_picker.selected_count</key>
+	<string>%lu개 선택됨</string>
+	<key>chat_picker.unlisted_count</key>
+	<string>목록에 없는 대화방 (%lu)</string>
+	<key>common.cancel</key>
+	<string>취소</string>
+	<key>common.close</key>
+	<string>닫기</string>
+	<key>common.confirm</key>
 	<string>확인</string>
-	<key>OTF/TTFファイルを適用します。変更後はトークを開き直すか、アプリを再起動してください。</key>
-	<string>OTF/TTF 파일을 적용합니다. 변경 후에는 대화방을 다시 열거나 앱을 재시작해 주세요.</string>
-	<key>RUIN TEST private-original-sentinel
-取消済</key>
-	<string>RUIN TEST private-original-sentinel
-취소됨</string>
-	<key>RUIN TEST silent original
-取消済</key>
-	<string>RUIN TEST silent original
-취소됨</string>
-	<key>RUINReadUsersForMessage runs only after the user selects 既読者一覧</key>
-	<string>RUINReadUsersForMessage runs only after the user selects 읽은 사람 목록</string>
-	<key>RUINのランタイム、互換性、機能診断のJSON</key>
-	<string>RUIN 런타임, 호환성 및 기능 진단 JSON</string>
-	<key>RUINの設定と診断</key>
-	<string>RUIN 설정 및 진단</string>
-	<key>RUIN設定</key>
-	<string>RUIN 설정</string>
-	<key>chat:MID または squareChat:MID をカンマ区切りで入力します。空欄で全て解除します。</key>
-	<string>chat:MID 또는 squareChat:MID를 쉼표로 구분하여 입력하세요. 비워두면 모두 해제됩니다.</string>
+	<key>common.download</key>
+	<string>다운로드</string>
+	<key>common.end</key>
+	<string>종료</string>
+	<key>common.fetch_failed</key>
+	<string>가져오지 못했습니다</string>
+	<key>common.item_count</key>
+	<string>%lu건</string>
+	<key>common.label_value</key>
+	<string>%@: %@</string>
+	<key>common.member_count</key>
+	<string>%ld명</string>
+	<key>common.name</key>
+	<string>이름</string>
+	<key>common.no_records</key>
+	<string>기록이 없습니다</string>
+	<key>common.not_set</key>
+	<string>미설정</string>
+	<key>common.ok</key>
+	<string>확인</string>
+	<key>common.preview</key>
+	<string>미리보기</string>
+	<key>common.processing</key>
+	<string>처리 중</string>
+	<key>common.refresh</key>
+	<string>새로고침</string>
+	<key>common.save</key>
+	<string>저장</string>
+	<key>common.saved</key>
+	<string>저장 완료</string>
+	<key>common.send</key>
+	<string>전송</string>
+	<key>common.start</key>
+	<string>시작</string>
+	<key>common.this_chat</key>
+	<string>이 대화방</string>
+	<key>common.turn_on</key>
+	<string>켜기</string>
+	<key>common.unverified</key>
+	<string>미확인</string>
+	<key>common.view_reason</key>
+	<string>탭하여 사유 확인</string>
+	<key>compatibility.build_unsupported</key>
+	<string>이 LINE 빌드에서는 기능을 활성화할 수 없습니다.</string>
 	<key>compatibility.partial.continue</key>
 	<string>계속</string>
+	<key>compatibility.partial.message</key>
+	<string>LINE %@ (빌드 %@)은 완전히 검증되지 않아 일부 기능을 사용하지 못할 수 있습니다.</string>
 	<key>compatibility.partial.title</key>
 	<string>호환성 주의</string>
-	<key>iPad扱いでサブ端末ログイン</key>
-	<string>iPad 방식으로 보조 기기 로그인</string>
-	<key>iPad扱いのサブ端末モード</key>
-	<string>iPad 방식 보조 기기 모드</string>
-	<key>media.historyFooter</key>
-	<string>메시지가 보내기 취소되기 전에 이 설정을 켜 두어야 이 기기에 수신된 텍스트와 로컬에 다운로드된 미디어가 안전하게 보존됩니다(1:1 및 그룹 대화에서 검증됨, 오픈채팅 미검증). 보존된 미디어는 대화방에서 일반 탭으로 열 수 있으며, 길게 누르기 메뉴는 보조 기능입니다. 보내기 취소 전에 다운로드되지 않은 원본 파일은 복구할 수 없으며, 저장된 섬네일은 미리보기 전용입니다. 읽은 사람 목록에는 이 기기에 기록된 이름과 일시가 표시되며, 이전에 확인된 읽은 일시가 유지됩니다.</string>
-	<key>media.previewOnly</key>
-	<string>미리보기 전용</string>
-	<key>media.retainedTitle</key>
-	<string>보존된 미디어</string>
-	<key>media.settingFooter</key>
-	<string>메시지가 보내기 취소되기 전에 이 설정을 켜 두어야 합니다. 보내기 취소 시점에 이미 다운로드된 미디어만 보존되며, 다운로드되지 않은 원본 파일은 복구할 수 없습니다. 저장된 섬네일은 미리보기로만 제공됩니다.</string>
-	<key>media.settingTitle</key>
-	<string>보내기 취소된 텍스트 및 미디어 보존</string>
-	<key>menu.retainedMedia</key>
-	<string>저장된 미디어</string>
-	<key>settings.tabs.entryNotReady</key>
-	<string>홈에서 RUIN 톱니바퀴 버튼을 사용할 수 있을 때까지 설정 탭은 계속 표시됩니다. 먼저 홈을 열어 주세요.</string>
-	<key>shops.openRejected</key>
-	<string>LINE에 숍 표시를 요청했으나 처리되지 않았습니다.</string>
-	<key>shops.openUnavailable</key>
-	<string>이 LINE 버전에서는 해당 숍으로 이동할 수 없습니다.</string>
-	<key>「%@」と「%@」を同時に非表示にできません。</key>
-	<string>"%@", "%@" 탭을 동시에 숨길 수 없습니다.</string>
-	<key>「%@」の表示名をこの端末だけ変更します。空欄で解除し、旧表示名ルールもこのIDには適用しません。</key>
-	<string>"%@"의 표시 이름을 이 기기에서만 변경합니다. 비워두면 해제되며, 기존 표시 이름 규칙도 이 ID에는 적용되지 않습니다.</string>
-	<key>「u」に続く32桁の半角数字・a〜f（小文字）を入力してください。</key>
-	<string>"u" 뒤에 32자리 숫자 및 a~f(소문자)를 입력해 주세요.</string>
-	<key>おすすめ欄を非表示</key>
-	<string>추천 항목 숨기기</string>
-	<key>お使いのLINEのバージョンではMID検索を利用できません。</key>
-	<string>현재 사용 중인 LINE 버전에서는 MID 검색을 사용할 수 없습니다.</string>
-	<key>このLINEバージョンでは、この画面からのダウンロードを利用できません。</key>
-	<string>이 LINE 버전에서는 이 화면에서의 다운로드를 사용할 수 없습니다.</string>
-	<key>このLINEバージョンでは着せかえショップへの移動を利用できません。</key>
-	<string>이 LINE 버전에서는 테마숍 이동을 사용할 수 없습니다.</string>
-	<key>このLINEバージョンでは着せかえ一覧を取得できません。</key>
-	<string>이 LINE 버전에서는 테마 목록을 가져올 수 없습니다.</string>
-	<key>このLINEビルドでは機能を有効にできません。</key>
-	<string>이 LINE 빌드에서는 기능을 활성화할 수 없습니다.</string>
-	<key>このトーク</key>
-	<string>이 대화방</string>
-	<key>このトークだけ既読制御を切り替えます</key>
-	<string>이 대화방에 대해서만 읽음 확인 설정을 전환합니다</string>
-	<key>このトークの既読抑制を有効にする</key>
-	<string>이 대화방의 읽음 확인 억제 활성화</string>
-	<key>このトークを既読抑制の例外にする</key>
-	<string>이 대화방을 읽음 확인 억제 예외로 설정</string>
-	<key>このファイルで利用できる共有先が見つかりませんでした。</key>
-	<string>이 파일에 사용할 수 있는 공유 대상을 찾을 수 없습니다.</string>
-	<key>このファイルのプレビューには対応していません。共有メニューからファイルを操作できます。</key>
-	<string>이 파일의 미리보기를 지원하지 않습니다. 공유 메뉴에서 파일을 관리할 수 있습니다.</string>
-	<key>このメッセージまで既読</key>
-	<string>이 메시지까지 읽음</string>
-	<key>この環境ではLINEの着せかえ記録を取得できません。</key>
-	<string>이 환경에서는 LINE 테마 기록을 가져올 수 없습니다.</string>
-	<key>この端末でのトーク名だけを変更します。相手には反映されません。</key>
-	<string>이 기기에서의 대화방 이름만 변경됩니다. 상대방에게는 반영되지 않습니다.</string>
-	<key>この端末での表示名</key>
-	<string>이 기기에서의 표시 이름</string>
-	<key>この端末での表示名だけを変更します。相手には反映されません。一覧に反映されない場合はLINEを再起動してください。</key>
-	<string>이 기기에서의 표시 이름만 변경됩니다. 상대방에게는 반영되지 않습니다. 목록에 반영되지 않는 경우 LINE을 재실행해 주세요.</string>
-	<key>この端末で表示する名前</key>
-	<string>이 기기에 표시할 이름</string>
-	<key>この端末の別名</key>
-	<string>이 기기의 별칭</string>
-	<key>てすたーず</key>
-	<string>테스터즈</string>
-	<key>てすたーず (2)</key>
-	<string>테스터즈 (2)</string>
-	<key>アカウントが変わりました。トーク一覧を開き直してください。</key>
-	<string>계정이 변경되었습니다. 대화방 목록을 다시 열어 주세요.</string>
-	<key>アプリ</key>
-	<string>앱</string>
-	<key>アプリの動作に必要なタブは、常に表示されます。</key>
-	<string>앱 작동에 필요한 탭은 항상 표시됩니다.</string>
-	<key>アプリアイコンを変更できませんでした。</key>
-	<string>앱 아이콘을 변경하지 못했습니다.</string>
-	<key>アプリアイコン等は「ローカルLYP」、24時間までの送信取消とミュート送信は別スイッチで設定します（変更後はLINEを再起動）。ミュート送信は入力確定後、送信ボタンを約2秒長押しします。</key>
-	<string>앱 아이콘 등은 '로컬 LYP', 24시간 보내기 취소 및 무음 메시지는 별도 스위치로 설정합니다(변경 후 LINE 재시작). 무음 메시지 전송은 텍스트 입력 확정 후 전송 버튼을 약 2초간 길게 누릅니다.</string>
-	<key>インターネットに接続されていません。接続を確認して、もう一度お試しください。</key>
-	<string>인터넷에 연결되어 있지 않습니다. 연결 상태를 확인하고 다시 시도해 주세요.</string>
-	<key>ウォレット</key>
-	<string>지갑</string>
-	<key>オンにする</key>
-	<string>켜기</string>
-	<key>オープンチャット</key>
-	<string>오픈채팅</string>
-	<key>カスタムフォント</key>
-	<string>사용자 지정 폰트</string>
-	<key>カメラの確認</key>
-	<string>카메라 확인</string>
-	<key>カメラをオンにしますか？</key>
+	<key>confirm.call_message</key>
+	<string>통화를 시작하시겠습니까?</string>
+	<key>confirm.call_title</key>
+	<string>통화 확인</string>
+	<key>confirm.camera_message</key>
 	<string>카메라를 켜시겠습니까?</string>
-	<key>カメラをオンにする前に確認</key>
-	<string>카메라를 켜기 전에 확인</string>
-	<key>キャッシュの名前</key>
-	<string>캐시 이름</string>
-	<key>キャンセル</key>
-	<string>취소</string>
-	<key>グループへの送信確認</key>
-	<string>그룹 전송 확인</string>
-	<key>グループトーク</key>
-	<string>그룹 대화</string>
-	<key>グループ人数を確認できません。送信しますか？</key>
+	<key>confirm.camera_title</key>
+	<string>카메라 확인</string>
+	<key>confirm.disconnect_message</key>
+	<string>통화를 종료하시겠습니까?</string>
+	<key>confirm.group_send_message</key>
+	<string>%ld명의 그룹에 전송하시겠습니까?</string>
+	<key>confirm.invalid_member_count</key>
+	<string>0명 이상의 인원수를 입력해 주세요.</string>
+	<key>confirm.minimum_members_hint</key>
+	<string>자신을 포함한 그룹 인원수입니다. 0을 입력하면 최소 인원 제한 없이 모든 그룹에서 확인합니다.</string>
+	<key>confirm.send_title</key>
+	<string>전송 확인</string>
+	<key>confirm.unknown_member_count</key>
 	<string>그룹 인원수를 확인할 수 없습니다. 전송하시겠습니까?</string>
-	<key>サブ端末では、現在のメイン端末でQRコードを読み取り、ログインを承認します。</key>
-	<string>보조 기기에서는 현재 메인 기기로 QR 코드를 스캔하여 로그인을 승인합니다.</string>
-	<key>サブ端末ログイン</key>
-	<string>보조 기기 로그인</string>
-	<key>ショッピング</key>
-	<string>쇼핑</string>
-	<key>ショップ</key>
-	<string>숍</string>
-	<key>スタンプをGIFでコピー</key>
-	<string>스티커를 GIF로 복사</string>
-	<key>スタンプショップ</key>
-	<string>스티커숍</string>
-	<key>スタンプショップを開けませんでした</key>
-	<string>스티커숍을 열 수 없습니다</string>
-	<key>ストアURLからダウンロード</key>
-	<string>스토어 URL에서 다운로드</string>
-	<key>ストアURLから名前・商品ID・バージョンを取得</key>
-	<string>스토어 URL에서 이름·상품 ID·버전 가져오기</string>
-	<key>ストアURLから着せかえ情報を取得してダウンロードできます。名前・商品ID・バージョンの手入力も可能です。</key>
-	<string>스토어 URL에서 테마 정보를 가져와 다운로드할 수 있습니다. 이름, 상품 ID, 버전을 직접 입력할 수도 있습니다.</string>
-	<key>ストア情報を取得できませんでした。URLと通信状況を確認してください。</key>
-	<string>스토어 정보를 가져오지 못했습니다. URL과 네트워크 상태를 확인해 주세요.</string>
-	<key>ストア情報を取得中…</key>
-	<string>스토어 정보 가져오는 중…</string>
-	<key>タップして理由を確認</key>
-	<string>탭하여 사유 확인</string>
-	<key>タブの管理</key>
-	<string>탭 관리</string>
-	<key>ダウンロード</key>
-	<string>다운로드</string>
-	<key>ダウンロードした着せかえは、マイ着せかえを開くと一覧に表示されます。選択して適用できます。</key>
-	<string>다운로드한 테마는 '마이 테마'를 열면 목록에 표시됩니다. 선택하여 적용할 수 있습니다.</string>
-	<key>ダウンロードを完了できませんでした</key>
-	<string>다운로드를 완료할 수 없습니다</string>
-	<key>ダウンロードを開始できませんでした</key>
-	<string>다운로드를 시작할 수 없습니다</string>
-	<key>ダウンロード・ファイル確認中…</key>
-	<string>다운로드 및 파일 확인 중…</string>
-	<key>ダウンロード設定と現在の処理状況を確認してください。</key>
-	<string>다운로드 설정과 현재 처리 상태를 확인해 주세요.</string>
-	<key>データ保護のため処理を開始できません</key>
-	<string>데이터 보호를 위해 시작할 수 없습니다</string>
-	<key>トーク</key>
-	<string>대화</string>
-	<key>トークが見つかりません</key>
-	<string>대화방을 찾을 수 없습니다</string>
-	<key>トークの表示名</key>
-	<string>대화방 표시 이름</string>
-	<key>トークの識別IDを確認してください。</key>
-	<string>대화 식별 ID를 확인해 주세요.</string>
-	<key>トークを読み込み中…</key>
-	<string>대화방 불러오는 중…</string>
-	<key>トーク一覧を一度開いてから、もう一度お試しください。</key>
-	<string>대화방 목록을 한 번 연 후 다시 시도해 주세요.</string>
-	<key>ニュース</key>
-	<string>뉴스</string>
-	<key>バージョン</key>
-	<string>버전</string>
-	<key>バージョン（例：V1.30）</key>
-	<string>버전(예: V1.30)</string>
-	<key>バージョン（例：V1.30）または配信番号を入力してください。</key>
-	<string>버전(예: V1.30) 또는 배포 번호를 입력해 주세요.</string>
-	<key>ファイルが見つからないか、ファイルの構造確認に失敗しました。一覧を更新してください。</key>
-	<string>파일을 찾을 수 없거나 파일 구조 확인에 실패했습니다. 목록을 새로고침해 주세요.</string>
-	<key>ファイルを保存しました</key>
-	<string>파일을 저장했습니다</string>
-	<key>ファイルを保存しました。マイ着せかえを開いて、着せかえを選択して適用できます。</key>
-	<string>파일을 저장했습니다. '마이 테마'를 열어 테마를 선택하고 적용할 수 있습니다.</string>
-	<key>ファイルを取得して保存します。LINEへの追加・適用はこの操作では行いません。</key>
-	<string>파일을 가져와 저장합니다. 이 작업으로는 LINE에 추가하거나 적용하지 않습니다.</string>
-	<key>ファイルを確認中…</key>
-	<string>파일 확인 중…</string>
-	<key>ファイルを開けませんでした</key>
-	<string>파일을 열 수 없습니다</string>
-	<key>フォントを読み込めませんでした。OTF/TTFファイルを確認してください。</key>
-	<string>폰트를 불러오지 못했습니다. OTF/TTF 파일을 확인해 주세요.</string>
-	<key>フォントを適用しました。トークを開き直してください。</key>
-	<string>폰트를 적용했습니다. 대화방을 다시 열어 주세요.</string>
-	<key>フォントを選択</key>
-	<string>폰트 선택</string>
-	<key>プレビュー</key>
-	<string>미리보기</string>
-	<key>プレビューを表示できませんでした</key>
-	<string>미리보기를 표시할 수 없습니다</string>
-	<key>プロフィールを表示</key>
-	<string>프로필 보기</string>
-	<key>プロフィールを表示します</key>
-	<string>프로필을 표시합니다</string>
-	<key>プロフィールを開けませんでした</key>
-	<string>프로필을 열 수 없습니다</string>
-	<key>プロフィールを開けませんでした。MIDと通信状態を確認し、もう一度お試しください。</key>
-	<string>프로필을 열 수 없습니다. MID와 네트워크 상태를 확인하고 다시 시도해 주세요.</string>
-	<key>ホーム</key>
-	<string>홈</string>
-	<key>マイ着せかえ</key>
-	<string>마이 테마</string>
-	<key>マイ着せかえに追加</key>
-	<string>마이 테마에 추가</string>
-	<key>マイ着せかえを開く</key>
-	<string>마이 테마 열기</string>
-	<key>マイ着せかえを開けませんでした</key>
-	<string>마이 테마를 열 수 없습니다</string>
-	<key>ミュート送信と送信取消期限はアプリ再起動後に反映されます。アプリアイコンはLINE設定から変更できます。</key>
-	<string>뮤트 메시지와 메시지 전송 취소 기한은 앱 재실행 후 반영됩니다. 앱 아이콘은 LINE 설정에서 변경할 수 있습니다.</string>
-	<key>ユーザー・グループ・オープンチャットの識別IDで照合します。表示名を空にすると解除します。一覧への反映にはアプリの再起動が必要です。</key>
-	<string>사용자·그룹·오픈채팅 식별 ID로 대조합니다. 표시 이름을 비우면 해제됩니다. 목록에 반영하려면 앱을 재실행해야 합니다.</string>
-	<key>ユーザー検索</key>
-	<string>사용자 검색</string>
-	<key>ランタイム・機能診断</key>
-	<string>런타임·기능 진단</string>
-	<key>ルールはありません（＋で追加）</key>
-	<string>규칙이 없습니다 (+로 추가)</string>
-	<key>ログイン方法</key>
-	<string>로그인 방법</string>
-	<key>ログイン方法を切り替えました</key>
-	<string>로그인 방법을 전환했습니다</string>
-	<key>ローカルLYP機能</key>
-	<string>로컬 LYP 기능</string>
-	<key>ローカル表示名</key>
-	<string>로컬 표시 이름</string>
-	<key>ローカル表示名を設定</key>
-	<string>로컬 표시 이름 설정</string>
-	<key>ローカル設定・診断</key>
-	<string>로컬 설정·진단</string>
-	<key>一覧にないトーク（%lu）</key>
-	<string>목록에 없는 대화방 (%lu)</string>
-	<key>一覧の更新に失敗しました。前回取得した内容を表示しています。</key>
-	<string>목록을 업데이트하지 못했습니다. 이전에 가져온 내용을 표시합니다.</string>
-	<key>一覧を取得できませんでした</key>
-	<string>목록을 가져오지 못했습니다</string>
-	<key>一覧を更新できませんでした</key>
-	<string>목록을 새로고침하지 못했습니다</string>
-	<key>一覧を読み込み中…</key>
-	<string>목록을 불러오는 중…</string>
-	<key>不明なエラー</key>
-	<string>알 수 없는 오류</string>
-	<key>保存</key>
-	<string>저장</string>
-	<key>保存完了</key>
-	<string>저장 완료</string>
-	<key>保存済みファイルの場所を確認できませんでした。</key>
-	<string>저장된 파일의 위치를 확인할 수 없습니다.</string>
-	<key>保存済みファイルはありません</key>
-	<string>저장된 파일이 없습니다</string>
-	<key>保存済みファイル（%lu）</key>
-	<string>저장된 파일 (%lu)</string>
-	<key>保有</key>
-	<string>보유 중</string>
-	<key>元の名前に戻す</key>
-	<string>원래 이름으로 복원</string>
-	<key>元の名前：%@</key>
-	<string>원래 이름: %@</string>
-	<key>全体の既読抑制はオフです。例外設定は保存されます</key>
-	<string>전체 읽음 억제는 꺼져 있습니다. 예외 설정은 저장됩니다</string>
-	<key>全機能の対応表</key>
+	<key>confirm.unknown_recipient</key>
+	<string>전송 대상 유형을 확인할 수 없습니다. 전송하시겠습니까?</string>
+	<key>diagnostics.export_description</key>
+	<string>RUIN 런타임, 호환성 및 기능 진단 JSON</string>
+	<key>diagnostics.feature_matrix</key>
 	<string>전체 기능 호환표</string>
-	<key>共有メニューを表示できませんでした</key>
-	<string>공유 메뉴를 표시할 수 없습니다</string>
-	<key>共有・ほかのアプリで開く</key>
-	<string>공유·다른 앱으로 열기</string>
-	<key>処理を完了できませんでした。</key>
+	<key>diagnostics.json_failed</key>
+	<string>진단을 JSON으로 변환하지 못했습니다: %@</string>
+	<key>diagnostics.runtime_title</key>
+	<string>런타임·기능 진단</string>
+	<key>errors.cancelled</key>
+	<string>통신이 중단되었습니다.</string>
+	<key>errors.connection_lost</key>
+	<string>통신 연결이 끊어졌습니다. 네트워크 연결을 확인하고 다시 시도해 주세요.</string>
+	<key>errors.offline</key>
+	<string>인터넷에 연결되어 있지 않습니다. 연결 상태를 확인하고 다시 시도해 주세요.</string>
+	<key>errors.operation_failed</key>
 	<string>처리를 완료하지 못했습니다.</string>
-	<key>処理中</key>
-	<string>처리 중</string>
-	<key>利用期限内</key>
-	<string>유효 기간 내</string>
-	<key>利用期限切れの記録</key>
-	<string>만료된 기록</string>
-	<key>利用状況は未確認</key>
-	<string>이용 현황 미확인</string>
-	<key>取得できませんでした</key>
-	<string>가져오지 못했습니다</string>
-	<key>取消済</key>
+	<key>errors.timeout</key>
+	<string>통신 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요.</string>
+	<key>errors.unknown</key>
+	<string>알 수 없는 오류</string>
+	<key>font.applied</key>
+	<string>폰트를 적용했습니다. 대화방을 다시 열어 주세요.</string>
+	<key>font.available_by_default</key>
+	<string>기본으로 사용 가능</string>
+	<key>font.default</key>
+	<string>기본 글꼴</string>
+	<key>font.help</key>
+	<string>OTF/TTF 파일을 적용합니다. 변경 후에는 대화방을 다시 열거나 앱을 재시작해 주세요.</string>
+	<key>font.load_failed</key>
+	<string>폰트를 불러오지 못했습니다. OTF/TTF 파일을 확인해 주세요.</string>
+	<key>font.reset</key>
+	<string>기본값으로 복원</string>
+	<key>font.reset_done</key>
+	<string>기본 글꼴로 복원했습니다. 대화방을 다시 열어주세요.</string>
+	<key>font.select</key>
+	<string>폰트 선택</string>
+	<key>font.title</key>
+	<string>사용자 지정 폰트</string>
+	<key>login.data_protection_message</key>
+	<string>기존 대화 기록과 키를 보호하기 위해 작업을 시작할 수 없습니다. 서명 및 저장소 진단 상태를 확인해 주세요.</string>
+	<key>login.data_protection_title</key>
+	<string>데이터 보호를 위해 시작할 수 없습니다</string>
+	<key>login.method_changed</key>
+	<string>로그인 방법을 전환했습니다</string>
+	<key>login.method_title</key>
+	<string>로그인 방법</string>
+	<key>login.primary_action</key>
+	<string>일반 iPhone 로그인</string>
+	<key>login.primary_mode</key>
+	<string>일반 iPhone 모드</string>
+	<key>login.restart_message</key>
+	<string>LINE을 완전히 종료한 후 다시 열어주세요. 다음 실행 시부터 선택한 로그인 방식이 적용됩니다.</string>
+	<key>login.secondary_action</key>
+	<string>iPad 방식으로 보조 기기 로그인</string>
+	<key>login.secondary_help</key>
+	<string>보조 기기에서는 현재 메인 기기로 QR 코드를 스캔하여 로그인을 승인합니다.</string>
+	<key>login.secondary_mode</key>
+	<string>iPad 방식 보조 기기 모드</string>
+	<key>media.copy_gif_failed</key>
+	<string>GIF를 복사하지 못했습니다</string>
+	<key>media.history_footer</key>
+	<string>메시지가 보내기 취소되기 전에 이 설정을 켜 두어야 이 기기에 수신된 텍스트와 로컬에 다운로드된 미디어가 안전하게 보존됩니다(1:1 및 그룹 대화에서 검증됨, 오픈채팅 미검증). 보존된 미디어는 대화방에서 일반 탭으로 열 수 있으며, 길게 누르기 메뉴는 보조 기능입니다. 보내기 취소 전에 다운로드되지 않은 원본 파일은 복구할 수 없으며, 저장된 섬네일은 미리보기 전용입니다. 읽은 사람 목록에는 이 기기에 기록된 이름과 일시가 표시되며, 이전에 확인된 읽은 일시가 유지됩니다.</string>
+	<key>media.no_share_targets</key>
+	<string>이 파일에 사용할 수 있는 공유 대상을 찾을 수 없습니다.</string>
+	<key>media.open_failed</key>
+	<string>파일을 열 수 없습니다</string>
+	<key>media.preview_only</key>
+	<string>미리보기 전용</string>
+	<key>media.preview_unavailable</key>
+	<string>이 파일의 미리보기를 지원하지 않습니다. 공유 메뉴에서 파일을 관리할 수 있습니다.</string>
+	<key>media.share_action</key>
+	<string>공유·다른 앱으로 열기</string>
+	<key>media.share_failed</key>
+	<string>공유 메뉴를 표시할 수 없습니다</string>
+	<key>media.unsent_badge</key>
 	<string>취소됨</string>
-	<key>名前</key>
-	<string>이름</string>
-	<key>名前とアイコンから、通常通り既読をつけるトークを選べます。変更はすぐに反映されます。</key>
-	<string>이름과 아이콘을 확인하여 평소처럼 읽음 처리를 보낼 대화방을 선택할 수 있습니다. 변경사항은 즉시 반영됩니다.</string>
-	<key>名前のない着せかえ</key>
-	<string>이름 없는 테마</string>
-	<key>名前は改行を含めず、256文字以内で入力してください。</key>
+	<key>menu.copy_gif</key>
+	<string>GIF로 복사</string>
+	<key>menu.copy_mid</key>
+	<string>MID 복사</string>
+	<key>menu.mark_read_until</key>
+	<string>이 메시지까지 읽음</string>
+	<key>menu.retained_media</key>
+	<string>저장된 미디어</string>
+	<key>names.choose_chat</key>
+	<string>표시 이름을 변경할 대화방 선택</string>
+	<key>names.display_name_placeholder</key>
+	<string>이 기기에 표시할 이름</string>
+	<key>names.edit_help</key>
+	<string>"%@"의 표시 이름을 이 기기에서만 변경합니다. 비워두면 해제되며, 기존 표시 이름 규칙도 이 ID에는 적용되지 않습니다.</string>
+	<key>names.invalid_name</key>
 	<string>이름은 줄바꿈 없이 256자 이내로 입력해 주세요.</string>
-	<key>名前やトーク名で検索</key>
-	<string>이름 또는 대화방 이름으로 검색</string>
-	<key>名前を入力してください。</key>
-	<string>이름을 입력해 주세요.</string>
-	<key>名前を確認中…</key>
+	<key>names.local_display_name</key>
+	<string>이 기기에서의 표시 이름</string>
+	<key>names.modified_chat_count</key>
+	<string>%lu개 대화방 변경됨</string>
+	<key>names.original_name</key>
+	<string>원래 이름: %@</string>
+	<key>names.reset_action</key>
+	<string>원래 이름으로 복원</string>
+	<key>names.set_action</key>
+	<string>로컬 표시 이름 설정</string>
+	<key>names.title</key>
+	<string>로컬 표시 이름</string>
+	<key>notifications.attachment_received</key>
+	<string>첨부 파일을 수신했습니다</string>
+	<key>notifications.new_message</key>
+	<string>새 메시지를 수신했습니다</string>
+	<key>profile.invalid_mid</key>
+	<string>"u" 뒤에 32자리 숫자 및 a~f(소문자)를 입력해 주세요.</string>
+	<key>profile.mid_field_label</key>
+	<string>검색할 MID</string>
+	<key>profile.mid_placeholder</key>
+	<string>MID (u + 32자리 영숫자)</string>
+	<key>profile.mid_search</key>
+	<string>MID 검색</string>
+	<key>profile.open_by_mid</key>
+	<string>MID로 프로필 열기</string>
+	<key>profile.open_failed_message</key>
+	<string>프로필을 열 수 없습니다. MID와 네트워크 상태를 확인하고 다시 시도해 주세요.</string>
+	<key>profile.open_failed_title</key>
+	<string>프로필을 열 수 없습니다</string>
+	<key>profile.open_requested</key>
+	<string>LINE에 프로필 표시를 요청했습니다. 찾을 수 없거나 표시되지 않는 경우 MID와 네트워크 상태를 확인해 주세요.</string>
+	<key>profile.search_help</key>
+	<string>검색하면 LINE 내에서 프로필을 엽니다. 친구 추가나 메시지 전송은 하지 않습니다.</string>
+	<key>profile.search_prompt</key>
+	<string>확인하려는 사용자의 MID를 1건 입력해 주세요. MID는 'u'로 시작하는 33자리 식별자입니다. LINE ID와는 다릅니다.</string>
+	<key>profile.unsupported</key>
+	<string>현재 사용 중인 LINE 버전에서는 MID 검색을 사용할 수 없습니다.</string>
+	<key>profile.view_action</key>
+	<string>프로필 보기</string>
+	<key>profile.view_description</key>
+	<string>프로필을 표시합니다</string>
+	<key>read_control.chat_hint</key>
+	<string>이 대화방에 대해서만 읽음 확인 설정을 전환합니다</string>
+	<key>read_control.disabled</key>
+	<string>전체 읽음 억제는 꺼져 있습니다. 예외 설정은 저장됩니다</string>
+	<key>read_control.enable_for_chat</key>
+	<string>이 대화방의 읽음 확인 억제 활성화</string>
+	<key>read_control.exclude_chat</key>
+	<string>이 대화방을 읽음 확인 억제 예외로 설정</string>
+	<key>readers.fetch_failed</key>
+	<string>읽음 정보를 가져오지 못했습니다. 다시 시도해 주세요.</string>
+	<key>readers.loading</key>
+	<string>읽음 정보 가져오는 중…</string>
+	<key>readers.mark_read_failed</key>
+	<string>읽음 처리하지 못했습니다. 다시 시도해 주세요.</string>
+	<key>readers.names_loading</key>
 	<string>이름 확인 중…</string>
-	<key>名前・商品ID・バージョンを指定</key>
-	<string>이름·상품 ID·버전 지정</string>
-	<key>名前・商品ID・バージョン番号を入力してください。</key>
-	<string>이름·상품 ID·버전 번호를 입력해 주세요.</string>
-	<key>名前不明</key>
+	<key>readers.observed_at</key>
+	<string>확인 일시</string>
+	<key>readers.range_read_at</key>
+	<string>읽은 일시(범위 정보)</string>
+	<key>readers.read_at</key>
+	<string>읽은 일시</string>
+	<key>readers.timestamp_help</key>
+	<string>확인 일시는 이 기기에서 읽음 정보를 확인한 일시입니다. 일시를 특정할 수 없는 기록은 '일시 불명'으로 표시됩니다.</string>
+	<key>readers.title</key>
+	<string>읽은 사람 목록</string>
+	<key>readers.unknown_date</key>
+	<string>일시 불명</string>
+	<key>readers.unknown_name</key>
 	<string>이름 알 수 없음</string>
-	<key>商品ID</key>
-	<string>상품 ID</string>
-	<key>商品ID: %@
-バージョン: %@
-%@
-
-LINEの保存記録です。現在の適用状態は確認していません。</key>
+	<key>settings.accessibility_label</key>
+	<string>RUIN 설정 및 진단</string>
+	<key>settings.appearance</key>
+	<string>표시 관리</string>
+	<key>settings.appearance_footer</key>
+	<string>변경 후에는 대화 화면을 다시 열어 주세요.</string>
+	<key>settings.chat_names</key>
+	<string>대화방 표시 이름</string>
+	<key>settings.chat_names_footer</key>
+	<string>이 기기에서의 표시 이름만 변경됩니다. 상대방에게는 반영되지 않습니다. 목록에 반영되지 않는 경우 LINE을 재실행해 주세요.</string>
+	<key>settings.confirm_call</key>
+	<string>통화 시작 확인</string>
+	<key>settings.confirm_camera_on</key>
+	<string>카메라를 켜기 전에 확인</string>
+	<key>settings.confirm_disconnect</key>
+	<string>통화 종료 확인</string>
+	<key>settings.confirm_group_send</key>
+	<string>그룹 전송 확인</string>
+	<key>settings.confirmations</key>
+	<string>작업 확인</string>
+	<key>settings.confirmations_footer</key>
+	<string>전송 확인을 진행할 최소 인원수는 자신을 포함한 그룹 인원수입니다. 0을 입력하면 최소 인원 제한 없이 모든 그룹에서 확인합니다. 통화 및 전송의 일부 진입 경로는 아직 검증 중입니다.</string>
+	<key>settings.copy_sticker_gif</key>
+	<string>스티커를 GIF로 복사</string>
+	<key>settings.diagnostics</key>
+	<string>진단</string>
+	<key>settings.diagnostics_footer</key>
+	<string>테마, 스티커 GIF, MID 검색 등도 전체 기능 지원 대상입니다. 미완성된 항목은 지원됨으로 표시하지 않습니다.</string>
+	<key>settings.entry_subtitle</key>
+	<string>로컬 설정·진단</string>
+	<key>settings.fixed_startup_tab</key>
+	<string>시작 탭 고정</string>
+	<key>settings.hide_ads</key>
+	<string>광고 숨기기</string>
+	<key>settings.hide_agent_bar</key>
+	<string>Agent-i 바 숨기기</string>
+	<key>settings.hide_read</key>
+	<string>읽음 확인 숨기기</string>
+	<key>settings.hide_recommendations</key>
+	<string>추천 항목 숨기기</string>
+	<key>settings.hide_tab</key>
+	<string>%@ 숨기기</string>
+	<key>settings.hide_voice_input</key>
+	<string>음성 입력 버튼 숨기기</string>
+	<key>settings.history</key>
+	<string>기록·추가 기능 (개발 중)</string>
+	<key>settings.keep_unsent_media</key>
+	<string>보내기 취소된 텍스트 및 미디어 보존</string>
+	<key>settings.legacy_messaging</key>
+	<string>24시간 보내기 취소 · 무음 메시지</string>
+	<key>settings.line_features</key>
+	<string>LINE 기능 (개발 중)</string>
+	<key>settings.line_features_footer</key>
+	<string>앱 아이콘 등은 '로컬 LYP', 24시간 보내기 취소 및 무음 메시지는 별도 스위치로 설정합니다(변경 후 LINE 재시작). 무음 메시지 전송은 텍스트 입력 확정 후 전송 버튼을 약 2초간 길게 누릅니다.</string>
+	<key>settings.local_lyp</key>
+	<string>로컬 LYP 기능</string>
+	<key>settings.local_notifications</key>
+	<string>새 메시지 로컬 알림</string>
+	<key>settings.mark_read_on_reply</key>
+	<string>답장 시 읽음 처리</string>
+	<key>settings.minimum_group_members</key>
+	<string>전송 확인 최소 인원수</string>
+	<key>settings.notifications</key>
+	<string>알림</string>
+	<key>settings.notifications_footer</key>
+	<string>1:1 및 그룹 대화의 새 메시지만 알립니다. 앱이 종료된 상태에서의 즉시 수신은 지원하지 않습니다.</string>
+	<key>settings.read_controls</key>
+	<string>읽음 확인 관리</string>
+	<key>settings.read_controls_footer</key>
+	<string>1:1 대화에서 읽음 확인 억제, 대화별 예외, 답장 시 전환 기능을 실제 기기에서 확인했습니다. 그룹, 오픈채팅 및 수동 읽음 처리는 검증 중입니다.</string>
+	<key>settings.read_exceptions</key>
+	<string>정상적으로 읽음 전송할 대화방</string>
+	<key>settings.secondary_login</key>
+	<string>보조 기기 로그인</string>
+	<key>settings.secondary_login_footer</key>
+	<string>변경은 로그아웃 후, 로그인 화면의 '로그인'을 길게 눌러 진행합니다. 전환 후에는 앱을 재실행해야 합니다.</string>
+	<key>settings.shops</key>
+	<string>숍</string>
+	<key>settings.skip_age_verification</key>
+	<string>연령 확인 건너뛰기</string>
+	<key>settings.startup_tab</key>
+	<string>시작 시 열릴 탭</string>
+	<key>settings.tabs</key>
+	<string>탭 관리</string>
+	<key>settings.tabs_entry_not_ready</key>
+	<string>홈에서 RUIN 톱니바퀴 버튼을 사용할 수 있을 때까지 설정 탭은 계속 표시됩니다. 먼저 홈을 열어 주세요.</string>
+	<key>settings.tabs_footer</key>
+	<string>현재 사용 가능한 탭만 설정할 수 있습니다. '홈'과 '대화'는 숨길 수 없습니다.
+%@변경 사항은 앱을 재시작한 후 반영됩니다.</string>
+	<key>settings.tabs_hide_conflict</key>
+	<string>"%@", "%@" 탭을 동시에 숨길 수 없습니다.</string>
+	<key>settings.tabs_not_ready</key>
+	<string>LINE 탭이 감지된 후 선택할 수 있습니다.</string>
+	<key>settings.tabs_required</key>
+	<string>앱 작동에 필요한 탭은 항상 표시됩니다.</string>
+	<key>settings.title</key>
+	<string>RUIN 설정</string>
+	<key>settings.track_read_ranges</key>
+	<string>읽은 범위 기록</string>
+	<key>settings.user_search</key>
+	<string>사용자 검색</string>
+	<key>settings.version</key>
+	<string>버전</string>
+	<key>shops.open_rejected</key>
+	<string>LINE에 숍 표시를 요청했으나 처리되지 않았습니다.</string>
+	<key>shops.open_unavailable</key>
+	<string>이 LINE 버전에서는 해당 숍으로 이동할 수 없습니다.</string>
+	<key>shops.sticker_open_failed</key>
+	<string>스티커숍을 열 수 없습니다</string>
+	<key>shops.sticker_title</key>
+	<string>스티커숍</string>
+	<key>shops.theme_open_failed</key>
+	<string>테마숍을 열지 못했습니다</string>
+	<key>shops.theme_title</key>
+	<string>테마숍</string>
+	<key>tabs.apps</key>
+	<string>앱</string>
+	<key>tabs.call</key>
+	<string>통화</string>
+	<key>tabs.home</key>
+	<string>홈</string>
+	<key>tabs.news</key>
+	<string>뉴스</string>
+	<key>tabs.settings</key>
+	<string>설정</string>
+	<key>tabs.shopping</key>
+	<string>쇼핑</string>
+	<key>tabs.talk</key>
+	<string>대화</string>
+	<key>tabs.wallet</key>
+	<string>지갑</string>
+	<key>themes.add_to_native</key>
+	<string>마이 테마에 추가</string>
+	<key>themes.add_to_native_hint</key>
+	<string>LINE 마이 테마에 추가하면 선택하여 적용할 수 있습니다.</string>
+	<key>themes.apply_retry_message</key>
+	<string>화면을 닫고 다시 시도해 주세요. 다운로드한 파일은 저장되었습니다.</string>
+	<key>themes.archive_validation_failed</key>
+	<string>파일을 찾을 수 없거나 파일 구조 확인에 실패했습니다. 목록을 새로고침해 주세요.</string>
+	<key>themes.catalog_unavailable</key>
+	<string>이 LINE 버전에서는 테마 목록을 가져올 수 없습니다.</string>
+	<key>themes.download_checking</key>
+	<string>다운로드 및 파일 확인 중…</string>
+	<key>themes.download_failed</key>
+	<string>다운로드를 완료할 수 없습니다</string>
+	<key>themes.download_file</key>
+	<string>테마 파일 다운로드</string>
+	<key>themes.download_from_url</key>
+	<string>스토어 URL에서 다운로드</string>
+	<key>themes.download_help</key>
+	<string>스토어 URL에서 테마 정보를 가져와 다운로드할 수 있습니다. 이름, 상품 ID, 버전을 직접 입력할 수도 있습니다.</string>
+	<key>themes.download_not_ready</key>
+	<string>다운로드 설정과 현재 처리 상태를 확인해 주세요.</string>
+	<key>themes.download_start_failed</key>
+	<string>다운로드를 시작할 수 없습니다</string>
+	<key>themes.download_unavailable</key>
+	<string>이 LINE 버전에서는 이 화면에서의 다운로드를 사용할 수 없습니다.</string>
+	<key>themes.downloaded_file_details</key>
+	<string>상품 ID: %@
+버전: %@%@</string>
+	<key>themes.downloaded_files_footer</key>
+	<string>다운로드한 테마는 '마이 테마'를 열면 목록에 표시됩니다. 선택하여 적용할 수 있습니다.</string>
+	<key>themes.downloads_title</key>
+	<string>다운로드 및 저장된 테마 목록</string>
+	<key>themes.enable_downloads</key>
+	<string>테마 다운로드 활성화</string>
+	<key>themes.expired_record</key>
+	<string>만료된 기록</string>
+	<key>themes.file_checking</key>
+	<string>파일 확인 중…</string>
+	<key>themes.file_saved</key>
+	<string>파일을 저장했습니다</string>
+	<key>themes.file_saved_help</key>
+	<string>파일을 저장했습니다. '마이 테마'를 열어 테마를 선택하고 적용할 수 있습니다.</string>
+	<key>themes.invalid_product_id</key>
+	<string>상품 ID에는 영숫자, 하이픈, 언더스코어, 마침표를 사용할 수 있습니다.</string>
+	<key>themes.invalid_store_url</key>
+	<string>올바른 LINE STORE 테마 URL을 입력해 주세요.</string>
+	<key>themes.list_fetch_error</key>
+	<string>테마 목록을 가져오지 못했습니다.</string>
+	<key>themes.list_fetch_failed</key>
+	<string>목록을 가져오지 못했습니다</string>
+	<key>themes.list_loading</key>
+	<string>목록을 불러오는 중…</string>
+	<key>themes.list_refresh_failed</key>
+	<string>목록을 새로고침하지 못했습니다</string>
+	<key>themes.list_update_failed</key>
+	<string>목록을 업데이트하지 못했습니다. 이전에 가져온 내용을 표시합니다.</string>
+	<key>themes.manual_download</key>
+	<string>이름·상품 ID·버전 지정</string>
+	<key>themes.manual_download_help</key>
+	<string>파일을 가져와 저장합니다. 이 작업으로는 LINE에 추가하거나 적용하지 않습니다.</string>
+	<key>themes.manual_download_hint</key>
+	<string>수동으로 파일 다운로드</string>
+	<key>themes.manual_fields_required</key>
+	<string>이름·상품 ID·버전 번호를 입력해 주세요.</string>
+	<key>themes.my_themes_open_failed</key>
+	<string>마이 테마를 열 수 없습니다</string>
+	<key>themes.name_required</key>
+	<string>이름을 입력해 주세요.</string>
+	<key>themes.native_record_count</key>
+	<string>LINE 테마 기록 (%lu)</string>
+	<key>themes.native_record_details</key>
 	<string>상품 ID: %@
 버전: %@
 %@
 
 LINE의 저장 기록입니다. 현재 적용 상태는 확인되지 않았습니다.</string>
-	<key>商品ID: %@
-バージョン: %@%@</key>
-	<string>상품 ID: %@
-버전: %@%@</string>
-	<key>商品IDには半角英数字・ハイフン・アンダースコア・ピリオドを使えます。</key>
-	<string>상품 ID에는 영숫자, 하이픈, 언더스코어, 마침표를 사용할 수 있습니다.</string>
-	<key>商品IDは6〜128文字で入力してください。</key>
-	<string>상품 ID는 6~128자로 입력해 주세요.</string>
-	<key>変更はログアウト後、ログイン画面の「ログイン」長押しで行います。切り替え後はアプリの再起動が必要です。</key>
-	<string>변경은 로그아웃 후, 로그인 화면의 '로그인'을 길게 눌러 진행합니다. 전환 후에는 앱을 재실행해야 합니다.</string>
-	<key>変更後はトーク画面を開き直してください。</key>
-	<string>변경 후에는 대화 화면을 다시 열어 주세요.</string>
-	<key>履歴・追加機能（開発中）</key>
-	<string>기록·추가 기능 (개발 중)</string>
-	<key>年齢確認をスキップ</key>
-	<string>연령 확인 건너뛰기</string>
-	<key>広告を非表示</key>
-	<string>광고 숨기기</string>
-	<key>手動でファイルをダウンロード</key>
-	<string>수동으로 파일 다운로드</string>
-	<key>操作確認</key>
-	<string>작업 확인</string>
-	<key>新着のローカル通知</key>
-	<string>새 메시지 로컬 알림</string>
-	<key>新着メッセージを受信しました</key>
-	<string>새 메시지를 수신했습니다</string>
-	<key>既存のトーク履歴と鍵を保護するため、操作を開始できません。署名および保存先の診断状態を確認してください。</key>
-	<string>기존 대화 기록과 키를 보호하기 위해 작업을 시작할 수 없습니다. 서명 및 저장소 진단 상태를 확인해 주세요.</string>
-	<key>既存の別名</key>
-	<string>기존 별칭</string>
-	<key>既読にできませんでした。もう一度お試しください。</key>
-	<string>읽음 처리하지 못했습니다. 다시 시도해 주세요.</string>
-	<key>既読の例外</key>
-	<string>읽음 확인 예외</string>
-	<key>既読の管理</key>
-	<string>읽음 확인 관리</string>
-	<key>既読を隠す</key>
-	<string>읽음 확인 숨기기</string>
-	<key>既読情報を取得できませんでした。もう一度お試しください。</key>
-	<string>읽음 정보를 가져오지 못했습니다. 다시 시도해 주세요.</string>
-	<key>既読情報を取得中…</key>
-	<string>읽음 정보 가져오는 중…</string>
-	<key>既読日時</key>
-	<string>읽은 일시</string>
-	<key>既読日時（範囲情報）</key>
-	<string>읽은 일시(범위 정보)</string>
-	<key>既読日時（範囲情報）：</key>
-	<string>읽은 일시(범위 정보):</string>
-	<key>既読日時：2023/11/15 07:13:20</key>
-	<string>읽은 일시: 2023/11/15 07:13:20</string>
-	<key>既読範囲を記録</key>
-	<string>읽은 범위 기록</string>
-	<key>既読者一覧</key>
-	<string>읽은 사람 목록</string>
-	<key>日時不明</key>
-	<string>일시 불명</string>
-	<key>更新</key>
-	<string>새로고침</string>
-	<key>未確認</key>
-	<string>미확인</string>
-	<key>未設定</key>
-	<string>미설정</string>
-	<key>検索するMID</key>
-	<string>검색할 MID</string>
-	<key>検索するとLINE内でプロフィールを開きます。友だち追加やメッセージ送信は行いません。</key>
-	<string>검색하면 LINE 내에서 프로필을 엽니다. 친구 추가나 메시지 전송은 하지 않습니다.</string>
-	<key>標準で利用可能</key>
-	<string>기본으로 사용 가능</string>
-	<key>標準に戻す</key>
-	<string>기본값으로 복원</string>
-	<key>標準フォント</key>
-	<string>기본 글꼴</string>
-	<key>標準フォントに戻しました。トークを開き直してください。</key>
-	<string>기본 글꼴로 복원했습니다. 대화방을 다시 열어주세요.</string>
-	<key>正しいLINE STOREの着せかえURLを入力してください。</key>
-	<string>올바른 LINE STORE 테마 URL을 입력해 주세요.</string>
-	<key>添付ファイルを受信しました</key>
-	<string>첨부 파일을 수신했습니다</string>
-	<key>現在利用可能なタブのみ設定できます。「ホーム」と「トーク」は非表示にできません。%@変更はアプリの再起動後に反映されます。</key>
-	<string>현재 사용 가능한 탭만 설정할 수 있습니다. '홈'과 '대화'는 숨길 수 없습니다.
-%@변경 사항은 앱을 재시작한 후 반영됩니다.</string>
-	<key>画面を閉じて、もう一度お試しください。ダウンロードしたファイルは保存されています。</key>
-	<string>화면을 닫고 다시 시도해 주세요. 다운로드한 파일은 저장되었습니다.</string>
-	<key>着せかえ</key>
-	<string>테마</string>
-	<key>着せかえのダウンロードを有効にする</key>
-	<string>테마 다운로드 활성화</string>
-	<key>着せかえのダウンロード・保存一覧</key>
-	<string>다운로드 및 저장된 테마 목록</string>
-	<key>着せかえショップ</key>
-	<string>테마숍</string>
-	<key>着せかえショップを開けませんでした</key>
-	<string>테마숍을 열지 못했습니다</string>
-	<key>着せかえファイルをダウンロード</key>
-	<string>테마 파일 다운로드</string>
-	<key>着せかえ・スタンプGIF・MID検索なども全機能対応の対象です。未完成の項目を対応済みとは表示しません。</key>
-	<string>테마, 스티커 GIF, MID 검색 등도 전체 기능 지원 대상입니다. 미완성된 항목은 지원됨으로 표시하지 않습니다.</string>
-	<key>着せかえ一覧を取得できませんでした。</key>
-	<string>테마 목록을 가져오지 못했습니다.</string>
-	<key>着せかえ一覧を更新</key>
-	<string>테마 목록 새로고침</string>
-	<key>着せかえ記録はありません</key>
+	<key>themes.native_records_failed</key>
+	<string>LINE 테마 기록을 가져올 수 없습니다</string>
+	<key>themes.native_records_footer</key>
+	<string>LINE에 저장된 기록입니다. 현재 적용 상태 및 파일 존재 여부는 확인하지 않았습니다.</string>
+	<key>themes.native_records_unavailable</key>
+	<string>이 환경에서는 LINE 테마 기록을 가져올 수 없습니다.</string>
+	<key>themes.no_native_records</key>
 	<string>테마 기록이 없습니다</string>
-	<key>確認</key>
-	<string>확인</string>
-	<key>確認したいユーザーのMIDを1件入力してください。MIDは「u」で始まる33文字の識別子です。LINE IDとは異なります。</key>
-	<string>확인하려는 사용자의 MID를 1건 입력해 주세요. MID는 'u'로 시작하는 33자리 식별자입니다. LINE ID와는 다릅니다.</string>
-	<key>確認日時</key>
-	<string>확인 일시</string>
-	<key>確認日時は、この端末が既読情報を確認した日時です。日時を特定できない記録は「日時不明」と表示します。</key>
-	<string>확인 일시는 이 기기에서 읽음 정보를 확인한 일시입니다. 일시를 특정할 수 없는 기록은 '일시 불명'으로 표시됩니다.</string>
-	<key>確認日時：</key>
-	<string>확인 일시:</string>
-	<key>確認日時：2023/11/15 07:13:30</key>
-	<string>확인 일시: 2023/11/15 07:13:30</string>
-	<key>種別:MID</key>
-	<string>유형: MID</string>
-	<key>種別と識別IDを確認してください。</key>
-	<string>유형과 식별 ID를 확인해 주세요.</string>
-	<key>種別は user:、chat:、group:、squareChat: のいずれかです。表示名を空にすると解除します。</key>
-	<string>유형은 user:, chat:, group:, squareChat: 중 하나여야 합니다. 표시 이름을 비우면 해제됩니다.</string>
-	<key>端末内の別名</key>
-	<string>기기 내 별칭</string>
-	<key>終了</key>
-	<string>종료</string>
-	<key>自分の名前</key>
-	<string>내 이름</string>
-	<key>自分を含むグループ人数。0は人数指定なし。</key>
-	<string>자신을 포함한 그룹 인원수입니다. 0을 입력하면 최소 인원 제한 없이 모든 그룹에서 확인합니다.</string>
-	<key>表示の管理</key>
-	<string>표시 관리</string>
-	<key>表示名を変更するトークを選ぶ</key>
-	<string>표시 이름을 변경할 대화방 선택</string>
-	<key>表示名を編集</key>
-	<string>표시 이름 편집</string>
-	<key>記録はありません</key>
-	<string>기록이 없습니다</string>
-	<key>設定</key>
-	<string>설정</string>
-	<key>診断</key>
-	<string>진단</string>
-	<key>診断をJSONに変換できませんでした: %@</key>
-	<string>진단을 JSON으로 변환하지 못했습니다: %@</string>
-	<key>起動時に開くタブ</key>
-	<string>시작 시 열릴 탭</string>
-	<key>起動時のタブを固定</key>
-	<string>시작 탭 고정</string>
-	<key>返信時に既読をつける</key>
-	<string>답장 시 읽음 처리</string>
-	<key>送信</key>
-	<string>전송</string>
-	<key>送信の確認</key>
-	<string>전송 확인</string>
-	<key>送信先の種類を確認できません。送信しますか？</key>
-	<string>전송 대상 유형을 확인할 수 없습니다. 전송하시겠습니까?</string>
-	<key>送信取消された本文を保持</key>
-	<string>보내기 취소된 메시지 본문 유지</string>
-	<key>送信取消延長・ミュート</key>
-	<string>전송 취소 연장·무음 메시지</string>
-	<key>送信確認の最低人数</key>
-	<string>전송 확인 최소 인원수</string>
-	<key>送信確認を行う最低人数は、自分を含むグループ人数です。0は人数指定なし。通話・送信の一部の入口はまだ検証中です。</key>
-	<string>전송 확인을 진행할 최소 인원수는 자신을 포함한 그룹 인원수입니다. 0을 입력하면 최소 인원 제한 없이 모든 그룹에서 확인합니다. 통화 및 전송의 일부 진입 경로는 아직 검증 중입니다.</string>
-	<key>通信がタイムアウトしました。時間をおいて、もう一度お試しください。</key>
-	<string>통신 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요.</string>
-	<key>通信が中止されました。</key>
-	<string>통신이 중단되었습니다.</string>
-	<key>通信が途中で切断されました。接続を確認して、もう一度お試しください。</key>
-	<string>통신 연결이 끊어졌습니다. 네트워크 연결을 확인하고 다시 시도해 주세요.</string>
-	<key>通常のiPhoneモード</key>
-	<string>일반 iPhone 모드</string>
-	<key>通常のiPhoneログイン</key>
-	<string>일반 iPhone 로그인</string>
-	<key>通常通り既読をつけるトーク</key>
-	<string>정상적으로 읽음 전송할 대화방</string>
-	<key>通知</key>
-	<string>알림</string>
-	<key>通話</key>
-	<string>통화</string>
-	<key>通話の確認</key>
-	<string>통화 확인</string>
-	<key>通話を終了しますか？</key>
-	<string>통화를 종료하시겠습니까?</string>
-	<key>通話を開始しますか？</key>
-	<string>통화를 시작하시겠습니까?</string>
-	<key>通話終了の確認</key>
-	<string>통화 종료 확인</string>
-	<key>通話開始の確認</key>
-	<string>통화 시작 확인</string>
-	<key>選択中：%lu件</key>
-	<string>%lu개 선택됨</string>
-	<key>閉じる</key>
-	<string>닫기</string>
-	<key>開始</key>
-	<string>시작</string>
-	<key>音声入力ボタンを非表示</key>
-	<string>음성 입력 버튼 숨기기</string>
+	<key>themes.no_saved_files</key>
+	<string>저장된 파일이 없습니다</string>
+	<key>themes.open_my_themes</key>
+	<string>마이 테마 열기</string>
+	<key>themes.open_shop</key>
+	<string>LINE 테마숍 열기</string>
+	<key>themes.owned</key>
+	<string>보유 중</string>
+	<key>themes.preview_failed</key>
+	<string>미리보기를 표시할 수 없습니다</string>
+	<key>themes.product_id</key>
+	<string>상품 ID</string>
+	<key>themes.product_id_length</key>
+	<string>상품 ID는 6~128자로 입력해 주세요.</string>
+	<key>themes.refresh_list</key>
+	<string>테마 목록 새로고침</string>
+	<key>themes.saved_file_count</key>
+	<string>저장된 파일 (%lu)</string>
+	<key>themes.saved_file_missing</key>
+	<string>저장된 파일의 위치를 확인할 수 없습니다.</string>
+	<key>themes.store_info_failed</key>
+	<string>스토어 정보를 가져오지 못했습니다. URL과 네트워크 상태를 확인해 주세요.</string>
+	<key>themes.store_info_loading</key>
+	<string>스토어 정보 가져오는 중…</string>
+	<key>themes.store_url_hint</key>
+	<string>LINE STORE 테마 URL을 입력해 주세요.</string>
+	<key>themes.title</key>
+	<string>테마</string>
+	<key>themes.unnamed</key>
+	<string>이름 없는 테마</string>
+	<key>themes.url_download_hint</key>
+	<string>스토어 URL에서 이름·상품 ID·버전 가져오기</string>
+	<key>themes.usage_unverified</key>
+	<string>이용 현황 미확인</string>
+	<key>themes.version_placeholder</key>
+	<string>버전(예: V1.30)</string>
+	<key>themes.version_required</key>
+	<string>버전(예: V1.30) 또는 배포 번호를 입력해 주세요.</string>
+	<key>themes.within_expiry</key>
+	<string>유효 기간 내</string>
 </dict>
 </plist>

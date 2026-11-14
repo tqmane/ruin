@@ -16,6 +16,8 @@ def extract(source, start, end):
 
 SHIM = r'''
 #import <Foundation/Foundation.h>
+#define RUIN_HOST_CHECK 1
+#import "Localization.h"
 #import "ThemeFeatures.h"
 #import "ThemeProductIdentity.h"
 #import "ThemeVersion.h"
@@ -29,7 +31,6 @@ NSString * const RUINThemeShopDownloadEnabledDefaultsKey = @"fixture.download";
 static const NSUInteger RUINThemeMaximumInputLength = 256;
 static BOOL targetMatches = YES, preference = YES;
 static BOOL RUINThemeTargetMatches(void) { return targetMatches; }
-static NSString *RUINLocalizedString(NSString *key) { return key; }
 static NSURL *support;
 @interface FixtureFileManager : NSFileManager
 + (instancetype)defaultManager;
@@ -156,7 +157,7 @@ def main():
             preferred + "\n#define NSUserDefaults FixtureDefaults\n" + download + "\n#undef NSUserDefaults\n" + CHECK)
         executable = directory / "check"
         subprocess.run(["xcrun", "--sdk", "macosx", "clang", "-fobjc-arc", "-fblocks", "-std=gnu11",
-            "-Wall", "-Wextra", "-Werror", "-I", str(THEMES), str(fixture),
+            "-Wall", "-Wextra", "-Werror", "-I", str(THEMES), "-I", str(ROOT / "src/core"), str(fixture),
             str(THEMES / "ThemeVersion.m"), str(THEMES / "NativeThemeReceipt.m"),
             "-framework", "Foundation", "-o", str(executable)], cwd=ROOT, check=True, timeout=30)
         subprocess.run([str(executable), str(directory)], cwd=ROOT, check=True, timeout=10)
