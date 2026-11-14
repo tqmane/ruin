@@ -464,7 +464,7 @@ void RUINInstallAutomaticReadGate(void) {
 }
 
 NSDictionary *RUINAutomaticReadGateDiagnostics(void) {
-    return @{@"hooks":hookStatus ?: @{}, @"applied":@(applied), @"restored":@(restored),
+    return @{@"hooks":[hookStatus copy] ?: @{}, @"applied":@(applied), @"restored":@(restored),
         @"rejected":@(atomic_load(&rejected)), @"receivedBoundaryWillChanges":@(atomic_load(&boundaryWillChanges)),
         @"scope":@"automatic native chat UI guard only; explicit/manual paths are unchanged",
         @"field":@"ChatContext.markAsReadController.isEnabled", @"fieldResolution":@"runtime_ivar", @"peerVerified":@NO};

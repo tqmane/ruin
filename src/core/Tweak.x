@@ -53,6 +53,7 @@
 #import <objc/runtime.h>
 #import <mach-o/dyld.h>
 #import <string.h>
+#include <stdlib.h>
 
 extern void RUINInstallNativeEntry(void);
 extern NSDictionary *RUINNativeEntryDiagnostics(void);
@@ -208,17 +209,47 @@ NSDictionary *RUINRuntimeDiagnostics(void) {
     };
 }
 
-static void RUINWriteRuntimeReport(void) {
-    RUINRefreshPushDiagnostics();
-    NSString *caches = NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES).firstObject;
-    if (!caches.length) return;
-    NSString *directory = [caches stringByAppendingPathComponent:@"RUIN"];
-    if (![NSFileManager.defaultManager createDirectoryAtPath:directory
-                                 withIntermediateDirectories:YES attributes:nil error:NULL]) return;
-    NSData *data = [NSJSONSerialization dataWithJSONObject:RUINRuntimeDiagnostics()
-                                                   options:NSJSONWritingPrettyPrinted | NSJSONWritingSortedKeys
-                                                     error:NULL];
-    if (data) [data writeToFile:[directory stringByAppendingPathComponent:@"runtime.json"] options:NSDataWritingAtomic error:NULL];
+static NSDictionary *RUINRuntimeStatus(void) {
+    // Ordinary navigation needs counters, not signing, database or view-tree inspection.
+    return @{@"capturedAt":[[NSISO8601DateFormatter new] stringFromDate:NSDate.date],
+        @"scope":@"status", @"ruin":@{@"version":RUINVersion, @"loaded":@YES},
+        @"replyObserver":RUINReplyDiagnostics(),
+        @"automaticReadGate":RUINAutomaticReadGateDiagnostics()};
+}
+
+void RUINRefreshRuntimeReport(void) {
+    if (!NSThread.isMainThread) {
+        dispatch_async(dispatch_get_main_queue(), ^{ RUINRefreshRuntimeReport(); });
+        return;
+    }
+    static BOOL scheduled;
+    if (scheduled) return;
+    scheduled = YES;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        scheduled = NO;
+        const char *value = getenv("RUIN_ENABLE_RUNTIME_INSPECTOR");
+        BOOL inspect = value && !strcmp(value, "1");
+        if (inspect) RUINRefreshPushDiagnostics();
+        // Full inspection may contain live mutable diagnostic collections.
+        // Encode it on the owning thread only in this explicit debug mode.
+        NSData *inspectionData = inspect ? [NSJSONSerialization dataWithJSONObject:RUINRuntimeDiagnostics()
+            options:NSJSONWritingPrettyPrinted | NSJSONWritingSortedKeys error:NULL] : nil;
+        NSDictionary *snapshot = inspect ? nil : RUINRuntimeStatus();
+        static dispatch_queue_t queue;
+        static dispatch_once_t once;
+        dispatch_once(&once, ^{ queue = dispatch_queue_create("com.tqmane.ruin.runtime-report", DISPATCH_QUEUE_SERIAL); });
+        dispatch_async(queue, ^{
+            NSString *caches = NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES).firstObject;
+            if (!caches.length) return;
+            NSString *directory = [caches stringByAppendingPathComponent:@"RUIN"];
+            if (![NSFileManager.defaultManager createDirectoryAtPath:directory
+                withIntermediateDirectories:YES attributes:nil error:NULL]) return;
+            NSData *data = inspect ? inspectionData : [NSJSONSerialization dataWithJSONObject:snapshot
+                options:NSJSONWritingPrettyPrinted | NSJSONWritingSortedKeys error:NULL];
+            if (data) [data writeToFile:[directory stringByAppendingPathComponent:@"runtime.json"]
+                options:NSDataWritingAtomic error:NULL];
+        });
+    });
 }
 
 void RUINRefreshSettingsFeatures(void) {
@@ -249,11 +280,60 @@ void RUINRefreshSettingsFeatures(void) {
     RUINInstallNativeThemeWorkflow();
     RUINInstallThemeStoreWeb();
     RUINInstallMenuExtras();
-    RUINWriteRuntimeReport();
+    RUINRefreshRuntimeReport();
 }
 
-
-void RUINRefreshRuntimeReport(void) { RUINWriteRuntimeReport(); }
+void RUINRefreshSettingsFeature(NSString *key) {
+    if (!key.length) return;
+    if (!NSThread.isMainThread) {
+        NSString *copiedKey = [key copy];
+        dispatch_async(dispatch_get_main_queue(), ^{ RUINRefreshSettingsFeature(copiedKey); });
+        return;
+    }
+    if ([@[RUINReadControlEnabledDefaultsKey, RUINMarkReadOnReplyDefaultsKey, RUINReadExceptionsDefaultsKey,
+           RUINLocalNamesDefaultsKey, RUINLocalNamesByIdentityDefaultsKey] containsObject:key]) {
+        RUINInstallFeatures();
+        RUINInstallReadBoundary();
+        RUINInstallReadOnReply();
+        RUINRefreshAutomaticReadGate();
+        RUINInstallNativeChatControls();
+    } else if ([key isEqual:RUINLegacyMessagingEnabledDefaultsKey]) {
+        RUINInstallLegacyMessagingConfiguration();
+        RUINInstallClientVersionAdvertisement();
+        RUINInstallNativeMuteSend();
+    } else if ([key isEqual:RUINLocalLYPEnabledDefaultsKey]) {
+        RUINInstallLocalAppearance();
+    } else if ([key isEqual:RUINLocalNotificationsEnabledDefaultsKey]) {
+        RUINInstallLocalNotifications();
+    } else if ([key isEqual:RUINKeepUnsentMessagesKey]) {
+        RUINInstallMessageHistory();
+        RUINInstallUnsendRetention();
+        RUINInstallRetainedMedia();
+        RUINRefreshUnsendMarkerUI();
+    } else if ([key isEqual:RUINTrackReadUsersKey]) {
+        RUINInstallMessageHistory();
+        RUINInstallReadUsersEvents();
+    } else if ([@[RUINConfirmSendEnabledDefaultsKey, RUINConfirmCallEnabledDefaultsKey,
+           RUINConfirmCameraOnEnabledDefaultsKey, RUINConfirmDisconnectEnabledDefaultsKey,
+           RUINConfirmSendMinimumGroupMemberCountDefaultsKey] containsObject:key]) {
+        RUINInstallConfirmations();
+    } else if ([key isEqual:RUINBypassAgeVerificationDefaultsKey]) {
+        RUINInstallAgeVerification();
+    } else if ([key isEqual:RUINCopyStickerGIFEnabledDefaultsKey]) {
+        RUINInstallMenuExtras();
+    } else if ([@[RUINHideAdsDefaultsKey, RUINHideRecommendationsDefaultsKey,
+           RUINHideVoiceInputDefaultsKey, RUINHideAgentIBarDefaultsKey] containsObject:key]) {
+        RUINRefreshInterfaceFeatures();
+    } else if (![@[RUINHideVOOMTabDefaultsKey, RUINHideWalletTabDefaultsKey,
+           RUINHideShoppingTabDefaultsKey, RUINHideNewsCallTabsDefaultsKey,
+           RUINHideSettingsTabDefaultsKey, RUINHideAppsTabDefaultsKey,
+           RUINStartupTabFixedDefaultsKey, RUINStartupTabDefaultsKey] containsObject:key]) {
+        RUINRefreshSettingsFeatures();
+        return;
+    }
+    // Tab preferences are consumed by native generation on restart, not rebuilt here.
+    RUINRefreshRuntimeReport();
+}
 
 static void RUINMaybeScheduleEnvironmentSettings(void) {
     if (sEnvironmentSettingsPresented || sEnvironmentSettingsScheduled ||
@@ -312,7 +392,7 @@ static void RUINApplicationDidBecomeActive(void) {
         InstallRuntimeInspector();
     }
     RUINMaybeScheduleEnvironmentSettings();
-    RUINWriteRuntimeReport();
+    RUINRefreshRuntimeReport();
     RUINMaybeShowCompatibilityWarning();
 }
 

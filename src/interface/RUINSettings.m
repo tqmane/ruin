@@ -261,7 +261,7 @@ static NSArray<NSDictionary *> *ToggleRows(NSInteger section) {
 - (void)preferenceChanged:(RUINPreferenceSwitch *)toggle {
     NSString *key = toggle.preferenceKey;
     if (!key) return;
-    [NSUserDefaults.standardUserDefaults setBool:toggle.isOn forKey:key]; RUINRefreshSettingsFeatures();
+    [NSUserDefaults.standardUserDefaults setBool:toggle.isOn forKey:key]; RUINRefreshSettingsFeature(key);
     if ([RUINTabHideKeys().allValues containsObject:key])
         [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:RUINSettingsSectionTabs] withRowAnimation:UITableViewRowAnimationNone];
 }
@@ -287,7 +287,7 @@ static NSArray<NSDictionary *> *ToggleRows(NSInteger section) {
         else RUINOpenStickerShop(self);
     } else if (path.section == RUINSettingsSectionLocalNames) {
         __weak typeof(self) weak = self;
-        RUINOpenLocalNamePicker(self, ^{ RUINRefreshSettingsFeatures(); [weak.tableView reloadData]; });
+        RUINOpenLocalNamePicker(self, ^{ RUINRefreshSettingsFeature(RUINLocalNamesByIdentityDefaultsKey); [weak.tableView reloadData]; });
     } else if (path.section == RUINSettingsSectionReadControls && (NSUInteger)path.row == ToggleRows(RUINSettingsSectionReadControls).count) [self editReadExceptions];
     else if (path.section == RUINSettingsSectionConfirmations && (NSUInteger)path.row == ToggleRows(RUINSettingsSectionConfirmations).count) [self editThreshold];
     else if (path.section == RUINSettingsSectionTabs && (NSUInteger)path.row == ToggleRows(RUINSettingsSectionTabs).count) [self editStartupTab];
@@ -300,13 +300,13 @@ static NSArray<NSDictionary *> *ToggleRows(NSInteger section) {
     [prompt addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"common.save") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
         NSString *text = weakPrompt.textFields.firstObject.text ?: @"";
         if (!text.length || [text rangeOfCharacterFromSet:[NSCharacterSet characterSetWithCharactersInString:@"0123456789"].invertedSet].location != NSNotFound || text.length > 6) { dispatch_async(dispatch_get_main_queue(), ^{ [owner showMessage:RUINLocalizedString(@"confirm.invalid_member_count")]; }); return; }
-        [NSUserDefaults.standardUserDefaults setInteger:text.integerValue forKey:RUINConfirmSendMinimumGroupMemberCountDefaultsKey]; RUINRefreshSettingsFeatures(); [owner.tableView reloadData];
+        [NSUserDefaults.standardUserDefaults setInteger:text.integerValue forKey:RUINConfirmSendMinimumGroupMemberCountDefaultsKey]; RUINRefreshSettingsFeature(RUINConfirmSendMinimumGroupMemberCountDefaultsKey); [owner.tableView reloadData];
     }]];
     [self presentViewController:prompt animated:YES completion:nil];
 }
 - (void)editReadExceptions {
     __weak typeof(self) weak = self;
-    RUINOpenReadExceptionPicker(self, ^{ RUINRefreshSettingsFeatures(); [weak.tableView reloadData]; });
+    RUINOpenReadExceptionPicker(self, ^{ RUINRefreshSettingsFeature(RUINReadExceptionsDefaultsKey); [weak.tableView reloadData]; });
 }
 - (void)editStartupTab {
     NSArray *available = RUINAvailableTabs();
@@ -314,7 +314,7 @@ static NSArray<NSDictionary *> *ToggleRows(NSInteger section) {
     NSDictionary *titles = RUINTabTitles();
     UIAlertController *menu = [UIAlertController alertControllerWithTitle:RUINLocalizedString(@"settings.startup_tab") message:nil preferredStyle:UIAlertControllerStyleActionSheet];
     __weak typeof(self) owner = self;
-    for (NSString *identifier in available) [menu addAction:[UIAlertAction actionWithTitle:titles[identifier] ?: identifier style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { [NSUserDefaults.standardUserDefaults setObject:identifier forKey:RUINStartupTabDefaultsKey]; RUINRefreshSettingsFeatures(); [owner.tableView reloadData]; }]];
+    for (NSString *identifier in available) [menu addAction:[UIAlertAction actionWithTitle:titles[identifier] ?: identifier style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { [NSUserDefaults.standardUserDefaults setObject:identifier forKey:RUINStartupTabDefaultsKey]; RUINRefreshSettingsFeature(RUINStartupTabDefaultsKey); [owner.tableView reloadData]; }]];
     [menu addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"common.cancel") style:UIAlertActionStyleCancel handler:nil]];
     if (menu.popoverPresentationController) { menu.popoverPresentationController.sourceView = self.view; menu.popoverPresentationController.sourceRect = CGRectMake(CGRectGetMidX(self.view.bounds), CGRectGetMidY(self.view.bounds), 1, 1); }
     [self presentViewController:menu animated:YES completion:nil];
