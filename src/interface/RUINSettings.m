@@ -173,7 +173,13 @@ static NSArray<NSDictionary *> *ToggleRows(NSInteger section) {
                 [NSString stringWithFormat:RUINLocalizedString(@"「%@」と「%@」を同時に非表示にできません。"), RUINTabTitles()[pair[0]], RUINTabTitles()[pair[1]]] :
                 RUINLocalizedString(@"アプリの動作に必要なタブは、常に表示されます。");
             if ([RUINNativeTabAvailabilityDiagnostics()[@"menuOnlyScopeVerified"] boolValue]) dependency = @"";
-            return [NSString stringWithFormat:RUINLocalizedString(@"現在利用可能なタブのみ設定できます。「ホーム」と「トーク」は非表示にできません。%@変更はアプリの再起動後に反映されます。"),dependency];
+            NSString *footer = [NSString stringWithFormat:RUINLocalizedString(@"現在利用可能なタブのみ設定できます。「ホーム」と「トーク」は非表示にできません。%@変更はアプリの再起動後に反映されます。"),
+                dependency.length ? [dependency stringByAppendingString:@"\n"] : @""];
+            BOOL alternateEntryExpected = UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad ||
+                [NSUserDefaults.standardUserDefaults boolForKey:RUINSecondaryLoginEnabledKey];
+            if (alternateEntryExpected && ![RUINNativeEntryDiagnostics()[@"homeEntryAvailable"] boolValue])
+                footer = [footer stringByAppendingFormat:@"\n%@", RUINLocalizedString(@"settings.tabs.entryNotReady")];
+            return footer;
         }
         case RUINSettingsSectionHistory: return RUINLocalizedString(@"media.historyFooter");
         case RUINSettingsSectionSecondaryLogin: return RUINLocalizedString(@"変更はログアウト後、ログイン画面の「ログイン」長押しで行います。切り替え後はアプリの再起動が必要です。");
@@ -243,7 +249,11 @@ static NSArray<NSDictionary *> *ToggleRows(NSInteger section) {
     } else {
         if (path.section == RUINSettingsSectionReadControls) { cell.textLabel.text = RUINLocalizedString(@"通常通り既読をつけるトーク"); cell.detailTextLabel.text = [NSString stringWithFormat:RUINLocalizedString(@"%lu件"), (unsigned long)[NSUserDefaults.standardUserDefaults arrayForKey:RUINReadExceptionsDefaultsKey].count]; }
         if (path.section == RUINSettingsSectionConfirmations) { cell.textLabel.text = RUINLocalizedString(@"送信確認の最低人数"); cell.detailTextLabel.text = [NSString stringWithFormat:RUINLocalizedString(@"%ld人"), (long)[NSUserDefaults.standardUserDefaults integerForKey:RUINConfirmSendMinimumGroupMemberCountDefaultsKey]]; }
-        if (path.section == RUINSettingsSectionTabs) { cell.textLabel.text = RUINLocalizedString(@"起動時に開くタブ"); cell.detailTextLabel.text = [NSUserDefaults.standardUserDefaults stringForKey:RUINStartupTabDefaultsKey] ?: RUINLocalizedString(@"未設定"); }
+        if (path.section == RUINSettingsSectionTabs) {
+            cell.textLabel.text = RUINLocalizedString(@"起動時に開くタブ");
+            NSString *identifier = [NSUserDefaults.standardUserDefaults stringForKey:RUINStartupTabDefaultsKey];
+            cell.detailTextLabel.text = RUINTabTitles()[identifier ?: @""] ?: RUINLocalizedString(@"未設定");
+        }
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     }
     return cell;

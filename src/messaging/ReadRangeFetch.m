@@ -88,6 +88,12 @@ static NSError *Failure(NSInteger code) {
 }
 @end
 
+BOOL RUINCanFetchReadRanges(NSDictionary *messageKey, id nativeChat) {
+    return [messageKey isKindOfClass:NSDictionary.class] && [messageKey[@"kind"] isEqual:@"talk"] &&
+        RUINReadRangeEncodeRequest(messageKey[@"chat"], 0, NULL) != nil &&
+        RUINHistoryValidateReadChatKey(messageKey, nativeChat) && RUINCopyNativeReadRangeHTTPContext() != nil;
+}
+
 void RUINFetchReadRanges(NSDictionary *messageKey, id nativeChat, void (^completion)(NSError *)) {
     void (^fail)(NSInteger) = ^(NSInteger code) {
         atomic_fetch_add(&failures,1);

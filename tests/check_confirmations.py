@@ -70,11 +70,47 @@ def check_production_wiring() -> None:
     invoke = function_body("static void RUINInvokeApprovedOriginal(")
     assert invoke.index("originalEntered") < invoke.index("pending.original)(")
     assert "@finally" in invoke and "RUINConfirmationFinishInvocation" in invoke
+    assert "pending.sendComposer = RUINComposerForSendControl(self, argument0, dispatchedAction)" in handle
+    validate = function_body("static BOOL RUINValidatePendingContext(")
+    assert "pending.sendComposer" in validate and "RUINComposerForSendControl(" in validate
+
+
+def production_shim_source() -> tuple[str, str]:
+    # Compile the actual entry, boundary, permit, invocation and cleanup code against
+    # the small UIKit surface in the shim; do not recreate the router in the test.
+    types = SOURCE[
+        SOURCE.index("typedef NS_ENUM(NSInteger, RUINConfirmationKind)") :
+        SOURCE.index("@interface RUINChatSnapshot")
+    ]
+    markers = [
+        "static BOOL RUINValidatePendingContext(",
+        "static UIView *RUINComposerForSendControl(id control, id actionTarget, SEL action)\n{",
+        "static void RUINCallOriginalDirect(",
+        "static BOOL RUINPendingIsCurrentLocked(",
+        "static BOOL RUINPendingIsCurrent(",
+        "static BOOL RUINHasPendingConfirmation(",
+        "static void RUINRecordStaleCallback(",
+        "static BOOL RUINReleasePending(",
+        "static void RUINAbortPending(",
+        "static void RUINInvokeApprovedOriginal(",
+        "static BOOL RUINIsApprovedSendReentry(",
+        "static RUINConfirmationActionClass RUINClassifyHookAction(",
+        "static void RUINHandleHook(RUINConfirmationHook *hook, id self, SEL selector, id argument0",
+    ]
+    functions = []
+    for marker in markers:
+        start = SOURCE.index(marker)
+        signature = SOURCE[start : SOURCE.index("{", start)]
+        functions.append(signature + function_body(marker))
+    return types, "\n\n".join(functions)
 
 
 def run_host_shim() -> None:
     fixture = ROOT / "tests/ConfirmationUIKitShim.m"
     with tempfile.TemporaryDirectory(prefix="ruin-confirmations-") as temporary:
+        types, functions = production_shim_source()
+        (Path(temporary) / "ConfirmationTypes.inc").write_text(types)
+        (Path(temporary) / "ConfirmationProduction.inc").write_text(functions)
         executable = Path(temporary) / "check-confirmations"
         subprocess.run(
             [
@@ -87,6 +123,8 @@ def run_host_shim() -> None:
                 "-Wall",
                 "-Wextra",
                 "-Werror",
+                "-I",
+                temporary,
                 str(fixture),
                 "-framework",
                 "Foundation",

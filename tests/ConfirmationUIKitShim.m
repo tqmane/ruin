@@ -3,6 +3,153 @@
 
 #include <assert.h>
 #include <stdint.h>
+#import <objc/runtime.h>
+#import <os/lock.h>
+#import <stdatomic.h>
+
+// Only UIKit and app context are simulated. The router below is extracted from
+// Confirmations.x by check_confirmations.py and compiled without rewriting it.
+@class UIWindow;
+@interface UIView : NSObject
+@property(nonatomic, strong) UIView *superview;
+@property(nonatomic, strong) UIWindow *window;
+@end
+@implementation UIView
+@end
+@interface UIControl : UIView
+@end
+@implementation UIControl
+@end
+@interface UIWindow : UIView
+@end
+@implementation UIWindow
+@end
+@interface UIViewController : NSObject
+@property(nonatomic) BOOL isViewLoaded;
+@property(nonatomic, strong) UIView *view;
+@end
+@implementation UIViewController
+@end
+@interface UIAlertController : UIViewController
+@end
+@implementation UIAlertController
+@end
+@interface _TtC15LineMessagingUI12ChatInputBar : UIView
+@property(nonatomic, weak) UIControl *sendButton;
+@end
+@implementation _TtC15LineMessagingUI12ChatInputBar
+@end
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnullability-completeness"
+#include "ConfirmationTypes.inc"
+#pragma clang diagnostic pop
+@implementation RUINConfirmationPending
+@end
+
+static const char * const RUINChatInputBarClass = "_TtC15LineMessagingUI12ChatInputBar";
+static RUINConfirmationHook gControlSendActionHook = {
+    .kind = RUINConfirmationSend, .shape = RUINInvocationControlAction,
+    .flags = RUINHookNeedsChatThread | RUINHookComposerControlBoundary
+};
+static RUINConfirmationHook gChatInputSendHook = {
+    .kind = RUINConfirmationSend, .shape = RUINInvocationOneObject,
+    .flags = RUINHookNeedsChatThread
+};
+static RUINConfirmationHook gUnrelatedHook = {.kind = RUINConfirmationCall};
+static RUINConfirmationPending *gPendingConfirmation;
+static RUINConfirmationOwnerTickets gPendingOwnerTickets;
+static os_unfair_lock gPendingLock = OS_UNFAIR_LOCK_INIT;
+typedef struct {
+    __unsafe_unretained RUINConfirmationPending *pending;
+    uint64_t ticket;
+    BOOL consumed;
+} RUINConfirmationSendPermit;
+static _Thread_local RUINConfirmationSendPermit *gApprovedSendPermit;
+static atomic_int gSendButtonIvarState;
+static atomic_uint_fast64_t gUnknownCameraState;
+static BOOL gEnabled = YES, gContextValid = YES;
+static UIWindow *gWindow;
+static UIViewController *gPresenter;
+static NSUInteger gPromptCount, gControlOriginalCount, gSendOriginalCount, gOtherOriginalCount;
+static dispatch_block_t gDuringControlOriginal;
+
+static id RUINObjectIvar(id object, const char *className, const char *ivarName)
+{
+    assert(strcmp(className, RUINChatInputBarClass) == 0);
+    assert(strcmp(ivarName, "$__lazy_storage_$_sendButton") == 0);
+    return [(_TtC15LineMessagingUI12ChatInputBar *)object sendButton];
+}
+static BOOL RUINWindowIsActive(UIWindow *window) { return gContextValid && window == gWindow; }
+static UIWindow *RUINWindowForTarget(__unused id target) { return gWindow; }
+static UIViewController *RUINNearestViewController(__unused id target) { return gPresenter; }
+static BOOL RUINThreadStillMatches(__unused RUINConfirmationPending *pending) { return gContextValid; }
+static id RUINCurrentContextIdentity(RUINConfirmationPending *pending) { return pending.contextIdentity; }
+static BOOL RUINCameraStillTurnsOn(__unused RUINConfirmationPending *pending) { return YES; }
+static BOOL RUINSenderMatchesHook(__unused RUINConfirmationHook *hook, __unused id target, __unused id sender)
+{ return YES; }
+static RUINConfirmationActionClass RUINCameraSenderClassification(__unused id target, __unused id sender)
+{ return RUINConfirmationActionProtected; }
+static BOOL RUINFeatureEnabled(__unused RUINConfirmationKind kind) { return gEnabled; }
+static NSString *RUINApproveTitle(__unused RUINConfirmationKind kind) { return @""; }
+static NSString *RUINLocalizedString(NSString *key) { return key; }
+static BOOL RUINShouldConfirmSend(__unused RUINConfirmationHook *hook, __unused id target,
+    __unused RUINConfirmationPending *pending, BOOL *shouldConfirm)
+{ *shouldConfirm = YES; return YES; }
+static BOOL RUINPreparePresentation(RUINConfirmationPending *pending, __unused id target)
+{
+    pending.window = gWindow;
+    pending.presenter = gPresenter;
+    pending.anchorController = gPresenter;
+    return YES;
+}
+static BOOL RUINCapturePendingContext(__unused RUINConfirmationHook *hook,
+    __unused RUINConfirmationPending *pending) { return YES; }
+static BOOL RUINShowConfirmation(RUINConfirmationPending *pending)
+{
+    assert(!gPendingConfirmation);
+    pending.ownerTicket = RUINConfirmationIssueOwnerTicket(&gPendingOwnerTickets);
+    assert(pending.ownerTicket);
+    gPendingConfirmation = pending;
+    pending.alert = [UIAlertController new];
+    gPromptCount++;
+    return YES;
+}
+static UIView *RUINComposerForSendControl(id control, id actionTarget, SEL action);
+#include "ConfirmationProduction.inc"
+
+@interface RUINConfirmationRelayShim : NSObject
+@property(nonatomic, strong) id composer;
+@property(nonatomic, strong) id sender;
+@property(nonatomic, assign) SEL forwardedAction;
+@property(nonatomic) BOOL duplicate;
+- (void)relay:(id)sender;
+@end
+@implementation RUINConfirmationRelayShim
+- (void)relay:(id)sender
+{
+    id forwardedSender = self.sender ?: sender;
+    RUINHandleHook(&gChatInputSendHook, self.composer, self.forwardedAction, forwardedSender, nil, NULL);
+    if (self.duplicate)
+        RUINHandleHook(&gChatInputSendHook, self.composer, self.forwardedAction, forwardedSender, nil, NULL);
+}
+@end
+
+static void ShimSendOriginal(__unused id target, __unused SEL selector, __unused id sender)
+{ gSendOriginalCount++; }
+static void ShimOtherOriginal(__unused id target, __unused SEL selector, __unused id sender)
+{ gOtherOriginalCount++; }
+static void ShimControlOriginal(id control, __unused SEL selector, SEL action, id target, __unused id event)
+{
+    gControlOriginalCount++;
+    if (gDuringControlOriginal) gDuringControlOriginal();
+    if ([target isKindOfClass:RUINConfirmationRelayShim.class]) {
+        assert(action == @selector(relay:));
+        [(RUINConfirmationRelayShim *)target relay:control];
+    } else {
+        RUINHandleHook(&gChatInputSendHook, target, action, control, nil, NULL);
+    }
+}
 
 @interface RUINConfirmationAlertShim : NSObject
 @property(nonatomic, copy) dispatch_block_t action;
@@ -166,20 +313,23 @@ static void CheckSingleUseSendReentry(void)
 {
     int inputBar = 0, control = 0, otherControl = 0, sendSelector = 0, otherSelector = 0;
     BOOL consumed = NO;
-    assert(RUINConfirmationConsumeSendReentry(&consumed, 4, 4, YES, YES,
-        &inputBar, &control, &sendSelector, &inputBar, &control, &sendSelector, &sendSelector));
+    assert(RUINConfirmationConsumeSendReentry(&consumed, 4, 4, YES, YES, YES,
+        &inputBar, &control, &inputBar, &control, &sendSelector, &sendSelector));
     assert(consumed);
-    assert(!RUINConfirmationConsumeSendReentry(&consumed, 4, 4, YES, YES,
-        &inputBar, &control, &sendSelector, &inputBar, &control, &sendSelector, &sendSelector));
+    assert(!RUINConfirmationConsumeSendReentry(&consumed, 4, 4, YES, YES, YES,
+        &inputBar, &control, &inputBar, &control, &sendSelector, &sendSelector));
 
     consumed = NO;
-    assert(!RUINConfirmationConsumeSendReentry(&consumed, 4, 4, YES, YES,
-        &inputBar, &control, &sendSelector, &inputBar, &otherControl, &sendSelector, &sendSelector));
+    assert(!RUINConfirmationConsumeSendReentry(&consumed, 4, 4, YES, YES, YES,
+        &inputBar, &control, &inputBar, &otherControl, &sendSelector, &sendSelector));
     assert(!consumed);
-    assert(!RUINConfirmationConsumeSendReentry(&consumed, 4, 4, YES, YES,
-        &inputBar, &control, &sendSelector, &inputBar, &control, &otherSelector, &sendSelector));
-    assert(!RUINConfirmationConsumeSendReentry(&consumed, 3, 4, YES, YES,
-        &inputBar, &control, &sendSelector, &inputBar, &control, &sendSelector, &sendSelector));
+    assert(!RUINConfirmationConsumeSendReentry(&consumed, 4, 4, YES, YES, YES,
+        &inputBar, &control, &inputBar, &control, &otherSelector, &sendSelector));
+    assert(!RUINConfirmationConsumeSendReentry(&consumed, 3, 4, YES, YES, YES,
+        &inputBar, &control, &inputBar, &control, &sendSelector, &sendSelector));
+    assert(!RUINConfirmationConsumeSendReentry(&consumed, 4, 4, YES, YES, NO,
+        &inputBar, &control, &inputBar, &control, &sendSelector, &sendSelector));
+    assert(!consumed);
 }
 
 static void CheckAlertOwnership(void)
@@ -204,6 +354,161 @@ static void CheckAlertOwnership(void)
     assert(weakAlert == nil);
 }
 
+static void ResetProductionShim(void)
+{
+    assert(!gPendingConfirmation && !gPendingOwnerTickets.active && !gApprovedSendPermit);
+    gEnabled = YES;
+    gContextValid = YES;
+    gPromptCount = gControlOriginalCount = gSendOriginalCount = gOtherOriginalCount = 0;
+    gDuringControlOriginal = nil;
+    gWindow = [UIWindow new];
+    gPresenter = [UIViewController new];
+    gPresenter.isViewLoaded = YES;
+    gPresenter.view = [UIView new];
+    gPresenter.view.window = gWindow;
+    atomic_store(&gControlSendActionHook.original, (IMP)ShimControlOriginal);
+    atomic_store(&gChatInputSendHook.original, (IMP)ShimSendOriginal);
+    atomic_store(&gUnrelatedHook.original, (IMP)ShimOtherOriginal);
+}
+
+static RUINConfirmationPending *BeginProductionSend(UIControl *control, id actionTarget, SEL action)
+{
+    RUINHandleHook(&gControlSendActionHook, control, @selector(sendAction:to:forEvent:),
+        actionTarget, nil, action);
+    RUINConfirmationPending *pending = gPendingConfirmation;
+    assert(pending && pending.sendComposer == control.superview);
+    assert(gPromptCount == 1 && !gControlOriginalCount && !gSendOriginalCount);
+    assert(RUINPendingIsCurrent(pending, pending.ownerTicket));
+    assert(RUINValidatePendingContext(pending));
+    return pending;
+}
+
+static void CheckProductionRelay(void)
+{
+    // A different target and action is admitted only through the real lazy ivar
+    // resolver. Test direct send: separately, without the lazy identity fallback.
+    for (NSUInteger scenario = 0; scenario < 11; scenario++) {
+        ResetProductionShim();
+        _TtC15LineMessagingUI12ChatInputBar *composer = [_TtC15LineMessagingUI12ChatInputBar new];
+        _TtC15LineMessagingUI12ChatInputBar *otherComposer = [_TtC15LineMessagingUI12ChatInputBar new];
+        UIControl *control = [UIControl new];
+        UIControl *wrongSender = [UIControl new];
+        control.superview = composer;
+        RUINConfirmationRelayShim *relay = [RUINConfirmationRelayShim new];
+        relay.composer = composer;
+        relay.forwardedAction = sel_registerName("send:");
+        relay.duplicate = YES;
+        BOOL direct = scenario == 0;
+        if (!direct) composer.sendButton = control;
+
+        RUINConfirmationPending *pending = BeginProductionSend(control, direct ? composer : relay,
+            direct ? sel_registerName("send:") : @selector(relay:));
+        // Another tap while the alert owns the ticket must not replay the action.
+        RUINHandleHook(&gControlSendActionHook, control, pending.selector,
+            pending.argument0, nil, pending.dispatchedAction);
+        assert(gPromptCount == 1 && !gControlOriginalCount);
+        if (scenario == 2) relay.composer = otherComposer;
+        if (scenario == 3) relay.sender = wrongSender;
+        if (scenario == 4) relay.forwardedAction = sel_registerName("otherAction:");
+        if (scenario == 5) gDuringControlOriginal = ^{ gApprovedSendPermit->ticket++; };
+        if (scenario == 6) gDuringControlOriginal = ^{ control.superview = otherComposer; };
+        if (scenario == 7) gDuringControlOriginal = ^{ composer.sendButton = wrongSender; };
+        if (scenario == 8) gDuringControlOriginal = ^{ gContextValid = NO; };
+        if (scenario == 9) gDuringControlOriginal = ^{
+            RUINHandleHook(&gUnrelatedHook, composer, sel_registerName("send:"), control, nil, NULL);
+            assert(!gOtherOriginalCount);
+            // Invalid attempts must not consume the valid composer's permit.
+            RUINHandleHook(&gChatInputSendHook, otherComposer, sel_registerName("send:"), control, nil, NULL);
+            RUINHandleHook(&gChatInputSendHook, composer, sel_registerName("send:"), wrongSender, nil, NULL);
+            RUINHandleHook(&gChatInputSendHook, composer, sel_registerName("otherAction:"), control, nil, NULL);
+            assert(!gSendOriginalCount && !gApprovedSendPermit->consumed);
+        };
+        if (scenario == 10) gDuringControlOriginal = ^{ gApprovedSendPermit->pending = nil; };
+
+        assert(RUINConfirmationRecordDecision(&pending->lifecycle, &pending->decision, YES));
+        __weak UIAlertController *weakAlert = pending.alert;
+        RUINInvokeApprovedOriginal(pending, pending.ownerTicket, RUINConfirmationDismissalComplete);
+        BOOL shouldSend = scenario < 2 || scenario == 9;
+        assert(gControlOriginalCount == 1 && gSendOriginalCount == (NSUInteger)shouldSend);
+        assert(gPromptCount == 1 && !gOtherOriginalCount);
+        assert(pending->originalPermitConsumed && pending->lifecycle == RUINConfirmationLifecycleCompleted);
+        assert(!gPendingConfirmation && !gPendingOwnerTickets.active && !gApprovedSendPermit);
+        assert(!pending.alert && !weakAlert);
+
+        // Completion and later callbacks cannot reuse the permit or original.
+        RUINConfirmationSendPermit stale = {.pending = pending, .ticket = pending.ownerTicket};
+        gApprovedSendPermit = &stale;
+        assert(!RUINIsApprovedSendReentry(&gChatInputSendHook, composer, sel_registerName("send:"), control));
+        gApprovedSendPermit = NULL;
+        RUINInvokeApprovedOriginal(pending, pending.ownerTicket, RUINConfirmationDismissalComplete);
+        assert(gControlOriginalCount == 1 && gSendOriginalCount == (NSUInteger)shouldSend);
+        gDuringControlOriginal = nil;
+    }
+}
+
+static void CheckProductionBoundaryAndCancellation(void)
+{
+    ResetProductionShim();
+    _TtC15LineMessagingUI12ChatInputBar *composer = [_TtC15LineMessagingUI12ChatInputBar new];
+    _TtC15LineMessagingUI12ChatInputBar *otherComposer = [_TtC15LineMessagingUI12ChatInputBar new];
+    UIControl *control = [UIControl new];
+    control.superview = composer;
+    assert(RUINComposerForSendControl(control, composer, sel_registerName("send:")) == composer);
+    assert(!RUINComposerForSendControl(control, otherComposer, sel_registerName("send:")));
+    assert(!RUINComposerForSendControl(control, composer, sel_registerName("otherAction:")));
+    assert(!RUINComposerForSendControl([NSObject new], composer, sel_registerName("send:")));
+
+    RUINConfirmationPending *pending = BeginProductionSend(control, composer, sel_registerName("send:"));
+    assert(RUINConfirmationRecordDecision(&pending->lifecycle, &pending->decision, NO));
+    assert(RUINReleasePending(pending, pending.ownerTicket));
+    assert(!pending.alert && !gControlOriginalCount && !gSendOriginalCount);
+
+    gPromptCount = 0;
+    pending = BeginProductionSend(control, composer, sel_registerName("send:"));
+    control.superview = otherComposer;
+    assert(!RUINValidatePendingContext(pending));
+    RUINAbortPending(pending, pending.ownerTicket, YES);
+    assert(pending->lifecycle == RUINConfirmationLifecycleAborted);
+    assert(!pending.alert && !gPendingConfirmation && !gPendingOwnerTickets.active);
+    assert(!gControlOriginalCount && !gSendOriginalCount);
+
+    // Disabled confirmations continue to invoke the native action directly.
+    control.superview = composer;
+    gEnabled = NO;
+    RUINHandleHook(&gControlSendActionHook, control, @selector(sendAction:to:forEvent:),
+        composer, nil, sel_registerName("send:"));
+    assert(gControlOriginalCount == 1 && gSendOriginalCount == 1);
+}
+
+static void CheckProductionFailureCleanup(void)
+{
+    for (NSUInteger failure = 0; failure < 2; failure++) {
+        BOOL throws = failure == 1;
+        ResetProductionShim();
+        _TtC15LineMessagingUI12ChatInputBar *composer = [_TtC15LineMessagingUI12ChatInputBar new];
+        UIControl *control = [UIControl new];
+        control.superview = composer;
+        RUINConfirmationPending *pending = BeginProductionSend(control, composer, sel_registerName("send:"));
+        assert(RUINConfirmationRecordDecision(&pending->lifecycle, &pending->decision, YES));
+        if (throws) {
+            gDuringControlOriginal = ^{ @throw [NSException exceptionWithName:@"shim" reason:nil userInfo:nil]; };
+        } else {
+            pending.original = NULL;
+        }
+        BOOL caught = NO;
+        @try {
+            RUINInvokeApprovedOriginal(pending, pending.ownerTicket, RUINConfirmationDismissalComplete);
+        } @catch (NSException *exception) {
+            assert([exception.name isEqualToString:@"shim"]);
+            caught = YES;
+        }
+        assert(caught == throws && gControlOriginalCount == (NSUInteger)throws && !gSendOriginalCount);
+        assert(pending->lifecycle == RUINConfirmationLifecycleAborted && !pending.alert);
+        assert(!gPendingConfirmation && !gPendingOwnerTickets.active && !gApprovedSendPermit);
+        gDuringControlOriginal = nil;
+    }
+}
+
 int main(void)
 {
     @autoreleasepool {
@@ -212,6 +517,9 @@ int main(void)
         CheckDecisionLifecycle();
         CheckSingleUseSendReentry();
         CheckAlertOwnership();
+        CheckProductionRelay();
+        CheckProductionBoundaryAndCancellation();
+        CheckProductionFailureCleanup();
     }
     return 0;
 }

@@ -7,6 +7,7 @@
 #import "NativeThemeReceipt.h"
 #import "RuntimeInspector.h"
 #import "ThemeFeatures.h"
+#import "ThemeProductIdentity.h"
 #import "SwiftFields.h"
 #import <objc/runtime.h>
 
@@ -27,7 +28,7 @@ static NSArray *RUINNativeSelectedThemeIDs(UIViewController *controller)
     for (id model in selected) {
         id productID = RUINCopySwiftField(model, "package.productId");
         if (![productID isKindOfClass:NSString.class]) return nil;
-        [IDs addObject:productID];
+        [IDs addObject:RUINCanonicalThemeProductID(productID)];
     }
     return IDs;
 }
@@ -44,9 +45,16 @@ static NSString *RUINArchiveIdentity(NSDictionary *record)
 static NSArray *RUINPreferredArchives(NSArray *catalog)
 {
     NSMutableDictionary *best = [NSMutableDictionary dictionary];
-    for (NSDictionary *record in catalog) {
+    for (NSDictionary *candidate in catalog) {
+        NSDictionary *record = candidate;
         if (!RUINArchiveIdentity(record)) continue;
-        NSString *productID = record[@"productID"];
+        NSString *productID = RUINCanonicalThemeProductID(record[@"productID"]);
+        if (!productID.length) continue;
+        if (![productID isEqual:record[@"productID"]]) {
+            NSMutableDictionary *normalized = [record mutableCopy];
+            normalized[@"productID"] = productID;
+            record = normalized;
+        }
         NSDictionary *previous = best[productID];
         long long version = [record[@"version"] longLongValue];
         long long oldVersion = [previous[@"version"] longLongValue];
@@ -143,7 +151,7 @@ static void RUINImportOnNativeAppearance(UIViewController *controller, NSUIntege
             NSMutableArray *pending = [NSMutableArray array];
             for (NSDictionary *record in catalog) {
                 NSString *identity = RUINArchiveIdentity(record);
-                NSDictionary *receipt = receipts[record[@"productID"]];
+                NSDictionary *receipt = receipts[RUINCanonicalThemeProductID(record[@"productID"])];
                 long long registeredVersion = [receipt[@"rawVersion"] longLongValue];
                 long long version = [record[@"version"] longLongValue];
                 NSURL *URL = record[@"packageURL"];

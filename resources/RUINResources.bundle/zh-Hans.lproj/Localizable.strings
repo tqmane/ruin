@@ -118,6 +118,12 @@
 	<string>保留已撤回文本与媒体</string>
 	<key>menu.retainedMedia</key>
 	<string>已保存媒体</string>
+	<key>settings.tabs.entryNotReady</key>
+	<string>在主页可以使用 RUIN 齿轮按钮之前，“设置”标签页将保持显示。请先打开主页。</string>
+	<key>shops.openRejected</key>
+	<string>已请求LINE显示商店，但未被接受。</string>
+	<key>shops.openUnavailable</key>
+	<string>此LINE版本不支持前往该商店。</string>
 	<key>「%@」と「%@」を同時に非表示にできません。</key>
 	<string>不能同时隐藏“%@”和“%@”。</string>
 	<key>「%@」の表示名をこの端末だけ変更します。空欄で解除し、旧表示名ルールもこのIDには適用しません。</key>
@@ -431,7 +437,7 @@ LINEの保存記録です。現在の適用状態は確認していません。<
 	<key>操作確認</key>
 	<string>确认操作</string>
 	<key>新着のローカル通知</key>
-	<string>新的本地通知</string>
+	<string>新消息本地通知</string>
 	<key>新着メッセージを受信しました</key>
 	<string>收到新消息</string>
 	<key>既存のトーク履歴と鍵を保護するため、操作を開始できません。署名および保存先の診断状態を確認してください。</key>
@@ -465,7 +471,7 @@ LINEの保存記録です。現在の適用状態は確認していません。<
 	<key>日時不明</key>
 	<string>时间未知</string>
 	<key>更新</key>
-	<string>更新</string>
+	<string>刷新</string>
 	<key>未確認</key>
 	<string>未确认</string>
 	<key>未設定</key>
@@ -487,7 +493,8 @@ LINEの保存記録です。現在の適用状態は確認していません。<
 	<key>添付ファイルを受信しました</key>
 	<string>收到附件</string>
 	<key>現在利用可能なタブのみ設定できます。「ホーム」と「トーク」は非表示にできません。%@変更はアプリの再起動後に反映されます。</key>
-	<string>只能设置当前可用的标签页。“主页”和“聊天”无法隐藏。%@更改将在重启应用后生效。</string>
+	<string>只能设置当前可用的标签页。“主页”和“聊天”无法隐藏。
+%@更改将在重启应用后生效。</string>
 	<key>画面を閉じて、もう一度お試しください。ダウンロードしたファイルは保存されています。</key>
 	<string>请关闭页面并重试。已下载的文件已保存。</string>
 	<key>着せかえ</key>
@@ -511,7 +518,7 @@ LINEの保存記録です。現在の適用状態は確認していません。<
 	<key>着せかえ記録はありません</key>
 	<string>暂无主题记录</string>
 	<key>確認</key>
-	<string>确认</string>
+	<string>确定</string>
 	<key>確認したいユーザーのMIDを1件入力してください。MIDは「u」で始まる33文字の識別子です。LINE IDとは異なります。</key>
 	<string>请输入要查询的用户的MID。MID是以“u”开头的33位标识符，不同于LINE ID。</string>
 	<key>確認日時</key>
@@ -535,7 +542,7 @@ LINEの保存記録です。現在の適用状態は確認していません。<
 	<key>自分の名前</key>
 	<string>我的名字</string>
 	<key>自分を含むグループ人数。0は人数指定なし。</key>
-	<string>包含自己在内的群组人数。0为不指定人数。</string>
+	<string>包含自己在内的群组人数。设为 0 表示不设最低人数限制，对所有群组都进行确认。</string>
 	<key>表示の管理</key>
 	<string>显示管理</string>
 	<key>表示名を変更するトークを選ぶ</key>
@@ -569,7 +576,7 @@ LINEの保存記録です。現在の適用状態は確認していません。<
 	<key>送信確認の最低人数</key>
 	<string>发送确认最少人数</string>
 	<key>送信確認を行う最低人数は、自分を含むグループ人数です。0は人数指定なし。通話・送信の一部の入口はまだ検証中です。</key>
-	<string>进行发送确认的最少人数为包含自己在内的群组人数。0为不指定人数。部分通话与发送入口仍在验证中。</string>
+	<string>进行发送确认的最少人数为包含自己在内的群组人数。设为 0 表示不设最低人数限制，对所有群组都进行确认。部分通话与发送入口仍在验证中。</string>
 	<key>通信がタイムアウトしました。時間をおいて、もう一度お試しください。</key>
 	<string>通信超时。请稍后再试。</string>
 	<key>通信が中止されました。</key>

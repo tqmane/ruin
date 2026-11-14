@@ -91,6 +91,8 @@ static NSDictionary<NSString *, NSString *> *gLocalNames;
 static NSDictionary<NSString *, NSString *> *gLocalNamesByIdentity;
 static NSSet<NSString *> *gReadExceptions;
 static NSMutableDictionary<NSString *, NSNumber *> *gReplyBoundaries;
+static NSString *gActiveAccountMID;
+static BOOL gReadPolicyValid;
 static uint64_t gReadPolicyGeneration;
 static atomic_bool gTargetSupported = ATOMIC_VAR_INIT(false);
 static atomic_bool gReadControlEnabled = ATOMIC_VAR_INIT(false);
@@ -299,26 +301,50 @@ static NSDictionary<NSString *, NSString *> *RUINSanitizedLocalNames(id value, B
     return [result copy];
 }
 
-static void RUINReloadSettings(BOOL supported)
+static NSString *RUINValidAccountMID(id value)
+{
+    if (![value isKindOfClass:NSString.class] || [value length] != 33 || ![value hasPrefix:@"u"]) return nil;
+    NSString *mid = value;
+    for (NSUInteger i = 1; i < mid.length; i++) {
+        unichar c = [mid characterAtIndex:i];
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return nil;
+    }
+    return [mid copy];
+}
+
+static void RUINReloadSettings(BOOL supported, NSString *activeAccountMID, BOOL activation)
 {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     NSDictionary *names = supported ? RUINSanitizedLocalNames([defaults objectForKey:RUINLocalNamesDefaultsKey], NO) : @{};
     NSDictionary *identities = supported ? RUINSanitizedLocalNames([defaults objectForKey:RUINLocalNamesByIdentityDefaultsKey], YES) : @{};
     NSMutableSet *exceptions = [NSMutableSet set];
     id storedExceptions = [defaults objectForKey:RUINReadExceptionsDefaultsKey];
+    BOOL exceptionsValid = storedExceptions == nil || [storedExceptions isKindOfClass:NSArray.class];
     if (supported && [storedExceptions isKindOfClass:[NSArray class]]) {
-        for (id key in storedExceptions) if (RUINValidIdentityKey(key, YES)) [exceptions addObject:[key copy]];
+        for (id key in storedExceptions) {
+            if (RUINValidIdentityKey(key, YES)) [exceptions addObject:[key copy]];
+            else exceptionsValid = NO;
+        }
     }
     BOOL enabled = supported && [defaults boolForKey:RUINReadControlEnabledDefaultsKey];
     BOOL markOnReply = supported && [defaults boolForKey:RUINMarkReadOnReplyDefaultsKey];
     NSMutableDictionary *boundaries = [NSMutableDictionary dictionary];
     NSSet *exceptionSnapshot = [exceptions copy];
+    NSString *account = activation ? RUINValidAccountMID(activeAccountMID) : nil;
     os_unfair_lock_lock(&gStateLock);
+    BOOL keepReplyState = activation && exceptionsValid && gReadPolicyValid &&
+        account && [account isEqualToString:gActiveAccountMID] &&
+        supported == atomic_load(&gTargetSupported) && enabled == atomic_load(&gReadControlEnabled) &&
+        markOnReply == atomic_load(&gMarkReadOnReply) && [exceptionSnapshot isEqualToSet:gReadExceptions];
     gLocalNames = names;
     gLocalNamesByIdentity = identities;
     gReadExceptions = exceptionSnapshot;
-    gReplyBoundaries = boundaries;
-    gReadPolicyGeneration++;
+    if (!keepReplyState) {
+        gReplyBoundaries = boundaries;
+        gReadPolicyGeneration++;
+    }
+    if (activation) gActiveAccountMID = account;
+    gReadPolicyValid = exceptionsValid;
     atomic_store(&gTargetSupported, supported);
     atomic_store(&gReadControlEnabled, enabled);
     atomic_store(&gMarkReadOnReply, markOnReply);
@@ -335,7 +361,7 @@ void RUINSetLocalName(NSString *identityKey, NSString *alias)
         // Empty string masks the legacy fallback for this explicitly edited identity.
         names[identityKey] = [alias copy];
         [defaults setObject:names forKey:RUINLocalNamesByIdentityDefaultsKey];
-        RUINReloadSettings(RUINTargetMatches(NULL, NULL, NULL));
+        RUINReloadSettings(RUINTargetMatches(NULL, NULL, NULL), nil, NO);
     } @finally {
         os_unfair_lock_unlock(&gInstallLock);
     }
@@ -619,12 +645,12 @@ static void RUINInstallHook(RUINHook *hook)
     atomic_store(&hook->status, RUINHookInstalled);
 }
 
-void RUINInstallFeatures(void)
+static void RUINRefreshFeatures(NSString *activeAccountMID, BOOL activation)
 {
     os_unfair_lock_lock(&gInstallLock);
     @try {
         BOOL supported = RUINTargetMatches(NULL, NULL, NULL);
-        RUINReloadSettings(supported);
+        RUINReloadSettings(supported, activeAccountMID, activation);
         if (!supported) {
             for (size_t index = 0; index < sizeof(gHooks) / sizeof(gHooks[0]); index++) {
                 if (atomic_load(&gHooks[index]->status) != RUINHookInstalled)
@@ -640,6 +666,10 @@ void RUINInstallFeatures(void)
         os_unfair_lock_unlock(&gInstallLock);
     }
 }
+
+void RUINInstallFeatures(void) { RUINRefreshFeatures(nil, NO); }
+
+void RUINRefreshFeaturesOnActivation(NSString *accountMID) { RUINRefreshFeatures(accountMID, YES); }
 
 static NSString *RUINStatusName(RUINHookStatus status)
 {
@@ -694,6 +724,9 @@ NSDictionary *RUINFeatureDiagnostics(void)
     NSUInteger identityNameCount = gLocalNamesByIdentity.count;
     NSUInteger exceptionCount = gReadExceptions.count;
     NSUInteger replyBoundaryCount = gReplyBoundaries.count;
+    uint64_t policyGeneration = gReadPolicyGeneration;
+    BOOL activationAccountBound = gActiveAccountMID != nil;
+    BOOL policyValidated = gReadPolicyValid;
     os_unfair_lock_unlock(&gStateLock);
 
     NSMutableArray *identityMetadata = [NSMutableArray array];
@@ -728,6 +761,9 @@ NSDictionary *RUINFeatureDiagnostics(void)
                 @"enabled": @(atomic_load(&gMarkReadOnReply)),
                 @"defaultsKey": RUINMarkReadOnReplyDefaultsKey,
                 @"allowanceCount": @(replyBoundaryCount),
+                @"policyGeneration": @(policyGeneration),
+                @"activationAccountBound": @(activationAccountBound),
+                @"policyValidated": @(policyValidated),
                 @"boundaryProperty": @"lastReceivedMessageID (Int64)",
                 @"automaticEventHookInstalled": @(atomic_load(&gReplyObserverInstalled)),
                 @"reason": atomic_load(&gReplyObserverInstalled)

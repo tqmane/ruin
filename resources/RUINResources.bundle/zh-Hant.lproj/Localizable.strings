@@ -49,21 +49,21 @@
 	<key>LINE STOREの着せかえURLを入力してください。</key>
 	<string>請輸入LINE STORE主題URL。</string>
 	<key>LINEが保存している記録です。現在の適用状態とファイルの存在は確認していません。</key>
-	<string>這是LINE儲存的記錄。未確認目前的套用狀態和檔案是否存在。</string>
+	<string>這是LINE儲存的紀錄。未確認目前的套用狀態和檔案是否存在。</string>
 	<key>LINEにプロフィール表示を要求しました。見つからない場合や表示できない場合は、MIDと通信状態を確認してください。</key>
 	<string>已請求LINE顯示個人檔案。若找不到或無法顯示，請檢查MID和網路連線。</string>
 	<key>LINEに着せかえショップの表示を要求しましたが、受け付けられませんでした。</key>
 	<string>已請求LINE顯示主題小舖，但未被接受。</string>
 	<key>LINEのタブを検出した後に選択できます。</key>
-	<string>在偵測到LINE標籤頁後可供選擇。</string>
+	<string>在偵測到LINE分頁後可供選擇。</string>
 	<key>LINEのマイ着せかえに追加すると、選択して適用できます。</key>
 	<string>新增至LINE我的主題後即可選擇並套用。</string>
 	<key>LINEの着せかえショップを開く</key>
 	<string>開啟LINE主題小舖</string>
 	<key>LINEの着せかえ記録を取得できません</key>
-	<string>無法取得LINE主題記錄</string>
+	<string>無法取得LINE主題紀錄</string>
 	<key>LINEの着せかえ記録（%lu）</key>
-	<string>LINE主題記錄（%lu）</string>
+	<string>LINE主題紀錄（%lu）</string>
 	<key>LINEを一度完全に終了して開き直してください。次回起動時から選んだログイン方法になります。</key>
 	<string>請完全關閉LINE並重新開啟。下次啟動時將套用所選的登入方式。</string>
 	<key>LINE機能（開発中）</key>
@@ -118,6 +118,12 @@
 	<string>保留已收回文字與媒體</string>
 	<key>menu.retainedMedia</key>
 	<string>已儲存媒體</string>
+	<key>settings.tabs.entryNotReady</key>
+	<string>在主頁可以使用 RUIN 齒輪按鈕之前，「設定」分頁會保持顯示。請先開啟主頁。</string>
+	<key>shops.openRejected</key>
+	<string>已請求LINE顯示商店，但未被接受。</string>
+	<key>shops.openUnavailable</key>
+	<string>此LINE版本不支援前往該商店。</string>
 	<key>「%@」と「%@」を同時に非表示にできません。</key>
 	<string>不能同時隱藏「%@」與「%@」。</string>
 	<key>「%@」の表示名をこの端末だけ変更します。空欄で解除し、旧表示名ルールもこのIDには適用しません。</key>
@@ -151,13 +157,13 @@
 	<key>このメッセージまで既読</key>
 	<string>已讀至此訊息</string>
 	<key>この環境ではLINEの着せかえ記録を取得できません。</key>
-	<string>在此環境下無法取得LINE主題記錄。</string>
+	<string>在此環境下無法取得LINE主題紀錄。</string>
 	<key>この端末でのトーク名だけを変更します。相手には反映されません。</key>
 	<string>僅變更此裝置上的聊天室名稱，不會套用至對方。</string>
 	<key>この端末での表示名</key>
 	<string>此裝置上的顯示名稱</string>
 	<key>この端末での表示名だけを変更します。相手には反映されません。一覧に反映されない場合はLINEを再起動してください。</key>
-	<string>僅變更此裝置上的顯示名稱，不會套用至對方。若列表未更新，請重新啟動LINE。</string>
+	<string>僅變更此裝置上的顯示名稱，不會套用至對方。若清單未更新，請重新啟動LINE。</string>
 	<key>この端末で表示する名前</key>
 	<string>在此裝置上顯示的名稱</string>
 	<key>この端末の別名</key>
@@ -167,15 +173,15 @@
 	<key>てすたーず (2)</key>
 	<string>測試者們 (2)</string>
 	<key>アカウントが変わりました。トーク一覧を開き直してください。</key>
-	<string>帳號已變更，請重新開啟聊天室列表。</string>
+	<string>帳號已變更，請重新開啟聊天室清單。</string>
 	<key>アプリ</key>
 	<string>應用</string>
 	<key>アプリの動作に必要なタブは、常に表示されます。</key>
-	<string>應用程式運作所需的標籤頁將一律顯示。</string>
+	<string>應用程式運作所需的分頁將一律顯示。</string>
 	<key>アプリアイコンを変更できませんでした。</key>
 	<string>無法變更應用程式圖示。</string>
 	<key>アプリアイコン等は「ローカルLYP」、24時間までの送信取消とミュート送信は別スイッチで設定します（変更後はLINEを再起動）。ミュート送信は入力確定後、送信ボタンを約2秒長押しします。</key>
-	<string>應用程式圖示等功能在「本地LYP」中設定，24小時收回與靜音訊息由獨立開關設定（變更後請重新啟動LINE）。靜音訊息請在文字輸入確定後長按傳送按鈕約2秒。</string>
+	<string>應用程式圖示等功能在「本機 LYP」中設定，24小時收回與無聲訊息由獨立開關設定（變更後請重新啟動LINE）。無聲訊息請在文字輸入確定後長按傳送按鈕約2秒。</string>
 	<key>インターネットに接続されていません。接続を確認して、もう一度お試しください。</key>
 	<string>未連線至網際網路。請檢查網路連線後重試。</string>
 	<key>ウォレット</key>
@@ -229,7 +235,7 @@
 	<key>タップして理由を確認</key>
 	<string>點擊以查看原因</string>
 	<key>タブの管理</key>
-	<string>管理標籤頁</string>
+	<string>管理分頁</string>
 	<key>ダウンロード</key>
 	<string>下載</string>
 	<key>ダウンロードした着せかえは、マイ着せかえを開くと一覧に表示されます。選択して適用できます。</key>
@@ -255,7 +261,7 @@
 	<key>トークを読み込み中…</key>
 	<string>正在載入聊天室…</string>
 	<key>トーク一覧を一度開いてから、もう一度お試しください。</key>
-	<string>請先開啟一次聊天室列表，然後再試一次。</string>
+	<string>請先開啟一次聊天室清單，然後再試一次。</string>
 	<key>ニュース</key>
 	<string>新聞</string>
 	<key>バージョン</key>
@@ -327,9 +333,9 @@
 	<key>ローカル設定・診断</key>
 	<string>本機設定與診斷</string>
 	<key>一覧にないトーク（%lu）</key>
-	<string>不在列表中的聊天室（%lu）</string>
+	<string>不在清單中的聊天室（%lu）</string>
 	<key>一覧の更新に失敗しました。前回取得した内容を表示しています。</key>
-	<string>更新列表失敗。正在顯示上次取得的內容。</string>
+	<string>更新清單失敗。正在顯示上次取得的內容。</string>
 	<key>一覧を取得できませんでした</key>
 	<string>無法取得清單</string>
 	<key>一覧を更新できませんでした</key>
@@ -431,11 +437,11 @@ LINEの保存記録です。現在の適用状態は確認していません。<
 	<key>操作確認</key>
 	<string>確認操作</string>
 	<key>新着のローカル通知</key>
-	<string>新的本機通知</string>
+	<string>新訊息本機通知</string>
 	<key>新着メッセージを受信しました</key>
 	<string>收到新訊息</string>
 	<key>既存のトーク履歴と鍵を保護するため、操作を開始できません。署名および保存先の診断状態を確認してください。</key>
-	<string>為保護現有的聊天記錄與金鑰，無法開始此操作。請檢查簽名及儲存位置的診斷狀態。</string>
+	<string>為保護現有的聊天紀錄與金鑰，無法開始此操作。請檢查簽名及儲存位置的診斷狀態。</string>
 	<key>既存の別名</key>
 	<string>現有別名</string>
 	<key>既読にできませんでした。もう一度お試しください。</key>
@@ -465,7 +471,7 @@ LINEの保存記録です。現在の適用状態は確認していません。<
 	<key>日時不明</key>
 	<string>時間未知</string>
 	<key>更新</key>
-	<string>更新</string>
+	<string>重新整理</string>
 	<key>未確認</key>
 	<string>未確認</string>
 	<key>未設定</key>
@@ -487,7 +493,8 @@ LINEの保存記録です。現在の適用状態は確認していません。<
 	<key>添付ファイルを受信しました</key>
 	<string>收到附件</string>
 	<key>現在利用可能なタブのみ設定できます。「ホーム」と「トーク」は非表示にできません。%@変更はアプリの再起動後に反映されます。</key>
-	<string>只能設定目前可用的分頁。「主頁」與「聊天」無法隱藏。%@變更將在重啟應用程式後生效。</string>
+	<string>只能設定目前可用的分頁。「主頁」與「聊天」無法隱藏。
+%@變更將在重啟應用程式後生效。</string>
 	<key>画面を閉じて、もう一度お試しください。ダウンロードしたファイルは保存されています。</key>
 	<string>請關閉畫面並重試。已下載的檔案已儲存。</string>
 	<key>着せかえ</key>
@@ -509,15 +516,15 @@ LINEの保存記録です。現在の適用状態は確認していません。<
 	<key>着せかえ一覧を更新</key>
 	<string>重新整理主題清單</string>
 	<key>着せかえ記録はありません</key>
-	<string>尚無主題記錄</string>
+	<string>尚無主題紀錄</string>
 	<key>確認</key>
-	<string>確認</string>
+	<string>確定</string>
 	<key>確認したいユーザーのMIDを1件入力してください。MIDは「u」で始まる33文字の識別子です。LINE IDとは異なります。</key>
 	<string>請輸入欲查詢使用者的MID。MID是以「u」開頭的33字元識別碼，與LINE ID不同。</string>
 	<key>確認日時</key>
 	<string>確認時間</string>
 	<key>確認日時は、この端末が既読情報を確認した日時です。日時を特定できない記録は「日時不明」と表示します。</key>
-	<string>確認時間是指此裝置確認已讀資訊的時間。無法確定時間的記錄將顯示為「時間未知」。</string>
+	<string>確認時間是指此裝置確認已讀資訊的時間。無法確定時間的紀錄將顯示為「時間未知」。</string>
 	<key>確認日時：</key>
 	<string>確認時間：</string>
 	<key>確認日時：2023/11/15 07:13:30</key>
@@ -535,7 +542,7 @@ LINEの保存記録です。現在の適用状態は確認していません。<
 	<key>自分の名前</key>
 	<string>我的名字</string>
 	<key>自分を含むグループ人数。0は人数指定なし。</key>
-	<string>包含自己在內的群組人數。0為不指定人數。</string>
+	<string>包含自己在內的群組人數。設為 0 表示不設最低人數限制，對所有群組皆進行確認。</string>
 	<key>表示の管理</key>
 	<string>顯示管理</string>
 	<key>表示名を変更するトークを選ぶ</key>
@@ -543,7 +550,7 @@ LINEの保存記録です。現在の適用状態は確認していません。<
 	<key>表示名を編集</key>
 	<string>編輯顯示名稱</string>
 	<key>記録はありません</key>
-	<string>尚無記錄</string>
+	<string>尚無紀錄</string>
 	<key>設定</key>
 	<string>設定</string>
 	<key>診断</key>
@@ -569,7 +576,7 @@ LINEの保存記録です。現在の適用状態は確認していません。<
 	<key>送信確認の最低人数</key>
 	<string>傳送確認最少人數</string>
 	<key>送信確認を行う最低人数は、自分を含むグループ人数です。0は人数指定なし。通話・送信の一部の入口はまだ検証中です。</key>
-	<string>執行傳送確認的最少人數為包含自己在內的群組人數。0為不指定人數。部分通話與傳送入口仍在驗證中。</string>
+	<string>執行傳送確認的最少人數為包含自己在內的群組人數。設為 0 表示不設最低人數限制，對所有群組皆進行確認。部分通話與傳送入口仍在驗證中。</string>
 	<key>通信がタイムアウトしました。時間をおいて、もう一度お試しください。</key>
 	<string>通訊逾時。請稍後再試。</string>
 	<key>通信が中止されました。</key>

@@ -179,12 +179,13 @@ static inline BOOL RUINConfirmationAbort(RUINConfirmationLifecycle *lifecycle)
 
 static inline BOOL RUINConfirmationConsumeSendReentry(BOOL *permitConsumed,
     uint64_t permitTicket, uint64_t ownerTicket, BOOL controlActionOrigin, BOOL inputBarSendHook,
-    const void *expectedInputBar, const void *expectedControl, const void *expectedAction,
+    BOOL composerBoundaryMatched, const void *expectedInputBar, const void *expectedControl,
     const void *receiver, const void *sender, const void *selector, const void *sendSelector)
 {
     if (!permitConsumed || *permitConsumed || !permitTicket || permitTicket != ownerTicket ||
-        !controlActionOrigin || !inputBarSendHook || !expectedInputBar || expectedInputBar != receiver ||
-        !expectedControl || expectedControl != sender || expectedAction != sendSelector ||
+        !controlActionOrigin || !inputBarSendHook || !composerBoundaryMatched ||
+        !expectedInputBar || expectedInputBar != receiver ||
+        !expectedControl || expectedControl != sender || !sendSelector ||
         selector != sendSelector) return NO;
     *permitConsumed = YES;
     return YES;

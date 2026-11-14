@@ -444,13 +444,17 @@ static NSString *RUINThemeUITrim(NSString *value)
         field.autocapitalizationType = UITextAutocapitalizationTypeNone;
     }];
     __weak UIAlertController *weakPrompt = prompt;
+    __weak typeof(self) weakSelf = self;
     [prompt addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"キャンセル") style:UIAlertActionStyleCancel handler:nil]];
     UIAlertAction *download = [UIAlertAction actionWithTitle:RUINLocalizedString(@"ダウンロード") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
         NSString *URLText = RUINThemeUITrim(weakPrompt.textFields.firstObject.text);
         if (!RUINValidatedThemeStoreURL(URLText)) {
-            [self showMessage:RUINLocalizedString(@"正しいLINE STOREの着せかえURLを入力してください。") title:RUINLocalizedString(@"ダウンロードを開始できませんでした")];
+            [weakSelf showMessage:RUINLocalizedString(@"正しいLINE STOREの着せかえURLを入力してください。") title:RUINLocalizedString(@"ダウンロードを開始できませんでした")];
             return;
         }
+        // Preserve the confirmed request through resolution and download kickoff.
+        RUINThemeSettingsViewController *owner = weakSelf;
+        if (!owner) return;
         gThemeUIDownloading = YES;
         gThemeUIDownloadSaved = NO;
         gThemeUIDownloadError = nil;
@@ -459,11 +463,17 @@ static NSString *RUINThemeUITrim(NSString *value)
         RUINResolveThemeStoreURL(URLText, ^(NSDictionary<NSString *, NSString *> *theme, NSError *error) {
             dispatch_async(dispatch_get_main_queue(), ^{
                 gThemeUIDownloading = NO;
-                if (error || !theme) {
+                gThemeUIDownloadName = nil;
+                if (error || ![theme isKindOfClass:NSDictionary.class] ||
+                    ![theme[@"name"] isKindOfClass:NSString.class] ||
+                    ![theme[@"productID"] isKindOfClass:NSString.class] ||
+                    ![theme[@"version"] isKindOfClass:NSString.class]) {
                     gThemeUIDownloadError = RUINThemeUIError(RUINLocalizedString(@"ストア情報を取得できませんでした。URLと通信状況を確認してください。"));
-                    [NSNotificationCenter.defaultCenter postNotificationName:RUINThemeUIDownloadChanged object:nil];
-                    [self showError:gThemeUIDownloadError title:RUINLocalizedString(@"ダウンロードを開始できませんでした")];
-                } else [self startDownloadWithName:theme[@"name"] productID:theme[@"productID"] version:theme[@"version"]];
+                }
+                [NSNotificationCenter.defaultCenter postNotificationName:RUINThemeUIDownloadChanged object:nil];
+                if (gThemeUIDownloadError) {
+                    if (owner.isVisible) [owner showError:gThemeUIDownloadError title:RUINLocalizedString(@"ダウンロードを開始できませんでした")];
+                } else [owner startDownloadWithName:theme[@"name"] productID:theme[@"productID"] version:theme[@"version"]];
             });
         });
     }];

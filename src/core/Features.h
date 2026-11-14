@@ -22,6 +22,13 @@ FOUNDATION_EXPORT NSString * const RUINLegacyMessagingEnabledDefaultsKey;
  unverified account identifier.
  */
 FOUNDATION_EXPORT void RUINInstallFeatures(void);
+/**
+ Retry hooks and reload settings on foreground activation. Transient reply
+ state survives only if the validated current account and read policy match.
+ Missing/changed accounts, policy changes and explicit installs invalidate it.
+ The account is kept in memory only and is never included in diagnostics.
+ */
+FOUNDATION_EXPORT void RUINRefreshFeaturesOnActivation(NSString * _Nullable accountMID);
 
 /** Runtime metadata and in-memory call counts only; no chat content or IDs. */
 FOUNDATION_EXPORT NSDictionary *RUINFeatureDiagnostics(void);
