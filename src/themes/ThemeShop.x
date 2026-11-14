@@ -702,11 +702,11 @@ static void RUINOpenShop(UIViewController *source, BOOL sticker)
     if (status == RUINThemeShopRouteAccepted) return;
     if (navigation.topViewController != visible || visible.presentedViewController || !visible.viewIfLoaded.window) return;
     NSString *message = status == RUINThemeShopVersionGated || status == RUINThemeShopRouterUnavailable
-        ? RUINLocalizedString(@"shops.openUnavailable")
-        : RUINLocalizedString(@"shops.openRejected");
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:RUINLocalizedString(sticker ? @"スタンプショップを開けませんでした" : @"着せかえショップを開けませんでした")
+        ? RUINLocalizedString(@"shops.open_unavailable")
+        : RUINLocalizedString(@"shops.open_rejected");
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:RUINLocalizedString(sticker ? @"shops.sticker_open_failed" : @"shops.theme_open_failed")
         message:message preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"閉じる") style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"common.close") style:UIAlertActionStyleCancel handler:nil]];
     [visible presentViewController:alert animated:YES completion:nil];
 }
 

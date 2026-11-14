@@ -1,5 +1,7 @@
 #define RUIN_CONFIRMATIONS_INTERNAL 1
+#define RUIN_HOST_CHECK 1
 #import "../src/interface/Confirmations.h"
+#import "../src/core/Localization.h"
 
 #include <assert.h>
 #include <stdint.h>
@@ -92,7 +94,6 @@ static RUINConfirmationActionClass RUINCameraSenderClassification(__unused id ta
 { return RUINConfirmationActionProtected; }
 static BOOL RUINFeatureEnabled(__unused RUINConfirmationKind kind) { return gEnabled; }
 static NSString *RUINApproveTitle(__unused RUINConfirmationKind kind) { return @""; }
-static NSString *RUINLocalizedString(NSString *key) { return key; }
 static BOOL RUINShouldConfirmSend(__unused RUINConfirmationHook *hook, __unused id target,
     __unused RUINConfirmationPending *pending, BOOL *shouldConfirm)
 { *shouldConfirm = YES; return YES; }

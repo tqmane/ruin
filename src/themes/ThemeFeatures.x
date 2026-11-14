@@ -1263,14 +1263,14 @@ NSDictionary<NSString *, id> *RUINThemeDiagnostics(void)
                 @"installationConfirmed": @NO,
                 @"reason": manualDownloadAvailable
                     ? @"Uses only the statically recovered anonymous CDN GET when enableThemeDL is on. It does not request an order, write ownership/grant records, or claim installation."
-                    : RUINLocalizedString(@"このLINEバージョンでは、この画面からのダウンロードを利用できません。")
+                    : RUINLocalizedString(@"themes.download_unavailable")
             },
             @"localCatalog": @{
                 @"available": @(catalogAvailable),
                 @"status": catalogAvailable ? @"validated_downloads_plus_read_only_coredata" : @"unavailable",
                 @"reason": catalogAvailable
                     ? @"Includes validated local .linetheme archives and, when the Theme 2 model is present, read-only native records with a positive installedTime. Downloaded archives are not marked installed."
-                    : RUINLocalizedString(@"このLINEバージョンでは着せかえ一覧を取得できません。")
+                    : RUINLocalizedString(@"themes.catalog_unavailable")
             },
             @"apply": RUINThemeOperation(@"Theme apply", nil),
             @"remove": RUINThemeOperation(@"Theme removal", nil),
@@ -1311,7 +1311,7 @@ NSDictionary<NSString *, id> *RUINThemeDiagnostics(void)
 NSArray<NSDictionary<NSString *, id> *> *RUINThemeCatalog(NSError **error)
 {
     if (!RUINThemeTargetMatches()) {
-        if (error) *error = RUINThemeStoreError(RUINLocalizedString(@"このLINEバージョンでは着せかえ一覧を取得できません。"), nil);
+        if (error) *error = RUINThemeStoreError(RUINLocalizedString(@"themes.catalog_unavailable"), nil);
         return nil;
     }
     NSMutableArray<NSDictionary<NSString *, id> *> *packages = [NSMutableArray array];
@@ -1427,7 +1427,7 @@ static void RUINDownloadThemeAsset(NSString *name,
     }
     if (!RUINThemeTargetMatches()) {
         NSError *error = RUINThemeError(RUINThemeErrorNativeAPIUnavailable,
-            @"Manual name/ID/version download", RUINLocalizedString(@"このLINEバージョンでは、この画面からのダウンロードを利用できません。"));
+            @"Manual name/ID/version download", RUINLocalizedString(@"themes.download_unavailable"));
         dispatch_async(dispatch_get_main_queue(), ^{ completion(nil, error); });
         return;
     }

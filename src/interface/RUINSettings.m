@@ -46,7 +46,7 @@ static BOOL RUINShouldSuppressPartialCompatibilityWarning(void) {
 }
 
 static NSString *RUINPartialCompatibilityMessage(void) {
-    NSString *format = RUINLocalizedString(@"LINE %@（ビルド %@）は完全には検証されていないため、一部の機能を利用できない可能性があります。");
+    NSString *format = RUINLocalizedString(@"compatibility.partial.message");
     return [NSString stringWithFormat:format,
             RUINSettingsInfoString(@"CFBundleShortVersionString"), RUINSettingsInfoString(@"CFBundleVersion")];
 }
@@ -81,9 +81,9 @@ typedef NS_ENUM(NSInteger, RUINSettingsSection) {
 
 static NSDictionary *Toggle(NSString *title, NSString *key) { return @{@"title":title, @"key":key}; }
 static NSDictionary<NSString *, NSString *> *RUINTabTitles(void) {
-    return @{@"home":RUINLocalizedString(@"ホーム"), @"talk":RUINLocalizedString(@"トーク"), @"shopping":RUINLocalizedString(@"ショッピング"),
-        @"voom":@"VOOM", @"wallet":RUINLocalizedString(@"ウォレット"), @"news":RUINLocalizedString(@"ニュース"),
-        @"call":RUINLocalizedString(@"通話"), @"settings":RUINLocalizedString(@"設定"), @"apps":RUINLocalizedString(@"アプリ")};
+    return @{@"home":RUINLocalizedString(@"tabs.home"), @"talk":RUINLocalizedString(@"tabs.talk"), @"shopping":RUINLocalizedString(@"tabs.shopping"),
+        @"voom":@"VOOM", @"wallet":RUINLocalizedString(@"tabs.wallet"), @"news":RUINLocalizedString(@"tabs.news"),
+        @"call":RUINLocalizedString(@"tabs.call"), @"settings":RUINLocalizedString(@"tabs.settings"), @"apps":RUINLocalizedString(@"tabs.apps")};
 }
 static NSDictionary<NSString *, NSString *> *RUINTabHideKeys(void) {
     return @{@"shopping":RUINHideShoppingTabDefaultsKey,
@@ -106,20 +106,20 @@ static NSArray<NSDictionary *> *RUINNativeTabRows(void) {
     NSMutableArray *rows = [NSMutableArray array];
     for (NSString *identifier in RUINNativeTabIdentifiers()) {
         NSString *key = keys[identifier], *title = titles[identifier];
-        if (key && title) [rows addObject:Toggle([NSString stringWithFormat:RUINLocalizedString(@"%@を非表示"), title], key)];
+        if (key && title) [rows addObject:Toggle([NSString stringWithFormat:RUINLocalizedString(@"settings.hide_tab"), title], key)];
     }
-    [rows addObject:Toggle(RUINLocalizedString(@"起動時のタブを固定"), RUINStartupTabFixedDefaultsKey)];
+    [rows addObject:Toggle(RUINLocalizedString(@"settings.fixed_startup_tab"), RUINStartupTabFixedDefaultsKey)];
     return rows;
 }
 static NSArray<NSDictionary *> *ToggleRows(NSInteger section) {
     switch (section) {
-        case RUINSettingsSectionReadControls: return @[Toggle(RUINLocalizedString(@"既読を隠す"), RUINReadControlEnabledDefaultsKey), Toggle(RUINLocalizedString(@"返信時に既読をつける"), RUINMarkReadOnReplyDefaultsKey)];
-        case RUINSettingsSectionConfirmations: return @[Toggle(RUINLocalizedString(@"グループへの送信確認"), RUINConfirmSendEnabledDefaultsKey), Toggle(RUINLocalizedString(@"通話開始の確認"), RUINConfirmCallEnabledDefaultsKey), Toggle(RUINLocalizedString(@"カメラをオンにする前に確認"), RUINConfirmCameraOnEnabledDefaultsKey), Toggle(RUINLocalizedString(@"通話終了の確認"), RUINConfirmDisconnectEnabledDefaultsKey)];
-        case RUINSettingsSectionAppearance: return @[Toggle(RUINLocalizedString(@"広告を非表示"), RUINHideAdsDefaultsKey), Toggle(RUINLocalizedString(@"おすすめ欄を非表示"), RUINHideRecommendationsDefaultsKey), Toggle(RUINLocalizedString(@"音声入力ボタンを非表示"), RUINHideVoiceInputDefaultsKey), Toggle(RUINLocalizedString(@"Agent-iバーを非表示"), RUINHideAgentIBarDefaultsKey)];
+        case RUINSettingsSectionReadControls: return @[Toggle(RUINLocalizedString(@"settings.hide_read"), RUINReadControlEnabledDefaultsKey), Toggle(RUINLocalizedString(@"settings.mark_read_on_reply"), RUINMarkReadOnReplyDefaultsKey)];
+        case RUINSettingsSectionConfirmations: return @[Toggle(RUINLocalizedString(@"settings.confirm_group_send"), RUINConfirmSendEnabledDefaultsKey), Toggle(RUINLocalizedString(@"settings.confirm_call"), RUINConfirmCallEnabledDefaultsKey), Toggle(RUINLocalizedString(@"settings.confirm_camera_on"), RUINConfirmCameraOnEnabledDefaultsKey), Toggle(RUINLocalizedString(@"settings.confirm_disconnect"), RUINConfirmDisconnectEnabledDefaultsKey)];
+        case RUINSettingsSectionAppearance: return @[Toggle(RUINLocalizedString(@"settings.hide_ads"), RUINHideAdsDefaultsKey), Toggle(RUINLocalizedString(@"settings.hide_recommendations"), RUINHideRecommendationsDefaultsKey), Toggle(RUINLocalizedString(@"settings.hide_voice_input"), RUINHideVoiceInputDefaultsKey), Toggle(RUINLocalizedString(@"settings.hide_agent_bar"), RUINHideAgentIBarDefaultsKey)];
         case RUINSettingsSectionTabs: return RUINNativeTabRows();
-        case RUINSettingsSectionHistory: return @[Toggle(RUINLocalizedString(@"media.settingTitle"), RUINKeepUnsentMessagesKey), Toggle(RUINLocalizedString(@"既読範囲を記録"), RUINTrackReadUsersKey), Toggle(RUINLocalizedString(@"年齢確認をスキップ"), RUINBypassAgeVerificationDefaultsKey), Toggle(RUINLocalizedString(@"スタンプをGIFでコピー"), RUINCopyStickerGIFEnabledDefaultsKey)];
-        case RUINSettingsSectionNotifications: return @[Toggle(RUINLocalizedString(@"新着のローカル通知"), RUINLocalNotificationsEnabledDefaultsKey)];
-        case RUINSettingsSectionLineFeatures: return @[Toggle(RUINLocalizedString(@"ローカルLYP機能"), RUINLocalLYPEnabledDefaultsKey), Toggle(RUINLocalizedString(@"24h送信取消・ミュートメッセージ"), RUINLegacyMessagingEnabledDefaultsKey)];
+        case RUINSettingsSectionHistory: return @[Toggle(RUINLocalizedString(@"settings.keep_unsent_media"), RUINKeepUnsentMessagesKey), Toggle(RUINLocalizedString(@"settings.track_read_ranges"), RUINTrackReadUsersKey), Toggle(RUINLocalizedString(@"settings.skip_age_verification"), RUINBypassAgeVerificationDefaultsKey), Toggle(RUINLocalizedString(@"settings.copy_sticker_gif"), RUINCopyStickerGIFEnabledDefaultsKey)];
+        case RUINSettingsSectionNotifications: return @[Toggle(RUINLocalizedString(@"settings.local_notifications"), RUINLocalNotificationsEnabledDefaultsKey)];
+        case RUINSettingsSectionLineFeatures: return @[Toggle(RUINLocalizedString(@"settings.local_lyp"), RUINLocalLYPEnabledDefaultsKey), Toggle(RUINLocalizedString(@"settings.legacy_messaging"), RUINLegacyMessagingEnabledDefaultsKey)];
         default: return @[];
     }
 }
@@ -137,7 +137,7 @@ static NSArray<NSDictionary *> *ToggleRows(NSInteger section) {
     return self;
 }
 - (void)viewDidLoad {
-    [super viewDidLoad]; self.title = RUINLocalizedString(@"RUIN設定");
+    [super viewDidLoad]; self.title = RUINLocalizedString(@"settings.title");
     self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeAlways;
     if (self.navigationController.viewControllers.firstObject == self)
         self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemClose target:self action:@selector(closeSettings)];
@@ -158,34 +158,34 @@ static NSArray<NSDictionary *> *ToggleRows(NSInteger section) {
 }
 - (NSInteger)numberOfSectionsInTableView:(__unused UITableView *)tableView { return self.compatible ? RUINSettingsSectionCount : 1; }
 - (NSString *)tableView:(__unused UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
-    return self.compatible ? @[RUINLocalizedString(@"バージョン"), RUINLocalizedString(@"既読の管理"), RUINLocalizedString(@"トークの表示名"), RUINLocalizedString(@"操作確認"), RUINLocalizedString(@"表示の管理"), RUINLocalizedString(@"タブの管理"), RUINLocalizedString(@"履歴・追加機能（開発中）"), RUINLocalizedString(@"サブ端末ログイン"), RUINLocalizedString(@"診断"), RUINLocalizedString(@"ショップ"), RUINLocalizedString(@"ユーザー検索"), RUINLocalizedString(@"通知"), RUINLocalizedString(@"LINE機能（開発中）")][section] : RUINLocalizedString(@"診断");
+    return self.compatible ? @[RUINLocalizedString(@"settings.version"), RUINLocalizedString(@"settings.read_controls"), RUINLocalizedString(@"settings.chat_names"), RUINLocalizedString(@"settings.confirmations"), RUINLocalizedString(@"settings.appearance"), RUINLocalizedString(@"settings.tabs"), RUINLocalizedString(@"settings.history"), RUINLocalizedString(@"settings.secondary_login"), RUINLocalizedString(@"settings.diagnostics"), RUINLocalizedString(@"settings.shops"), RUINLocalizedString(@"settings.user_search"), RUINLocalizedString(@"settings.notifications"), RUINLocalizedString(@"settings.line_features")][section] : RUINLocalizedString(@"settings.diagnostics");
 }
 - (NSString *)tableView:(__unused UITableView *)tableView titleForFooterInSection:(NSInteger)section {
-    if (!self.compatible) return RUINLocalizedString(@"このLINEビルドでは機能を有効にできません。");
+    if (!self.compatible) return RUINLocalizedString(@"compatibility.build_unsupported");
     switch (section) {
-        case RUINSettingsSectionReadControls: return RUINLocalizedString(@"1対1のトークで、既読非表示・トーク別の例外・返信時の切替を実機で確認済みです。グループやオープンチャット、手動で既読にする操作は検証中です。");
-        case RUINSettingsSectionLocalNames: return RUINLocalizedString(@"この端末での表示名だけを変更します。相手には反映されません。一覧に反映されない場合はLINEを再起動してください。");
-        case RUINSettingsSectionConfirmations: return RUINLocalizedString(@"送信確認を行う最低人数は、自分を含むグループ人数です。0は人数指定なし。通話・送信の一部の入口はまだ検証中です。");
-        case RUINSettingsSectionAppearance: return RUINLocalizedString(@"変更後はトーク画面を開き直してください。");
+        case RUINSettingsSectionReadControls: return RUINLocalizedString(@"settings.read_controls_footer");
+        case RUINSettingsSectionLocalNames: return RUINLocalizedString(@"settings.chat_names_footer");
+        case RUINSettingsSectionConfirmations: return RUINLocalizedString(@"settings.confirmations_footer");
+        case RUINSettingsSectionAppearance: return RUINLocalizedString(@"settings.appearance_footer");
         case RUINSettingsSectionTabs: {
             NSArray *pair = RUINNativeServicePair();
             NSString *dependency = [pair[0] length] && [pair[1] length] ?
-                [NSString stringWithFormat:RUINLocalizedString(@"「%@」と「%@」を同時に非表示にできません。"), RUINTabTitles()[pair[0]], RUINTabTitles()[pair[1]]] :
-                RUINLocalizedString(@"アプリの動作に必要なタブは、常に表示されます。");
+                [NSString stringWithFormat:RUINLocalizedString(@"settings.tabs_hide_conflict"), RUINTabTitles()[pair[0]], RUINTabTitles()[pair[1]]] :
+                RUINLocalizedString(@"settings.tabs_required");
             if ([RUINNativeTabAvailabilityDiagnostics()[@"menuOnlyScopeVerified"] boolValue]) dependency = @"";
-            NSString *footer = [NSString stringWithFormat:RUINLocalizedString(@"現在利用可能なタブのみ設定できます。「ホーム」と「トーク」は非表示にできません。%@変更はアプリの再起動後に反映されます。"),
+            NSString *footer = [NSString stringWithFormat:RUINLocalizedString(@"settings.tabs_footer"),
                 dependency.length ? [dependency stringByAppendingString:@"\n"] : @""];
             BOOL alternateEntryExpected = UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad ||
                 [NSUserDefaults.standardUserDefaults boolForKey:RUINSecondaryLoginEnabledKey];
             if (alternateEntryExpected && ![RUINNativeEntryDiagnostics()[@"homeEntryAvailable"] boolValue])
-                footer = [footer stringByAppendingFormat:@"\n%@", RUINLocalizedString(@"settings.tabs.entryNotReady")];
+                footer = [footer stringByAppendingFormat:@"\n%@", RUINLocalizedString(@"settings.tabs_entry_not_ready")];
             return footer;
         }
-        case RUINSettingsSectionHistory: return RUINLocalizedString(@"media.historyFooter");
-        case RUINSettingsSectionSecondaryLogin: return RUINLocalizedString(@"変更はログアウト後、ログイン画面の「ログイン」長押しで行います。切り替え後はアプリの再起動が必要です。");
-        case RUINSettingsSectionDiagnostics: return RUINLocalizedString(@"着せかえ・スタンプGIF・MID検索なども全機能対応の対象です。未完成の項目を対応済みとは表示しません。");
-        case RUINSettingsSectionNotifications: return RUINLocalizedString(@"1対1・グループトークの新着のみ通知します。アプリ停止中の即時受信には対応していません。");
-        case RUINSettingsSectionLineFeatures: return RUINLocalizedString(@"アプリアイコン等は「ローカルLYP」、24時間までの送信取消とミュート送信は別スイッチで設定します（変更後はLINEを再起動）。ミュート送信は入力確定後、送信ボタンを約2秒長押しします。");
+        case RUINSettingsSectionHistory: return RUINLocalizedString(@"media.history_footer");
+        case RUINSettingsSectionSecondaryLogin: return RUINLocalizedString(@"settings.secondary_login_footer");
+        case RUINSettingsSectionDiagnostics: return RUINLocalizedString(@"settings.diagnostics_footer");
+        case RUINSettingsSectionNotifications: return RUINLocalizedString(@"settings.notifications_footer");
+        case RUINSettingsSectionLineFeatures: return RUINLocalizedString(@"settings.line_features_footer");
         default: return nil;
     }
 }
@@ -204,17 +204,17 @@ static NSArray<NSDictionary *> *ToggleRows(NSInteger section) {
     cell.textLabel.numberOfLines = 0; cell.detailTextLabel.numberOfLines = 2;
     NSArray *rows = ToggleRows(path.section);
     if (!self.compatible || path.section == RUINSettingsSectionDiagnostics) {
-        cell.textLabel.text = path.row == 0 ? RUINLocalizedString(@"ランタイム・機能診断") : RUINLocalizedString(@"全機能の対応表");
+        cell.textLabel.text = path.row == 0 ? RUINLocalizedString(@"diagnostics.runtime_title") : RUINLocalizedString(@"diagnostics.feature_matrix");
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     } else if (path.section == RUINSettingsSectionLineFeatures && (NSUInteger)path.row == ToggleRows(RUINSettingsSectionLineFeatures).count) {
-        cell.textLabel.text = RUINLocalizedString(@"カスタムフォント");
-        cell.detailTextLabel.text = RUINLocalFontName() ?: RUINLocalizedString(@"標準フォント");
+        cell.textLabel.text = RUINLocalizedString(@"font.title");
+        cell.detailTextLabel.text = RUINLocalFontName() ?: RUINLocalizedString(@"font.default");
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     } else if (path.section == RUINSettingsSectionMIDLookup) {
-        cell.textLabel.text = RUINLocalizedString(@"MIDでプロフィールを開く");
+        cell.textLabel.text = RUINLocalizedString(@"profile.open_by_mid");
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     } else if (path.section == RUINSettingsSectionShops) {
-        cell.textLabel.text = path.row == 0 ? RUINLocalizedString(@"着せかえのダウンロード・保存一覧") : RUINLocalizedString(@"スタンプショップ");
+        cell.textLabel.text = path.row == 0 ? RUINLocalizedString(@"themes.downloads_title") : RUINLocalizedString(@"shops.sticker_title");
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     } else if (path.section == RUINSettingsSectionVersion && path.row == 1 && !self.fullySupported) {
         cell.textLabel.text = RUINLocalizedString(@"compatibility.partial.title");
@@ -226,12 +226,12 @@ static NSArray<NSDictionary *> *ToggleRows(NSInteger section) {
         cell.detailTextLabel.text = [NSString stringWithFormat:@"LINE %@ / %@", RUINSettingsInfoString(@"CFBundleShortVersionString"), RUINSettingsInfoString(@"CFBundleVersion")];
         cell.selectionStyle = UITableViewCellSelectionStyleNone;
     } else if (path.section == RUINSettingsSectionLocalNames) {
-        cell.textLabel.text = RUINLocalizedString(@"表示名を変更するトークを選ぶ");
-        cell.detailTextLabel.text = [NSString stringWithFormat:RUINLocalizedString(@"%lu件のトークを変更中"), (unsigned long)self.aliases.count];
+        cell.textLabel.text = RUINLocalizedString(@"names.choose_chat");
+        cell.detailTextLabel.text = [NSString stringWithFormat:RUINLocalizedString(@"names.modified_chat_count"), (unsigned long)self.aliases.count];
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     } else if (path.section == RUINSettingsSectionSecondaryLogin) {
         BOOL on = [RUINSecondaryLoginDiagnostics()[@"activeTabletRole"] boolValue];
-        cell.textLabel.text = on ? RUINLocalizedString(@"iPad扱いのサブ端末モード") : RUINLocalizedString(@"通常のiPhoneモード");
+        cell.textLabel.text = on ? RUINLocalizedString(@"login.secondary_mode") : RUINLocalizedString(@"login.primary_mode");
         cell.selectionStyle = UITableViewCellSelectionStyleNone;
     } else if ((NSUInteger)path.row < rows.count) {
         NSDictionary *row = rows[path.row]; NSString *key = row[@"key"];
@@ -247,12 +247,12 @@ static NSArray<NSDictionary *> *ToggleRows(NSInteger section) {
         [toggle addTarget:self action:@selector(preferenceChanged:) forControlEvents:UIControlEventValueChanged];
         cell.accessoryView = toggle; cell.selectionStyle = UITableViewCellSelectionStyleNone;
     } else {
-        if (path.section == RUINSettingsSectionReadControls) { cell.textLabel.text = RUINLocalizedString(@"通常通り既読をつけるトーク"); cell.detailTextLabel.text = [NSString stringWithFormat:RUINLocalizedString(@"%lu件"), (unsigned long)[NSUserDefaults.standardUserDefaults arrayForKey:RUINReadExceptionsDefaultsKey].count]; }
-        if (path.section == RUINSettingsSectionConfirmations) { cell.textLabel.text = RUINLocalizedString(@"送信確認の最低人数"); cell.detailTextLabel.text = [NSString stringWithFormat:RUINLocalizedString(@"%ld人"), (long)[NSUserDefaults.standardUserDefaults integerForKey:RUINConfirmSendMinimumGroupMemberCountDefaultsKey]]; }
+        if (path.section == RUINSettingsSectionReadControls) { cell.textLabel.text = RUINLocalizedString(@"settings.read_exceptions"); cell.detailTextLabel.text = [NSString stringWithFormat:RUINLocalizedString(@"common.item_count"), (unsigned long)[NSUserDefaults.standardUserDefaults arrayForKey:RUINReadExceptionsDefaultsKey].count]; }
+        if (path.section == RUINSettingsSectionConfirmations) { cell.textLabel.text = RUINLocalizedString(@"settings.minimum_group_members"); cell.detailTextLabel.text = [NSString stringWithFormat:RUINLocalizedString(@"common.member_count"), (long)[NSUserDefaults.standardUserDefaults integerForKey:RUINConfirmSendMinimumGroupMemberCountDefaultsKey]]; }
         if (path.section == RUINSettingsSectionTabs) {
-            cell.textLabel.text = RUINLocalizedString(@"起動時に開くタブ");
+            cell.textLabel.text = RUINLocalizedString(@"settings.startup_tab");
             NSString *identifier = [NSUserDefaults.standardUserDefaults stringForKey:RUINStartupTabDefaultsKey];
-            cell.detailTextLabel.text = RUINTabTitles()[identifier ?: @""] ?: RUINLocalizedString(@"未設定");
+            cell.detailTextLabel.text = RUINTabTitles()[identifier ?: @""] ?: RUINLocalizedString(@"common.not_set");
         }
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     }
@@ -267,7 +267,7 @@ static NSArray<NSDictionary *> *ToggleRows(NSInteger section) {
 }
 - (void)showMessage:(NSString *)message {
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"RUIN" message:message preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"確認") style:UIAlertActionStyleDefault handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"common.confirm") style:UIAlertActionStyleDefault handler:nil]];
     [self presentViewController:alert animated:YES completion:nil];
 }
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)path {
@@ -293,13 +293,13 @@ static NSArray<NSDictionary *> *ToggleRows(NSInteger section) {
     else if (path.section == RUINSettingsSectionTabs && (NSUInteger)path.row == ToggleRows(RUINSettingsSectionTabs).count) [self editStartupTab];
 }
 - (void)editThreshold {
-    UIAlertController *prompt = [UIAlertController alertControllerWithTitle:RUINLocalizedString(@"送信確認の最低人数") message:RUINLocalizedString(@"自分を含むグループ人数。0は人数指定なし。") preferredStyle:UIAlertControllerStyleAlert];
+    UIAlertController *prompt = [UIAlertController alertControllerWithTitle:RUINLocalizedString(@"settings.minimum_group_members") message:RUINLocalizedString(@"confirm.minimum_members_hint") preferredStyle:UIAlertControllerStyleAlert];
     [prompt addTextFieldWithConfigurationHandler:^(UITextField *field) { field.keyboardType = UIKeyboardTypeNumberPad; field.text = [NSString stringWithFormat:@"%ld", (long)[NSUserDefaults.standardUserDefaults integerForKey:RUINConfirmSendMinimumGroupMemberCountDefaultsKey]]; }];
     __weak typeof(self) owner = self; __weak UIAlertController *weakPrompt = prompt;
-    [prompt addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"キャンセル") style:UIAlertActionStyleCancel handler:nil]];
-    [prompt addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"保存") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+    [prompt addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"common.cancel") style:UIAlertActionStyleCancel handler:nil]];
+    [prompt addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"common.save") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
         NSString *text = weakPrompt.textFields.firstObject.text ?: @"";
-        if (!text.length || [text rangeOfCharacterFromSet:[NSCharacterSet characterSetWithCharactersInString:@"0123456789"].invertedSet].location != NSNotFound || text.length > 6) { dispatch_async(dispatch_get_main_queue(), ^{ [owner showMessage:RUINLocalizedString(@"0以上の人数を入力してください。")]; }); return; }
+        if (!text.length || [text rangeOfCharacterFromSet:[NSCharacterSet characterSetWithCharactersInString:@"0123456789"].invertedSet].location != NSNotFound || text.length > 6) { dispatch_async(dispatch_get_main_queue(), ^{ [owner showMessage:RUINLocalizedString(@"confirm.invalid_member_count")]; }); return; }
         [NSUserDefaults.standardUserDefaults setInteger:text.integerValue forKey:RUINConfirmSendMinimumGroupMemberCountDefaultsKey]; RUINRefreshSettingsFeatures(); [owner.tableView reloadData];
     }]];
     [self presentViewController:prompt animated:YES completion:nil];
@@ -310,12 +310,12 @@ static NSArray<NSDictionary *> *ToggleRows(NSInteger section) {
 }
 - (void)editStartupTab {
     NSArray *available = RUINAvailableTabs();
-    if (!available.count) { [self showMessage:RUINLocalizedString(@"LINEのタブを検出した後に選択できます。")]; return; }
+    if (!available.count) { [self showMessage:RUINLocalizedString(@"settings.tabs_not_ready")]; return; }
     NSDictionary *titles = RUINTabTitles();
-    UIAlertController *menu = [UIAlertController alertControllerWithTitle:RUINLocalizedString(@"起動時に開くタブ") message:nil preferredStyle:UIAlertControllerStyleActionSheet];
+    UIAlertController *menu = [UIAlertController alertControllerWithTitle:RUINLocalizedString(@"settings.startup_tab") message:nil preferredStyle:UIAlertControllerStyleActionSheet];
     __weak typeof(self) owner = self;
     for (NSString *identifier in available) [menu addAction:[UIAlertAction actionWithTitle:titles[identifier] ?: identifier style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { [NSUserDefaults.standardUserDefaults setObject:identifier forKey:RUINStartupTabDefaultsKey]; RUINRefreshSettingsFeatures(); [owner.tableView reloadData]; }]];
-    [menu addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"キャンセル") style:UIAlertActionStyleCancel handler:nil]];
+    [menu addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"common.cancel") style:UIAlertActionStyleCancel handler:nil]];
     if (menu.popoverPresentationController) { menu.popoverPresentationController.sourceView = self.view; menu.popoverPresentationController.sourceRect = CGRectMake(CGRectGetMidX(self.view.bounds), CGRectGetMidY(self.view.bounds), 1, 1); }
     [self presentViewController:menu animated:YES completion:nil];
 }
@@ -325,7 +325,7 @@ static NSArray<NSDictionary *> *ToggleRows(NSInteger section) {
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = RUINLocalizedString(@"診断");
+    self.title = RUINLocalizedString(@"settings.diagnostics");
     self.view.backgroundColor = UIColor.systemBackgroundColor;
     UITextView *textView = [UITextView new];
     textView.translatesAutoresizingMaskIntoConstraints = NO;
@@ -334,13 +334,13 @@ static NSArray<NSDictionary *> *ToggleRows(NSInteger section) {
     textView.alwaysBounceVertical = YES;
     textView.backgroundColor = UIColor.clearColor;
     textView.font = [UIFont monospacedSystemFontOfSize:12.0 weight:UIFontWeightRegular];
-    textView.accessibilityLabel = RUINLocalizedString(@"RUINのランタイム、互換性、機能診断のJSON");
+    textView.accessibilityLabel = RUINLocalizedString(@"diagnostics.export_description");
     NSError *error = nil;
     NSData *json = [NSJSONSerialization dataWithJSONObject:(self.document ?: RUINRuntimeDiagnostics())
                                                    options:NSJSONWritingPrettyPrinted | NSJSONWritingSortedKeys
                                                      error:&error];
     textView.text = json ? [[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding]
-                        : [NSString stringWithFormat:RUINLocalizedString(@"診断をJSONに変換できませんでした: %@"), error.localizedDescription ?: RUINLocalizedString(@"不明なエラー")];
+                        : [NSString stringWithFormat:RUINLocalizedString(@"diagnostics.json_failed"), error.localizedDescription ?: RUINLocalizedString(@"errors.unknown")];
     [self.view addSubview:textView];
     UILayoutGuide *safe = self.view.safeAreaLayoutGuide;
     [NSLayoutConstraint activateConstraints:@[

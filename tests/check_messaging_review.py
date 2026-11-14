@@ -67,6 +67,8 @@ int main(int argc, const char **argv) { @autoreleasepool {
 
 LOADERS = r'''
 #import <Foundation/Foundation.h>
+#define RUIN_HOST_CHECK 1
+#import "Localization.h"
 #import "ReadRangeFetch.h"
 #import "ReadersSheet.h"
 #import "MessageHistory.h"
@@ -157,7 +159,6 @@ int main(void) { @autoreleasepool {
 
 SHEET_UI = r'''
 @class UITableView;
-#define RUINLocalizedString(key) (key)
 @interface FixtureSheetSurface : NSObject
 @property(nonatomic) BOOL enabled, isBeingDismissed;
 @property(nonatomic, strong) id window;

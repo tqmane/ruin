@@ -2,7 +2,8 @@ SDK = $(shell xcrun --sdk iphoneos --show-sdk-path)
 CC := xcrun --sdk iphoneos clang
 VERSION_MAPPING_SOURCES := $(wildcard src/known/versions/*.m)
 HOST_COMMON := $(wildcard src/known/*.m) $(VERSION_MAPPING_SOURCES)
-HOST_CC = xcrun --sdk macosx clang -DRUIN_HOST_CHECK=1 $(HOST_COMMON)
+HOST_CC = xcrun --sdk macosx clang -DRUIN_HOST_CHECK=1 -fblocks $(HOST_COMMON)
+export RUIN_TEST_RESOURCE_BUNDLE := $(CURDIR)/resources/RUINResources.bundle
 HOST_WARNINGS := -Wall -Wextra -Werror
 RUIN_BUILD_VERSION ?= $(shell cat VERSION)
 HEADER_DIRS := $(sort $(dir $(wildcard src/*/*.h))) vendor/fishhook

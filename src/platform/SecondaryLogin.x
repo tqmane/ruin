@@ -55,10 +55,10 @@ static BOOL RUINMigrationPreflight(UIViewController *controller) {
     RUINInstallKeychainCompatibility();
     if (RUINStorageMigrationReady() && RUINKeychainCompatibilityReady()) return YES;
     if (!controller.presentedViewController) {
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:RUINLocalizedString(@"データ保護のため処理を開始できません")
-            message:RUINLocalizedString(@"既存のトーク履歴と鍵を保護するため、操作を開始できません。署名および保存先の診断状態を確認してください。")
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:RUINLocalizedString(@"login.data_protection_title")
+            message:RUINLocalizedString(@"login.data_protection_message")
             preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"確認") style:UIAlertActionStyleDefault handler:nil]];
+        [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"common.confirm") style:UIAlertActionStyleDefault handler:nil]];
         [controller presentViewController:alert animated:YES completion:nil];
     }
     return NO;
@@ -127,21 +127,21 @@ static BOOL RUINLoginCallerIsLINE(void *caller) {
 %end
 
 static void RUINShowLoginRestartNotice(UIViewController *controller) {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:RUINLocalizedString(@"ログイン方法を切り替えました")
-        message:RUINLocalizedString(@"LINEを一度完全に終了して開き直してください。次回起動時から選んだログイン方法になります。")
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:RUINLocalizedString(@"login.method_changed")
+        message:RUINLocalizedString(@"login.restart_message")
         preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"確認") style:UIAlertActionStyleDefault handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"common.confirm") style:UIAlertActionStyleDefault handler:nil]];
     [controller presentViewController:alert animated:YES completion:nil];
 }
 
 static void RUINPresentLoginModeMenu(UIViewController *controller, UILongPressGestureRecognizer *gesture) {
     if (gesture.state != UIGestureRecognizerStateBegan) return;
     if (controller.presentedViewController) return;
-    UIAlertController *menu = [UIAlertController alertControllerWithTitle:RUINLocalizedString(@"ログイン方法")
-        message:RUINLocalizedString(@"サブ端末では、現在のメイン端末でQRコードを読み取り、ログインを承認します。")
+    UIAlertController *menu = [UIAlertController alertControllerWithTitle:RUINLocalizedString(@"login.method_title")
+        message:RUINLocalizedString(@"login.secondary_help")
         preferredStyle:UIAlertControllerStyleActionSheet];
     for (NSNumber *enabled in @[@YES, @NO]) {
-        NSString *title = enabled.boolValue ? RUINLocalizedString(@"iPad扱いでサブ端末ログイン") : RUINLocalizedString(@"通常のiPhoneログイン");
+        NSString *title = enabled.boolValue ? RUINLocalizedString(@"login.secondary_action") : RUINLocalizedString(@"login.primary_action");
         [menu addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
             NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
             [defaults setBool:enabled.boolValue forKey:RUINSecondaryLoginEnabledKey];
@@ -149,7 +149,7 @@ static void RUINPresentLoginModeMenu(UIViewController *controller, UILongPressGe
             dispatch_async(dispatch_get_main_queue(), ^{ RUINShowLoginRestartNotice(controller); });
         }]];
     }
-    [menu addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"キャンセル") style:UIAlertActionStyleCancel handler:nil]];
+    [menu addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"common.cancel") style:UIAlertActionStyleCancel handler:nil]];
     if (menu.popoverPresentationController) {
         menu.popoverPresentationController.sourceView = gesture.view;
         menu.popoverPresentationController.sourceRect = gesture.view.bounds;

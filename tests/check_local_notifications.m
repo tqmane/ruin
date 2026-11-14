@@ -35,8 +35,8 @@ static BOOL Rejected(NSDictionary *snapshot, NSDate *activation, NSDate *cutoff,
 int main(void)
 {
     @autoreleasepool {
-        assert([RUINLocalizedString(@"新着メッセージを受信しました") isEqual:@"新着メッセージを受信しました"]);
-        assert([RUINLocalizedString(@"添付ファイルを受信しました") isEqual:@"添付ファイルを受信しました"]);
+        assert([RUINLocalizedString(@"notifications.new_message") isEqual:@"新着メッセージを受信しました"]);
+        assert([RUINLocalizedString(@"notifications.attachment_received") isEqual:@"添付ファイルを受信しました"]);
         NSDate *activation = At(900), *cutoff = At(950), *now = At(1000);
         NSDictionary *valid = Snapshot();
         NSString *digest = nil;
@@ -105,11 +105,11 @@ int main(void)
         NSString *fallback = nil;
         assert(RUINLocalEvaluateSnapshot(caseData, YES, YES, activation, cutoff, now,
             NULL, NULL, &fallback, NULL, NULL));
-        assert([fallback isEqual:RUINLocalizedString(@"添付ファイルを受信しました")]);
+        assert([fallback isEqual:RUINLocalizedString(@"notifications.attachment_received")]);
         caseData[@"contentType"] = @0;
         assert(RUINLocalEvaluateSnapshot(caseData, YES, YES, activation, cutoff, now,
             NULL, NULL, &fallback, NULL, NULL));
-        assert([fallback isEqual:RUINLocalizedString(@"新着メッセージを受信しました")]);
+        assert([fallback isEqual:RUINLocalizedString(@"notifications.new_message")]);
 
         BOOL observedEnabled = NO, wasEnabled = NO;
         NSDate *enableCutoff = RUINLocalEnableCutoff(&observedEnabled, &wasEnabled, nil, NO, At(900));

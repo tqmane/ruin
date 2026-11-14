@@ -17,10 +17,10 @@
 
 static NSString * const RUINThemeStoreWebClassName = @"_TtC4LIFF21ChatAppViewController";
 static NSString * const RUINThemeStoreWebHandlerName = @"ruinThemeStoreWebDownloadV1";
-static NSString *RUINThemeStoreWebSavedMessage(void) { return RUINLocalizedString(@"ファイルを保存しました。マイ着せかえを開いて、着せかえを選択して適用できます。"); }
-static NSString *RUINThemeStoreWebSaveLocationError(void) { return RUINLocalizedString(@"保存済みファイルの場所を確認できませんでした。"); }
-static NSString *RUINThemeStoreWebResolverError(void) { return RUINLocalizedString(@"ストア情報を取得できませんでした。URLと通信状況を確認してください。"); }
-static NSString *RUINThemeStoreWebGenericError(void) { return RUINLocalizedString(@"処理を完了できませんでした。"); }
+static NSString *RUINThemeStoreWebSavedMessage(void) { return RUINLocalizedString(@"themes.file_saved_help"); }
+static NSString *RUINThemeStoreWebSaveLocationError(void) { return RUINLocalizedString(@"themes.saved_file_missing"); }
+static NSString *RUINThemeStoreWebResolverError(void) { return RUINLocalizedString(@"themes.store_info_failed"); }
+static NSString *RUINThemeStoreWebGenericError(void) { return RUINLocalizedString(@"errors.operation_failed"); }
 
 enum {
     RUINThemeStoreWebHookPending = 0,
@@ -101,7 +101,7 @@ static NSString *RUINThemeStoreWebJavaScript(BOOL enabled, BOOL announceReady)
         "  if (announceReady && nativeAvailable) nativeHandler().postMessage({type:\"pageReady\"});\n"
         "})()\n";
 
-    NSString *downloadLabel = RUINLocalizedString(@"ダウンロード");
+    NSString *downloadLabel = RUINLocalizedString(@"common.download");
     NSData *downloadLabelData = [NSJSONSerialization dataWithJSONObject:downloadLabel
         options:NSJSONWritingFragmentsAllowed error:NULL];
     NSString *downloadLabelJSON = downloadLabelData
@@ -281,10 +281,10 @@ static NSString *RUINThemeStoreWebFailureMessage(NSError *error)
 {
     if ([error.domain isEqualToString:NSURLErrorDomain]) {
         switch (error.code) {
-            case NSURLErrorNotConnectedToInternet: return RUINLocalizedString(@"インターネットに接続されていません。接続を確認して、もう一度お試しください。");
-            case NSURLErrorTimedOut: return RUINLocalizedString(@"通信がタイムアウトしました。時間をおいて、もう一度お試しください。");
-            case NSURLErrorNetworkConnectionLost: return RUINLocalizedString(@"通信が途中で切断されました。接続を確認して、もう一度お試しください。");
-            case NSURLErrorCancelled: return RUINLocalizedString(@"通信が中止されました。");
+            case NSURLErrorNotConnectedToInternet: return RUINLocalizedString(@"errors.offline");
+            case NSURLErrorTimedOut: return RUINLocalizedString(@"errors.timeout");
+            case NSURLErrorNetworkConnectionLost: return RUINLocalizedString(@"errors.connection_lost");
+            case NSURLErrorCancelled: return RUINLocalizedString(@"errors.cancelled");
             default: return RUINThemeStoreWebGenericError();
         }
     }
@@ -300,13 +300,13 @@ static NSString *RUINThemeStoreWebFailureMessage(NSError *error)
 static void RUINThemeStoreWebShowResult(UIViewController *controller, NSError *error)
 {
     if (!controller || !controller.viewIfLoaded.window) return;
-    NSString *title = error ? RUINLocalizedString(@"ダウンロードを完了できませんでした") : RUINLocalizedString(@"保存完了");
+    NSString *title = error ? RUINLocalizedString(@"themes.download_failed") : RUINLocalizedString(@"common.saved");
     NSString *message = error ? RUINThemeStoreWebFailureMessage(error) : RUINThemeStoreWebSavedMessage();
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
-    if (!error) [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"マイ着せかえを開く") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+    if (!error) [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"themes.open_my_themes") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
         RUINOpenDownloadedThemes(controller);
     }]];
-    [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"閉じる") style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"common.close") style:UIAlertActionStyleCancel handler:nil]];
     UIViewController *presenter = controller;
     while (presenter.presentedViewController && !presenter.presentedViewController.isBeingDismissed) presenter = presenter.presentedViewController;
     if (!presenter.presentedViewController && presenter.viewIfLoaded.window) [presenter presentViewController:alert animated:YES completion:nil];

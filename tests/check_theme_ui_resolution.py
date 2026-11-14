@@ -9,12 +9,13 @@ ROOT = Path(__file__).resolve().parents[1]
 THEMES = ROOT / "src/themes"
 SHIM = r'''
 #import <Foundation/Foundation.h>
+#define RUIN_HOST_CHECK 1
+#import "Localization.h"
 #import "ThemeFeatures.h"
 #import "ThemeVersion.h"
 #include <assert.h>
 #include <stdio.h>
 NSString * const RUINThemeErrorDomain = @"fixture.theme";
-static NSString *RUINLocalizedString(NSString *key) { return key; }
 static unsigned notifications, downloads, alerts;
 static BOOL preference = YES;
 static void (^resolution)(NSDictionary *, NSError *);
@@ -147,7 +148,8 @@ int main(void) { @autoreleasepool {
             if (status == RUINThemeShopRouteAccepted) continue;
             NSDictionary *alert = ShopAlert(sticker, status);
             NSString *expected = status == RUINThemeShopVersionGated || status == RUINThemeShopRouterUnavailable
-                ? @"shops.openUnavailable" : @"shops.openRejected";
+                ? @"このLINEバージョンではショップへの移動を利用できません。"
+                : @"LINEにショップの表示を要求しましたが、受け付けられませんでした。";
             assert([alert[@"message"] isEqual:expected] && ![alert[@"message"] isEqual:alert[@"title"]]);
         }
     }
@@ -180,16 +182,16 @@ def main():
     shop_alert = "static NSDictionary *ShopAlert(BOOL sticker, RUINThemeShopStatus status) {\n" + message + '\nreturn @{@"title":' + title + ', @"message":message};\n}\n'
     for locale in ("ja", "en", "ko", "zh-Hans", "zh-Hant"):
         catalog = plistlib.loads((ROOT / "resources/RUINResources.bundle" / f"{locale}.lproj/Localizable.strings").read_bytes())
-        for key in ("shops.openUnavailable", "shops.openRejected"):
+        for key in ("shops.open_unavailable", "shops.open_rejected"):
             assert catalog[key] and all(catalog[key] != catalog[title] for title in
-                ("スタンプショップを開けませんでした", "着せかえショップを開けませんでした")), (locale, key)
+                ("shops.sticker_open_failed", "shops.theme_open_failed")), (locale, key)
     with tempfile.TemporaryDirectory(prefix="ruin-theme-ui-resolution-") as temporary:
         directory = Path(temporary)
         fixture = directory / "check.m"
         fixture.write_text(SHIM + globals_ + validation + METHODS + messages + download + "\n@end\n" + begin + status + shop_alert + CHECK)
         executable = directory / "check"
         subprocess.run(["xcrun", "--sdk", "macosx", "clang", "-fobjc-arc", "-fblocks", "-std=gnu11",
-            "-Wall", "-Wextra", "-Werror", "-I", str(THEMES), str(fixture),
+            "-Wall", "-Wextra", "-Werror", "-I", str(THEMES), "-I", str(ROOT / "src/core"), str(fixture),
             str(THEMES / "ThemeVersion.m"), "-framework", "Foundation", "-o", str(executable)],
             cwd=ROOT, check=True, timeout=30)
         subprocess.run([str(executable)], cwd=ROOT, check=True, timeout=10)

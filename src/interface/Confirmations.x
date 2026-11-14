@@ -877,20 +877,20 @@ static NSString *RUINPreferenceKey(RUINConfirmationKind kind)
 static NSString *RUINPromptTitle(RUINConfirmationKind kind)
 {
     switch (kind) {
-        case RUINConfirmationSend: return RUINLocalizedString(@"送信の確認");
-        case RUINConfirmationCall: return RUINLocalizedString(@"通話の確認");
-        case RUINConfirmationCameraOn: return RUINLocalizedString(@"カメラの確認");
-        case RUINConfirmationDisconnect: return RUINLocalizedString(@"通話終了の確認");
+        case RUINConfirmationSend: return RUINLocalizedString(@"confirm.send_title");
+        case RUINConfirmationCall: return RUINLocalizedString(@"confirm.call_title");
+        case RUINConfirmationCameraOn: return RUINLocalizedString(@"confirm.camera_title");
+        case RUINConfirmationDisconnect: return RUINLocalizedString(@"settings.confirm_disconnect");
     }
 }
 
 static NSString *RUINApproveTitle(RUINConfirmationKind kind)
 {
     switch (kind) {
-        case RUINConfirmationSend: return RUINLocalizedString(@"送信");
-        case RUINConfirmationCall: return RUINLocalizedString(@"開始");
-        case RUINConfirmationCameraOn: return RUINLocalizedString(@"オンにする");
-        case RUINConfirmationDisconnect: return RUINLocalizedString(@"終了");
+        case RUINConfirmationSend: return RUINLocalizedString(@"common.send");
+        case RUINConfirmationCall: return RUINLocalizedString(@"common.start");
+        case RUINConfirmationCameraOn: return RUINLocalizedString(@"common.turn_on");
+        case RUINConfirmationDisconnect: return RUINLocalizedString(@"common.end");
     }
 }
 
@@ -1194,7 +1194,7 @@ static BOOL RUINShowConfirmation(RUINConfirmationPending *pending)
                                                             preferredStyle:UIAlertControllerStyleAlert];
     pending.alert = alert;
     __weak UIAlertController *weakAlert = alert;
-    [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"キャンセル") style:UIAlertActionStyleCancel handler:^(__unused UIAlertAction *action) {
+    [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"common.cancel") style:UIAlertActionStyleCancel handler:^(__unused UIAlertAction *action) {
         RUINResolve(pending, NO);
     }]];
     UIAlertActionStyle style = pending.hook->kind == RUINConfirmationDisconnect ? UIAlertActionStyleDestructive : UIAlertActionStyleDefault;
@@ -1247,11 +1247,11 @@ static BOOL RUINShouldConfirmSend(RUINConfirmationHook *hook, id target, RUINCon
     if (!minimumConfigured) atomic_fetch_add_explicit(&gMissingSendThreshold, 1, memory_order_relaxed);
     pending.memberCount = snapshot.memberCountKnown ? snapshot.totalMemberCount : 0;
     if (snapshot.oneOnOneKnown && !snapshot.oneOnOne && snapshot.memberCountKnown) {
-        pending.message = [NSString stringWithFormat:(RUINLocalizedString(@"%ld人のグループに送信しますか？") ?: @"%ld人のグループに送信しますか？"), (long)snapshot.totalMemberCount];
+        pending.message = [NSString stringWithFormat:(RUINLocalizedString(@"confirm.group_send_message") ?: @"%ld人のグループに送信しますか？"), (long)snapshot.totalMemberCount];
     } else if (!snapshot.oneOnOneKnown) {
-        pending.message = RUINLocalizedString(@"送信先の種類を確認できません。送信しますか？");
+        pending.message = RUINLocalizedString(@"confirm.unknown_recipient");
     } else {
-        pending.message = RUINLocalizedString(@"グループ人数を確認できません。送信しますか？");
+        pending.message = RUINLocalizedString(@"confirm.unknown_member_count");
     }
     *shouldConfirm = YES;
     return YES;
@@ -1371,13 +1371,13 @@ static void RUINHandleHook(RUINConfirmationHook *hook, id self, SEL selector, id
         case RUINConfirmationSend:
             break;
         case RUINConfirmationCall:
-            pending.message = RUINLocalizedString(@"通話を開始しますか？");
+            pending.message = RUINLocalizedString(@"confirm.call_message");
             break;
         case RUINConfirmationCameraOn:
-            pending.message = RUINLocalizedString(@"カメラをオンにしますか？");
+            pending.message = RUINLocalizedString(@"confirm.camera_message");
             break;
         case RUINConfirmationDisconnect:
-            pending.message = RUINLocalizedString(@"通話を終了しますか？");
+            pending.message = RUINLocalizedString(@"confirm.disconnect_message");
             break;
     }
     if (!RUINShowConfirmation(pending))
