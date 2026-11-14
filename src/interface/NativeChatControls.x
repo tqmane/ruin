@@ -79,6 +79,16 @@ typedef NS_ENUM(NSInteger, RUINNativeChatHookState) {
 @implementation RUINNativeTitleGestureRecord
 @end
 
+@interface RUINNativeNavigationRecord : NSObject
+@property(nonatomic, weak) UIView *root;
+@property(nonatomic, weak) UIView *content;
+@property(nonatomic, weak) UIWindow *window;
+@property(nonatomic, weak) UIViewController *selection;
+@end
+@implementation RUINNativeNavigationRecord @end
+static char gNavigationRecordKey;
+static atomic_uint_fast64_t gNavigationSearches, gNavigationReuse, gTitleFieldReads;
+
 @interface RUINNativeTitleAliasRecord : NSObject
 @property(nonatomic, weak) id chatObject;
 @property(nonatomic, weak) UILabel *label;
@@ -564,11 +574,47 @@ static UIView *RUINFindCustomNavigationContent(UIView *view, NSUInteger depth) {
     }
     return nil;
 }
+
+static UIView *RUINCurrentNavigationContent(UIViewController *controller)
+{
+    if (!NSThread.isMainThread) return nil;
+    UIView *root = controller.viewIfLoaded;
+    if (!root.window) return nil;
+    RUINNativeNavigationRecord *record = objc_getAssociatedObject(controller, &gNavigationRecordKey);
+    UIView *content = record.content;
+    UIViewController *selection = controller.navigationController.topViewController;
+    Class contentClass = objc_getClass("_TtC17LineMessagingUIV228ChatNavigationBarContentView");
+    if (contentClass && [content isKindOfClass:contentClass] &&
+        record.root == root && record.window == root.window && content.window == root.window &&
+        record.selection == selection && (!selection || selection == controller)) {
+        UIView *ancestor = content;
+        for (NSUInteger depth = 0; ancestor && depth <= 24 && !ancestor.hidden; depth++, ancestor = ancestor.superview) {
+            if (ancestor == root) {
+                atomic_fetch_add(&gNavigationReuse, 1);
+                return content;
+            }
+        }
+    }
+    atomic_fetch_add(&gNavigationSearches, 1);
+    content = RUINFindCustomNavigationContent(root, 0);
+    record = [RUINNativeNavigationRecord new];
+    record.root = root;
+    record.content = content;
+    record.window = root.window;
+    record.selection = selection;
+    objc_setAssociatedObject(controller, &gNavigationRecordKey, record, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    return content;
+}
+
 static UILabel *RUINCurrentVerifiedTitleLabel(UIViewController *controller)
 {
-    UIView *content = RUINFindCustomNavigationContent(controller.view, 0);
+    UIView *content = RUINCurrentNavigationContent(controller);
+    if (content) atomic_fetch_add(&gTitleFieldReads, 1);
+    // Read the live stored field: LINE may replace the label while both old
+    // and new labels remain in the same hierarchy during a transition.
     id label = content ? RUINCopySwiftField(content, "titleLabel") : nil;
-    if ([label isKindOfClass:UILabel.class] && ((UILabel *)label).window) return label;
+    if ([label isKindOfClass:UILabel.class] && ((UILabel *)label).window == content.window &&
+        content.window && [label isDescendantOfView:content]) return label;
     return nil;
 }
 
@@ -843,7 +889,7 @@ static void RUINUpdateReadExceptionButton(UIViewController *controller, NSString
 
 static void RUINAttachReadExceptionButton(UIViewController *controller)
 {
-    UIView *content = RUINFindCustomNavigationContent(controller.view, 0);
+    UIView *content = RUINCurrentNavigationContent(controller);
     id stackValue = content ? RUINCopySwiftField(content, "rightStackView") : nil;
     if ([stackValue isKindOfClass:UIStackView.class]) {
         UIStackView *stack = stackValue;
@@ -1063,6 +1109,9 @@ NSDictionary *RUINNativeChatControlsDiagnostics(void)
         @"viewDidAppearEncoding": [NSString stringWithUTF8String:RUINNativeChatViewDidAppearEncoding],
         @"hookState": [NSString stringWithUTF8String:RUINNativeChatHookStateName((RUINNativeChatHookState)atomic_load(&gNativeChatHookState))],
         @"viewDidAppearCalls": @(atomic_load(&gViewDidAppearCalls)),
+        @"navigationSearches": @(atomic_load(&gNavigationSearches)),
+        @"navigationReuse": @(atomic_load(&gNavigationReuse)),
+        @"titleFieldReads": @(atomic_load(&gTitleFieldReads)),
         @"titleAliasLayoutHookInstalled": @(atomic_load(&gTitleAliasLayoutHookInstalled)),
         @"titleGestureAttachCount": @(atomic_load(&gTitleGestureAttachCount)),
         @"missingTitleViewCount": @(atomic_load(&gMissingTitleViewCount)),

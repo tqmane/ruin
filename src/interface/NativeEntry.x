@@ -2,6 +2,7 @@
 
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
+#import <stdatomic.h>
 #import "Features.h"
 #import "../core/TargetMetadata.h"
 #import "Localization.h"
@@ -17,6 +18,15 @@ static char entryFooterKey;
 static char homeItemKey;
 static BOOL homeHookInstalled, homeEntryAvailable;
 static BOOL friendHomeHookInstalled;
+static char settingsTableKey;
+static atomic_uint_fast64_t settingsTableSearches, settingsTableReuse;
+
+@interface RUINSettingsTableRecord : NSObject
+@property(nonatomic, weak) UIView *root;
+@property(nonatomic, weak) UITableView *table;
+@property(nonatomic, weak) UIWindow *window;
+@end
+@implementation RUINSettingsTableRecord @end
 
 @interface RUINSettingsFooterView : UIView
 @property (nonatomic, strong) UIButton *entryButton;
@@ -44,8 +54,29 @@ static NSString *RUINSettingsEntryAccessibilityLabel(void) {
     return RUINLocalizedString(@"settings.accessibility_label");
 }
 
+static UITableView *RUINCurrentSettingsTable(UIViewController *controller) {
+    UIView *root = controller.view;
+    RUINSettingsTableRecord *record = objc_getAssociatedObject(controller, &settingsTableKey);
+    UITableView *table = record.table;
+    if ([table isKindOfClass:UITableView.class] && record.root == root && root.window &&
+        record.window == root.window && table.window == root.window &&
+        [table isDescendantOfView:root] &&
+        (!controller.navigationController || controller.navigationController.topViewController == controller)) {
+        atomic_fetch_add(&settingsTableReuse, 1);
+    } else {
+        atomic_fetch_add(&settingsTableSearches, 1);
+        table = RUINFindSettingsTable(root);
+        record = [RUINSettingsTableRecord new];
+        record.root = root;
+        record.table = table;
+        record.window = root.window;
+        objc_setAssociatedObject(controller, &settingsTableKey, record, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    return table;
+}
+
 static void RUINAttachSettingsEntry(UIViewController *controller) {
-    UITableView *table = RUINFindSettingsTable(controller.view);
+    UITableView *table = RUINCurrentSettingsTable(controller);
     if (!table) return;
     UIView *installedFooter = objc_getAssociatedObject(table, &entryFooterKey);
     if (installedFooter && table.tableFooterView == installedFooter) return;
@@ -121,9 +152,13 @@ static void RUINAttachHomeSettingsButton(UIViewController *controller) {
         objc_setAssociatedObject(controller, &homeItemKey, item, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
     NSArray *items = controller.navigationItem.rightBarButtonItems ?: @[];
-    if (![items containsObject:item]) controller.navigationItem.rightBarButtonItems = [items arrayByAddingObject:item];
+    BOOL changed = !homeEntryAvailable;
+    if (![items containsObject:item]) {
+        controller.navigationItem.rightBarButtonItems = [items arrayByAddingObject:item];
+        changed = YES;
+    }
     homeEntryAvailable = YES;
-    RUINRefreshRuntimeReport();
+    if (changed) RUINRefreshRuntimeReport();
 }
 
 %group RUINHomeEntry
@@ -216,5 +251,7 @@ NSDictionary *RUINNativeEntryDiagnostics(void) {
              @"homeHookInstalled": @(homeHookInstalled),
              @"friendHomeHookInstalled": @(friendHomeHookInstalled),
              @"homeEntryAvailable": @(homeEntryAvailable),
+             @"settingsTableSearches": @(atomic_load(&settingsTableSearches)),
+             @"settingsTableReuse": @(atomic_load(&settingsTableReuse)),
              @"attachedRowCount": @(attachedRows)};
 }

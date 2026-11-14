@@ -51,6 +51,9 @@ static atomic_int sCalloutGridHookStatus = ATOMIC_VAR_INIT(0);
 static atomic_int sCalloutIntrinsicHookStatus;
 static atomic_uint_fast64_t sCalloutSizingGrowCount;
 static atomic_uint_fast64_t sReadUntilRequests, sReadUntilSuccesses, sReadUntilFailures;
+static atomic_bool sReadUntilMenuAvailable;
+static atomic_uint_fast64_t sReadUntilAvailabilityChecks, sMenuContextResolutions, sMessageKeyResolutions;
+static atomic_uint_fast64_t sMenuPresentationGeneration, sMenuPresentationsQueued;
 static BOOL sCalloutCountInstalled, sCalloutCellInstalled, sCalloutSelectionInstalled;
 static BOOL sMenuLongPressInstalled, sCalloutWindowInstalled, sCalloutIntrinsicInstalled;
 static atomic_bool sCalloutGridHooksReady = ATOMIC_VAR_INIT(false);
@@ -65,6 +68,7 @@ static _Thread_local unsigned int sMessageLongPressDepth;
 static id sRetainedMediaObserverToken;
 static char sMenuContextAssociationKey;
 static char sCalloutActionCellRegistrationAssociationKey;
+static char sMenuDismissedActionAssociationKey;
 
 @interface RUINMenuExtrasContext : NSObject
 @property(nonatomic, weak) UICollectionViewCell *messageCell;
@@ -73,6 +77,9 @@ static char sCalloutActionCellRegistrationAssociationKey;
 @property(nonatomic, weak) UIViewController *chatViewController;
 @property(nonatomic, copy) NSDictionary *messageKey;
 @property(nonatomic, weak) UICollectionView *menuCollectionView;
+@property(nonatomic, weak) UIView *menuContainer;
+@property(nonatomic) uint64_t presentationGeneration;
+@property(nonatomic) BOOL presentationScheduled;
 @property(nonatomic) BOOL includesReadUsers;
 @property(nonatomic) BOOL includesReadUntil;
 @property(nonatomic, strong, nullable) NSURL *stickerGIFURL;
@@ -108,6 +115,17 @@ static BOOL RUINMenuExtrasTargetMatches(void)
 static BOOL RUINMenuExtrasPreferenceEnabled(NSString *key)
 {
     return [NSUserDefaults.standardUserDefaults boolForKey:key];
+}
+
+static void RUINMenuExtrasPrepareReadUntilAvailability(void)
+{
+    if (atomic_load_explicit(&sReadUntilMenuAvailable, memory_order_acquire)) return;
+    atomic_fetch_add(&sReadUntilAvailabilityChecks, 1);
+    // Cache only the display capability after its UUID/ABI/owner proof pins the
+    // immutable native image. Misses retry on installation/activation. Every
+    // actual action still goes through RUINReadUntilMessage's full validation.
+    if (RUINReadUntilAvailable())
+        atomic_store_explicit(&sReadUntilMenuAvailable, true, memory_order_release);
 }
 
 static void RUINMenuExtrasSetError(NSError **error, RUINMenuExtrasErrorCode code, NSString *description)
@@ -744,6 +762,7 @@ static UIViewController *RUINMenuExtrasChatControllerForCell(UICollectionViewCel
 
 static NSDictionary *RUINMenuExtrasMessageKeyForCell(UICollectionViewCell *cell)
 {
+    atomic_fetch_add(&sMessageKeyResolutions, 1);
     if (!cell) return nil;
     Class baseCell = objc_getClass("_TtC17LineMessagingUIV219ChatBaseMessageCell");
     if (!baseCell || ![cell isKindOfClass:baseCell]) return nil;
@@ -824,9 +843,10 @@ static UIViewController *RUINMenuExtrasChatControllerForCell(UICollectionViewCel
 static RUINMenuExtrasContext *RUINMenuExtrasResolveContext(
     UIView *container, UICollectionView *menuCollectionView)
 {
+    atomic_fetch_add(&sMenuContextResolutions, 1);
     BOOL includesReadUsers = [NSUserDefaults.standardUserDefaults boolForKey:RUINTrackReadUsersKey];
     BOOL canCopyStickerGIF = RUINMenuExtrasPreferenceEnabled(RUINCopyStickerGIFEnabledDefaultsKey);
-    BOOL canReadUntil = RUINReadUntilAvailable();
+    BOOL canReadUntil = atomic_load_explicit(&sReadUntilMenuAvailable, memory_order_acquire);
     BOOL canViewRetainedMedia = [NSUserDefaults.standardUserDefaults boolForKey:RUINKeepUnsentMessagesKey];
     if (!NSThread.isMainThread || UIApplication.sharedApplication.applicationState != UIApplicationStateActive ||
         (!includesReadUsers && !canCopyStickerGIF && !canReadUntil && !canViewRetainedMedia)) return nil;
@@ -864,9 +884,6 @@ static RUINMenuExtrasContext *RUINMenuExtrasResolveContext(
         if (!indexPath) continue;
         UICollectionViewCell *cell = [chatCollectionView cellForItemAtIndexPath:indexPath];
         if (!cell || cell.window.windowScene != scene) continue;
-        NSDictionary *messageKey = RUINMenuExtrasMessageKeyForCell(cell);
-        if (!messageKey.count) continue;
-
         CGRect cellRect = [cell convertRect:cell.bounds toView:cell.window];
         if (cell.window != menuWindow)
             cellRect = [cell.window convertRect:cellRect toWindow:menuWindow];
@@ -874,6 +891,10 @@ static RUINMenuExtrasContext *RUINMenuExtrasResolveContext(
 
         UIViewController *chatController = RUINMenuExtrasChatControllerForCell(cell, cell.window);
         if (!chatController || chatController.presentedViewController) continue;
+        // Reject geometry/ownership before Swift reflection and synchronous
+        // Core Data validation; never cache a cell's changing message binding.
+        NSDictionary *messageKey = RUINMenuExtrasMessageKeyForCell(cell);
+        if (!messageKey.count) continue;
         RUINMenuExtrasContext *context = [RUINMenuExtrasContext new];
         context.messageCell = cell;
         context.messageCollectionView = chatCollectionView;
@@ -881,6 +902,8 @@ static RUINMenuExtrasContext *RUINMenuExtrasResolveContext(
         context.chatViewController = chatController;
         context.messageKey = messageKey;
         context.menuCollectionView = menuCollectionView;
+        context.menuContainer = container;
+        context.presentationGeneration = atomic_load(&sMenuPresentationGeneration);
         context.includesReadUsers = includesReadUsers;
         context.includesReadUntil = canReadUntil && [messageKey[@"kind"] isEqual:@"talk"];
         if (canCopyStickerGIF) context.stickerGIFURL = RUINMenuExtrasAnimatedStickerFileURLForCell(cell);
@@ -1178,6 +1201,64 @@ static void RUINMenuExtrasPresentStickerGIFFailure(UIViewController *chatControl
     [chatController presentViewController:alert animated:YES completion:nil];
 }
 
+static void RUINMenuExtrasCompleteDismissal(UIView *container)
+{
+    if (!container || container.window) return;
+    dispatch_block_t action = objc_getAssociatedObject(container, &sMenuDismissedActionAssociationKey);
+    objc_setAssociatedObject(container, &sMenuDismissedActionAssociationKey, nil, OBJC_ASSOCIATION_COPY_NONATOMIC);
+    if (action) dispatch_async(dispatch_get_main_queue(), action);
+}
+
+static void RUINMenuExtrasAfterDismissal(RUINMenuExtrasContext *context, dispatch_block_t action)
+{
+    if (!NSThread.isMainThread) {
+        dispatch_async(dispatch_get_main_queue(), ^{ RUINMenuExtrasAfterDismissal(context, action); });
+        return;
+    }
+    if (!context || context.presentationScheduled || !action) return;
+    context.presentationScheduled = YES;
+    atomic_fetch_add(&sMenuPresentationsQueued, 1);
+    __weak UIView *container = context.menuContainer;
+    dispatch_block_t ready = ^{
+        // A newer menu or a reused/reattached container invalidates this handoff.
+        if (container.window || context.presentationGeneration != atomic_load(&sMenuPresentationGeneration)) return;
+        action();
+    };
+    if (container.window)
+        objc_setAssociatedObject(container, &sMenuDismissedActionAssociationKey, ready, OBJC_ASSOCIATION_COPY_NONATOMIC);
+    else dispatch_async(dispatch_get_main_queue(), ready);
+}
+
+static void RUINMenuExtrasDismissForPresentation(UIView *menu, RUINMenuExtrasContext *context,
+                                                dispatch_block_t action)
+{
+    if (context.presentationScheduled) return;
+    RUINMenuExtrasAfterDismissal(context, action);
+    UIView *container = context.menuContainer;
+    dispatch_block_t pending = container
+        ? objc_getAssociatedObject(container, &sMenuDismissedActionAssociationKey) : nil;
+    BOOL dismissed = [(id)menu accessibilityPerformEscape];
+    if (!dismissed) dispatch_async(dispatch_get_main_queue(), ^{
+        // NO means refused, not an animation deadline. Accepted dismissals keep
+        // waiting for native removal; never clear another selection's handoff.
+        if (container.window && pending &&
+            objc_getAssociatedObject(container, &sMenuDismissedActionAssociationKey) == pending) {
+            objc_setAssociatedObject(container, &sMenuDismissedActionAssociationKey, nil, OBJC_ASSOCIATION_COPY_NONATOMIC);
+            context.presentationScheduled = NO;
+        }
+    });
+    if (container) RUINMenuExtrasCompleteDismissal(container);
+}
+
+static BOOL RUINMenuExtrasSelectionStillMatches(RUINMenuExtrasContext *context)
+{
+    UICollectionViewCell *cell = context.messageCell;
+    NSIndexPath *indexPath = cell && context.messageCollectionView
+        ? [context.messageCollectionView indexPathForCell:cell] : nil;
+    return indexPath && [indexPath isEqual:context.messageIndexPath] &&
+        [RUINMenuExtrasMessageKeyForCell(cell) isEqual:context.messageKey];
+}
+
 static RUINReaderLoader RUINMenuExtrasReadRangeLoader(NSDictionary *messageKey, id nativeChat)
 {
     if (!RUINCanFetchReadRanges(messageKey, nativeChat)) return nil;
@@ -1238,7 +1319,7 @@ static void RUINMenuExtrasPresentReaders(UIViewController *chatController,
         });
         dispatch_async(encodingQueue, ^{ @autoreleasepool {
             BOOL copied = bindingMatches && RUINMenuExtrasCopyAnimatedGIFFromLocalFileURL(currentURL, NULL);
-            if (!copied) dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 250 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+            if (!copied) RUINMenuExtrasAfterDismissal(context, ^{
                 RUINMenuExtrasPresentStickerGIFFailure(chatController);
             });
         }});
@@ -1256,9 +1337,8 @@ static void RUINMenuExtrasPresentReaders(UIViewController *chatController,
         ? [messageCollectionView indexPathForCell:cell] : nil;
     if (!messageKey.count || ![messageKey isEqual:context.messageKey] || ![currentIndexPath isEqual:context.messageIndexPath]) {
         UIViewController *chatController = context.chatViewController;
-        [(id)self accessibilityPerformEscape];
-        if (selectedRetainedMedia) return;
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (selectedRetainedMedia) { [(id)self accessibilityPerformEscape]; return; }
+        RUINMenuExtrasDismissForPresentation((UIView *)self, context, ^{
             RUINMenuExtrasPresentMessage(chatController,
                 RUINLocalizedString(selectedReadUntil ? @"menu.mark_read_until" : @"readers.title"),
                 RUINLocalizedString(selectedReadUntil ? @"readers.mark_read_failed" : @"common.fetch_failed"));
@@ -1270,8 +1350,8 @@ static void RUINMenuExtrasPresentReaders(UIViewController *chatController,
     if (selectedRetainedMedia) {
         NSDictionary *copiedKey = [messageKey copy];
         __weak UIViewController *source = chatController;
-        [(id)self accessibilityPerformEscape];
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 250 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+        RUINMenuExtrasDismissForPresentation((UIView *)self, context, ^{
+            if (!RUINMenuExtrasSelectionStillMatches(context)) return;
             NSArray<NSDictionary *> *items = RUINRetainedMediaItems(copiedKey);
             if (items.count) RUINPresentRetainedMediaViewer(source, items);
         });
@@ -1284,7 +1364,6 @@ static void RUINMenuExtrasPresentReaders(UIViewController *chatController,
         if (getter && !strcmp(method_getTypeEncoding(getter), "@16@0:8")) {
             id chat = [(id<RUINMessagingChatOwner>)chatController chat];
             nativeChat = chat;
-            if (selectedReadUsers) RUINObserveNativeReadPositionsForMessageKey(messageKey, chat);
         }
     } @catch (__unused NSException *exception) { /* Existing recorded ranges remain usable. */ }
     if (selectedReadUntil) {
@@ -1293,17 +1372,18 @@ static void RUINMenuExtrasPresentReaders(UIViewController *chatController,
         atomic_fetch_add(&sReadUntilRequests, 1);
         RUINReadUntilMessage([messageKey copy], nativeChat, ^(NSError *error) {
             atomic_fetch_add(error ? &sReadUntilFailures : &sReadUntilSuccesses, 1);
-            if (error) dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 250 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+            if (error) RUINMenuExtrasAfterDismissal(context, ^{
                 RUINMenuExtrasPresentMessage(source, RUINLocalizedString(@"menu.mark_read_until"),
                     RUINLocalizedString(@"readers.mark_read_failed"));
             });
         });
         return;
     }
-    NSArray<NSDictionary *> *readers = RUINReadUsersForMessageKey(messageKey);
-    RUINReaderLoader loader = RUINMenuExtrasReadRangeLoader(messageKey, nativeChat);
-    [(id)self accessibilityPerformEscape];
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    RUINMenuExtrasDismissForPresentation((UIView *)self, context, ^{
+        if (!RUINMenuExtrasSelectionStillMatches(context)) return;
+        if (nativeChat) RUINObserveNativeReadPositionsForMessageKey(messageKey, nativeChat);
+        NSArray<NSDictionary *> *readers = RUINReadUsersForMessageKey(messageKey);
+        RUINReaderLoader loader = RUINMenuExtrasReadRangeLoader(messageKey, nativeChat);
         RUINMenuExtrasPresentReaders(chatController, readers, loader);
     });
 
@@ -1316,11 +1396,16 @@ static void RUINMenuExtrasPresentReaders(UIViewController *chatController,
 - (void)didMoveToWindow {
     %orig;
     if (NSThread.isMainThread && ((UIView *)self).window) {
+        uint64_t generation = atomic_fetch_add(&sMenuPresentationGeneration, 1) + 1;
+        objc_setAssociatedObject(self, &sMenuDismissedActionAssociationKey, nil, OBJC_ASSOCIATION_COPY_NONATOMIC);
         RUINMenuExtrasScheduleInspection();
         UIView *container = (UIView *)self;
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 100 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
-            if (container.window) RUINMenuExtrasAttachEntries(container);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (container.window && generation == atomic_load(&sMenuPresentationGeneration))
+                RUINMenuExtrasAttachEntries(container);
         });
+    } else if (NSThread.isMainThread) {
+        RUINMenuExtrasCompleteDismissal((UIView *)self);
     }
 
 }
@@ -1459,9 +1544,12 @@ void RUINInstallMenuExtras(void)
         atomic_store_explicit(&sCalloutSurfaceHookStatus, RUINMenuExtrasHookVersionGated, memory_order_release);
         atomic_store_explicit(&sCalloutGridHookStatus, RUINMenuExtrasHookVersionGated, memory_order_release);
         atomic_store_explicit(&sCalloutGridHooksReady, false, memory_order_release);
+        atomic_store_explicit(&sReadUntilMenuAvailable, false, memory_order_release);
         os_unfair_lock_unlock(&sMenuHookLock);
         return;
     }
+
+    RUINMenuExtrasPrepareReadUntilAvailability();
 
     if (!sRetainedMediaObserverToken) {
         sRetainedMediaObserverToken = [NSNotificationCenter.defaultCenter
@@ -1562,12 +1650,16 @@ NSDictionary *RUINMenuExtrasDiagnostics(void)
         @"installAttempted": @(atomic_load_explicit(&sInstallAttempted, memory_order_acquire)),
         @"menuActionInstalled": @(readUsersHooksInstalled),
         @"readUntil": @{
-            @"available": @(readUsersHooksInstalled && RUINReadUntilAvailable()),
+            @"available": @(readUsersHooksInstalled && atomic_load_explicit(&sReadUntilMenuAvailable, memory_order_acquire)),
+            @"availabilityVerifications": @(atomic_load(&sReadUntilAvailabilityChecks)),
             @"requests": @(atomic_load(&sReadUntilRequests)),
             @"rpcSuccesses": @(atomic_load(&sReadUntilSuccesses)),
             @"failures": @(atomic_load(&sReadUntilFailures)),
             @"changesReadHidePreference": @NO
         },
+        @"menuHotpath": @{@"contextResolutions":@(atomic_load(&sMenuContextResolutions)),
+            @"messageKeyResolutions":@(atomic_load(&sMessageKeyResolutions)),
+            @"presentationsQueued":@(atomic_load(&sMenuPresentationsQueued))},
         @"stickerGIFMenuActionReady": @(stickerMenuReady),
         @"inspectionHookInstalled": @(hookStatus == RUINMenuExtrasHookInstalled),
         @"inspectionHookStatus": RUINMenuExtrasHookStatusName(hookStatus),

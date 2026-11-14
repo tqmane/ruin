@@ -179,6 +179,8 @@ static atomic_bool gHideVoiceInputEnabled = ATOMIC_VAR_INIT(false);
 static atomic_bool gHideAgentIEnabled = ATOMIC_VAR_INIT(false);
 static BOOL gAgentIntrinsicInstalled;
 static atomic_uint_fast64_t gVoiceKindRestorations;
+static NSUInteger gViewHooksGeneration;
+static atomic_uint_fast64_t gVisibleViewScans, gVisibleViewScanSkips, gVoiceTypeReflections;
 
 static atomic_int gStartupStatus = ATOMIC_VAR_INIT(0);
 static atomic_uint_fast64_t gTabReapplications = ATOMIC_VAR_INIT(0);
@@ -852,6 +854,7 @@ static void RUINInstallMethodHook(Class cls, RUINMethodHook *hook)
         return;
     }
     atomic_store(&hook->status, RUINHookInstalled);
+    if (hook == &gVoiceButtonLayoutHook) gViewHooksGeneration++;
 }
 
 static void RUINInstallViewTargetHooks(RUINViewTargetIndex index, RUINViewTarget *target)
@@ -966,6 +969,7 @@ static void RUINInstallViewTargetHooks(RUINViewTargetIndex index, RUINViewTarget
     }
     atomic_store(&target->setHidden.status, RUINHookInstalled);
     atomic_store(&target->didMoveToWindow.status, RUINHookInstalled);
+    gViewHooksGeneration++;
 }
 
 static BOOL RUINIsUIViewSubclass(Class cls)
@@ -1035,6 +1039,7 @@ static void RUINInstallHooks(void)
             if (size && !strcmp(method_getTypeEncoding(size), "{CGSize=dd}16@0:8")) {
                 %init(RUINAgentIntrinsicLayout, RUINAgentIntrinsicView = target->cls);
                 gAgentIntrinsicInstalled = YES;
+                gViewHooksGeneration++;
             }
         }
     }
@@ -1065,6 +1070,9 @@ static BOOL RUINShouldHideView(RUINViewTarget *target, id view)
     if (target->group != RUINHideGroupVoiceInput) return YES;
     // The class, stored field and payloadless enum are pinned to LINE26.16.
     // No image/title matching: the other composer buttons use this class too.
+    // This helper reports the live value's type, not immutable field metadata.
+    // Preserve both checks when native composer objects are reused.
+    atomic_fetch_add(&gVoiceTypeReflections, 1);
     if (![RUINCopySwiftFieldTypeName(view, "kind") isEqualToString:@"LineMessagingUIV2.ChatInputBarButtonKind"])
         return NO;
     return [RUINCopySwiftEnumCaseName(view, "kind") isEqualToString:@"audio"];
@@ -1074,6 +1082,7 @@ static void RUINHideView(UIView *view)
 {
     if (!objc_getAssociatedObject(view, &gOriginalHiddenStateKey))
         objc_setAssociatedObject(view, &gOriginalHiddenStateKey, @(view.hidden), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    if (view.hidden) return;
     gInternalHiddenUpdateDepth++;
     view.hidden = YES;
     gInternalHiddenUpdateDepth--;
@@ -1087,6 +1096,10 @@ static void RUINRestoreView(UIView *view)
 {
     NSNumber *original = objc_getAssociatedObject(view, &gOriginalHiddenStateKey);
     if (!original) return;
+    if (view.hidden == original.boolValue) {
+        objc_setAssociatedObject(view, &gOriginalHiddenStateKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        return;
+    }
     gInternalHiddenUpdateDepth++;
     view.hidden = original.boolValue;
     gInternalHiddenUpdateDepth--;
@@ -1159,6 +1172,7 @@ static void RUINRefreshViewTree(UIView *view)
 
 static void RUINRefreshVisibleViews(void)
 {
+    atomic_fetch_add(&gVisibleViewScans, 1);
     for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
         if (![scene isKindOfClass:UIWindowScene.class]) continue;
         for (UIWindow *window in ((UIWindowScene *)scene).windows) RUINRefreshViewTree(window);
@@ -1537,10 +1551,10 @@ static void RUINStyledTabsViewDidAppear(id self, SEL selector, BOOL animated)
     RUINApplyRequestedControllers((UITabBarController *)self, YES);
 }
 
-static void RUINRefreshTrackedTabControllers(void)
+static void RUINRefreshTrackedTabControllers(NSHashTable *refreshed)
 {
     for (UITabBarController *controller in gTrackedTabControllers.allObjects)
-        RUINApplyRequestedControllers(controller, NO);
+        if (![refreshed containsObject:controller]) RUINApplyRequestedControllers(controller, NO);
 }
 
 static void RUINDiscoverTabControllers(UIViewController *controller, NSHashTable *visited)
@@ -1556,7 +1570,7 @@ static void RUINDiscoverTabControllers(UIViewController *controller, NSHashTable
     for (UIViewController *child in controller.childViewControllers) RUINDiscoverTabControllers(child, visited);
 }
 
-static void RUINDiscoverExistingTabs(void)
+static NSHashTable *RUINDiscoverExistingTabs(void)
 {
     NSHashTable *visited = [NSHashTable hashTableWithOptions:NSPointerFunctionsObjectPointerPersonality];
     for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
@@ -1566,30 +1580,47 @@ static void RUINDiscoverExistingTabs(void)
     }
     id<UIApplicationDelegate> delegate = UIApplication.sharedApplication.delegate;
     if ([delegate respondsToSelector:@selector(window)]) RUINDiscoverTabControllers(delegate.window.rootViewController, visited);
+    return visited;
 }
 
-static void RUINLoadPreferences(void)
+static NSUInteger RUINLoadPreferences(void)
 {
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
-    atomic_store(&gHideAdsEnabled, [defaults boolForKey:RUINHideAdsDefaultsKey]);
-    atomic_store(&gHideRecommendationsEnabled, [defaults boolForKey:RUINHideRecommendationsDefaultsKey]);
-    atomic_store(&gHideVoiceInputEnabled, [defaults boolForKey:RUINHideVoiceInputDefaultsKey]);
-    atomic_store(&gHideAgentIEnabled, [defaults boolForKey:RUINHideAgentIBarDefaultsKey]);
+    BOOL ads = [defaults boolForKey:RUINHideAdsDefaultsKey];
+    BOOL recommendations = [defaults boolForKey:RUINHideRecommendationsDefaultsKey];
+    BOOL voice = [defaults boolForKey:RUINHideVoiceInputDefaultsKey];
+    BOOL agent = [defaults boolForKey:RUINHideAgentIBarDefaultsKey];
+    atomic_store(&gHideAdsEnabled, ads);
+    atomic_store(&gHideRecommendationsEnabled, recommendations);
+    atomic_store(&gHideVoiceInputEnabled, voice);
+    atomic_store(&gHideAgentIEnabled, agent);
+    return ads | (recommendations << 1) | (voice << 2) | (agent << 3);
 }
 
 static void RUINPerformInstallOrRefresh(void)
 {
+    static BOOL viewsRefreshed;
+    static NSUInteger appliedViewPreferences;
     if (!RUINTargetMatches()) {
+        viewsRefreshed = NO;
         atomic_store(&gTargetMatches, false);
         RUINMarkHooksVersionGated();
         return;
     }
     atomic_store(&gTargetMatches, true);
+    NSUInteger previousHooksGeneration = gViewHooksGeneration;
     RUINInstallHooks();
-    RUINLoadPreferences();
-    RUINDiscoverExistingTabs();
-    RUINRefreshTrackedTabControllers();
-    RUINRefreshVisibleViews();
+    NSUInteger preferences = RUINLoadPreferences();
+    NSHashTable *refreshed = RUINDiscoverExistingTabs();
+    RUINRefreshTrackedTabControllers(refreshed);
+    // New view instances use their validated setHidden:/didMoveToWindow hooks.
+    // Existing trees need a scan only after relevant preferences or hooks change.
+    if (!viewsRefreshed || preferences != appliedViewPreferences ||
+        previousHooksGeneration != gViewHooksGeneration) {
+        RUINRefreshVisibleViews();
+        appliedViewPreferences = preferences;
+        viewsRefreshed = YES;
+    } else atomic_fetch_add(&gVisibleViewScanSkips, 1);
 }
 
 static void RUINOnMain(dispatch_block_t block)
@@ -1739,6 +1770,8 @@ NSDictionary *RUINInterfaceDiagnostics(void)
         startup == 3 ? @"invalid_selection" : startup == 4 ? @"unavailable_or_hidden" : @"pending";
     return @{
         @"gate": gated ? @"version_gated" : installedForTarget ? @"matched" : @"pending",
+        @"visibleViewScans": @(atomic_load(&gVisibleViewScans)),
+        @"visibleViewScanSkips": @(atomic_load(&gVisibleViewScanSkips)),
         @"tabs": @{
             @"configurationRefreshHookInstalled":@(gTabConfigurationHookInstalled),
             @"keptNativeMenuRefreshes":@(atomic_load(&gKeptNativeMenuRefreshes)),
@@ -1775,6 +1808,7 @@ NSDictionary *RUINInterfaceDiagnostics(void)
             @"layoutHook": RUINTargetStatusName(atomic_load(&gVoiceButtonLayoutHook.status)),
             @"layoutCalls": @(atomic_load(&gVoiceButtonLayoutHook.calls)),
             @"kindRestorations": @(atomic_load(&gVoiceKindRestorations)),
+            @"typeReflections": @(atomic_load(&gVoiceTypeReflections)),
             @"installedViewClasses": @(RUINInstalledViewTargetCount(RUINHideGroupVoiceInput)),
             @"hookCalls": @(RUINViewHookCalls(RUINHideGroupVoiceInput)),
             @"hookFailures": RUINViewHookFailures(RUINHideGroupVoiceInput)

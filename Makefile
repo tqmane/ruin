@@ -119,6 +119,9 @@ check-host: check-portable check-mapping-manifest $(HOST_FIXTURES)
 	node tests/check_theme_store_web.js
 	python3 tests/check_messaging_review.py
 	python3 tests/check_interface_review.py
+	python3 tests/check_runtime_latency.py
+	python3 tests/check_interface_hotpath.py
+	python3 tests/check_menu_hotpath.py
 	@set -e; for fixture in $(filter build/%,$^); do codesign --force --sign - "$$fixture"; done
 	./build/check_native_tab_availability
 	./build/check_bundle_identity
