@@ -50,7 +50,7 @@ jobs:
       - name: Run actual and synthetic packaging verification
         run: make check-packaging
 
-      - name: Package and verify system dependencies
+      - name: Package and verify dependencies and embedded resources
         env:
           RUIN_VERSION: ${{ steps.version.outputs.value }}
         run: make dist RUIN_BUILD_VERSION="$RUIN_VERSION"
@@ -79,6 +79,14 @@ jobs:
           if-no-files-found: error
           compression-level: 0
 
+      - name: Upload LiveContainer artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ruin-${{ steps.version.outputs.value }}-LiveContainer
+          path: dist/RUIN-${{ steps.version.outputs.value }}-LiveContainer.dylib
+          if-no-files-found: error
+          compression-level: 0
+
       - name: Publish GitHub Release
         if: github.ref_type == 'tag'
         env:
@@ -89,6 +97,7 @@ jobs:
             "dist/RUIN-${RUIN_VERSION}-rootful.deb"
             "dist/RUIN-${RUIN_VERSION}-rootless.deb"
             "dist/RUIN-${RUIN_VERSION}-jailed.deb"
+            "dist/RUIN-${RUIN_VERSION}-LiveContainer.dylib"
             dist/SHA256SUMS
           )
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
