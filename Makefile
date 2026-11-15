@@ -7,7 +7,9 @@ export RUIN_TEST_RESOURCE_BUNDLE := $(CURDIR)/resources/RUINResources.bundle
 HOST_WARNINGS := -Wall -Wextra -Werror
 RUIN_BUILD_VERSION ?= $(shell cat VERSION)
 HEADER_DIRS := $(sort $(dir $(wildcard src/*/*.h))) vendor/fishhook
-CPPFLAGS := $(addprefix -I,$(HEADER_DIRS)) $(addprefix -Ibuild/logos/,$(filter src/%,$(HEADER_DIRS)))
+CPPFLAGS := $(addprefix -I,$(HEADER_DIRS)) $(addprefix -Ibuild/logos/,$(filter src/%,$(HEADER_DIRS))) -Ibuild/generated
+RESOURCE_BUNDLE := resources/RUINResources.bundle
+RESOURCE_INPUTS := $(shell find $(RESOURCE_BUNDLE) -type f -o -type d)
 PERL ?= perl
 LOGOS := vendor/logos/bin/logos.pl
 LOGOS_SOURCES := $(sort $(wildcard src/*/*.x))
@@ -247,7 +249,8 @@ build/check_local_appearance: $(call source,src/interface/LocalAppearance.m) src
 	$(HOST_CC) -DRUIN_LOCAL_APPEARANCE_HOST_CHECK=1 -fobjc-arc -fblocks $(HOST_WARNINGS) $(CPPFLAGS) \
 		$(call source,src/interface/LocalAppearance.m) -framework Foundation -o $@
 
-build/check_localization: src/core/Localization.m src/core/Localization.h tests/check_localization.m
+build/check_localization: src/core/Localization.m src/core/Localization.h tests/check_localization.m \
+	build/generated/EmbeddedResources.h
 	mkdir -p build
 	$(HOST_CC) -fobjc-arc -fblocks $(HOST_WARNINGS) $(CPPFLAGS) tests/check_localization.m \
 		-framework Foundation -o $@
@@ -368,6 +371,9 @@ build/check_boundary: $(call source,src/core/Features.m) src/core/Features.h \
 		-framework Foundation -framework CoreData -o $@
 
 .SECONDARY: $(LOGOS_GENERATED)
+build/generated/EmbeddedResources.h: tools/embed_resources.py $(RESOURCE_INPUTS)
+	python3 tools/embed_resources.py $(RESOURCE_BUNDLE) $@
+
 build/logos/%.m: %.x $(LOGOS_DEPS)
 	mkdir -p $(@D)
 	$(PERL) $(LOGOS) -c generator=internal -c warnings=error $< > $@.tmp
@@ -376,6 +382,7 @@ build/logos/%.m: %.x $(LOGOS_DEPS)
 define RUIN_ARCH_RULES
 # Rebuild the version owner for command-line version overrides, for each slice.
 build/$(1)/src/core/Tweak.o: FORCE
+build/$(1)/src/core/Localization.o: build/generated/EmbeddedResources.h
 
 build/$(1)/%.o: build/logos/%.m $(wildcard src/*/*.h) vendor/fishhook/fishhook.h VERSION
 	mkdir -p $$(@D)
