@@ -8,7 +8,8 @@ import subprocess
 import tempfile
 import tarfile
 import unittest
-from unittest.mock import patch
+from types import ModuleType
+from unittest.mock import Mock, patch
 
 spec = importlib.util.spec_from_file_location(
     "distribute", Path(__file__).resolve().parents[1] / "tools/distribute.py")
@@ -73,7 +74,7 @@ class DistributionTests(unittest.TestCase):
             self.dylib, self.resources, self.output, "0.4.0", epoch=123456789)
         self.assertEqual([p.name for p in artifacts],
                          ["RUIN-0.4.0-rootful.deb", "RUIN-0.4.0-rootless.deb",
-                          "RUIN-0.4.0-jailed.deb", "SHA256SUMS"])
+                          "RUIN-0.4.0-jailed.deb", "RUIN-0.4.0-LiveContainer.dylib", "SHA256SUMS"])
         self.assertTrue(all(not (self.output / name).exists() for name in obsolete))
         self.assertEqual(signed_ipa.read_bytes(), b"private signing output")
         first = [path.read_bytes() for path in artifacts]
@@ -114,14 +115,58 @@ class DistributionTests(unittest.TestCase):
                 self.assertTrue(all(member.name.startswith("./" + prefix)
                                     for member in archive.getmembers() if member.isfile()))
         checksum_text = artifacts[-1].read_text(encoding="ascii")
+        self.assertEqual(artifacts[3].read_bytes(), self.dylib.read_bytes())
         self.assertEqual(dylib_payloads, [self.dylib.read_bytes()] * 3)
-        self.assertEqual(len(checksum_text.splitlines()), 3)
-        for artifact in artifacts[:3]:
+        self.assertEqual(len(checksum_text.splitlines()), 4)
+        for artifact in artifacts[:-1]:
             self.assertIn(f"{hashlib.sha256(artifact.read_bytes()).hexdigest()}  {artifact.name}",
                           checksum_text)
         second = [path.read_bytes() for path in distribute.build_distribution(
             self.dylib, self.resources, self.output, "0.4.0", epoch=123456789)]
         self.assertEqual(first, second)
+
+    def test_main_verifies_dylib_then_embedded_resources_before_packaging(self):
+        events = []
+        verifier = ModuleType("verify_embedded_resources")
+
+        def verify_resources(dylib, resources):
+            self.assertEqual((dylib, resources), (self.dylib, self.resources))
+            self.assertFalse(self.output.exists())
+            events.append("resources")
+            return {"arm64": {}, "arm64e": {}}
+
+        verifier.verify_embedded_resources = Mock(side_effect=verify_resources)
+        arguments = ["distribute.py", "--dylib", str(self.dylib), "--resources", str(self.resources),
+                     "--output", str(self.output), "--version", "0.5.3-rc.1+build.2"]
+        with patch("sys.argv", arguments), patch.dict("sys.modules", {verifier.__name__: verifier}), \
+                patch.object(distribute, "verify_dylib", side_effect=lambda path: events.append("dylib") or []), \
+                patch.object(distribute, "build_distribution", wraps=distribute.build_distribution) as build, \
+                patch("builtins.print"):
+            distribute.main()
+        self.assertEqual(events, ["dylib", "resources"])
+        build.assert_called_once_with(self.dylib, self.resources, self.output, "0.5.3-rc.1+build.2")
+        verifier.verify_embedded_resources.assert_called_once_with(self.dylib, self.resources)
+        names = {path.name for path in self.output.iterdir()}
+        self.assertEqual(names, {
+            "RUIN-0.5.3-rc.1+build.2-rootful.deb", "RUIN-0.5.3-rc.1+build.2-rootless.deb",
+            "RUIN-0.5.3-rc.1+build.2-jailed.deb", "RUIN-0.5.3-rc.1+build.2-LiveContainer.dylib", "SHA256SUMS"})
+
+    def test_main_does_not_package_after_either_verification_fails(self):
+        verifier = ModuleType("verify_embedded_resources")
+        arguments = ["distribute.py", "--dylib", str(self.dylib), "--resources", str(self.resources),
+                     "--output", str(self.output), "--version", "0.5.3"]
+        for failure in ("dylib", "resources"):
+            with self.subTest(failure=failure):
+                verifier.verify_embedded_resources = Mock(side_effect=ValueError("resource mismatch"))
+                with patch("sys.argv", arguments), patch.dict("sys.modules", {verifier.__name__: verifier}), \
+                        patch.object(distribute, "verify_dylib", side_effect=ValueError("invalid dylib")
+                                     if failure == "dylib" else None), \
+                        patch.object(distribute, "build_distribution") as build, \
+                        self.assertRaises(ValueError):
+                    distribute.main()
+                build.assert_not_called()
+                self.assertEqual(verifier.verify_embedded_resources.call_count, int(failure == "resources"))
+                self.assertFalse(self.output.exists())
 
     def test_manual_and_tag_versions_must_be_semver(self):
         for invalid in ("v0.4.0", "0.4", "01.2.3", "0.4.0-01"):

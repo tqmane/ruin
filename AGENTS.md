@@ -167,10 +167,13 @@ RUIN/
      - テストデータ: 秘密の原IPAや復号バイナリは使用せず、合成フィクスチャおよびホスト検証データのみを使用。
    - 保守エージェントは、特定の会話時点の状態に依存せず、実行結果を確認した上で成功報告を行う普遍的な運用手順を遵守してください。
 4. **リリースタグ運用と配布物**:
-   - リリース時は `vX.Y.Z` 形式のSemVerタグをpushします。`Release RUIN` ワークフロー (`release.yml`) が起動し（手動実行 `workflow_dispatch` も可能）、プレフィックス `v` を除いたバージョン名で配布物が生成され、GitHub Releaseへ添付されます。
-   - 配布物は以下の3つのDEBパッケージおよびチェックサムファイルのみに限定されます（単体dylib、`manual-injection.zip`、単体ライセンスtxtは全て廃止。ローカルの `build/RUIN.dylib` はビルド中間物です）。
+   - `.github/workflows/release.yml` (`Release RUIN`) は、`v*` タグ（例: `vX.Y.Z`）の push でビルドと GitHub Release への添付を実行し、手動実行 (`workflow_dispatch`) ではビルドおよびバリアント別の GitHub Actions アーティファクト生成を実行します（タグ先頭の `v` を除いたバージョン名を使用）。
+   - 最終の GitHub Release 配布物は以下の4バイナリおよびチェックサムファイルの計5点です（ローカルの `build/RUIN.dylib` はビルド中間物です）。
      - `RUIN-<version>-rootful.deb` (Architecture: `iphoneos-arm`、`/Library/MobileSubstrate/DynamicLibraries/` 配下、Debian Depends: `firmware (>=18.0), mobilesubstrate`)
      - `RUIN-<version>-rootless.deb` (Architecture: `iphoneos-arm64`、`/var/jb/Library/MobileSubstrate/DynamicLibraries/` 配下、Debian Depends: `firmware (>=18.0), mobilesubstrate`、`dladdr` による隣接リソース解決)
      - `RUIN-<version>-jailed.deb` (Architecture: `iphoneos-arm64`、`X-RUIN-Variant: jailed`、`/Library/MobileSubstrate/DynamicLibraries/` レイアウト、復号IPAへの注入・独自署名用ペイロードであり直接のdpkgインストール用ではない)
-     - `SHA256SUMS` (上記3DEBのSHA-256ハッシュ一覧)
-   - 全DEBパッケージに同一の `arm64`+`arm64e` Fatバイナリ、5言語対応 `RUINResources.bundle`、LINE限定XMLフィルタ、ライセンス通知 (`usr/share/doc/com.tqmane.ruin/RUIN-ThirdPartyNotices.txt`、rootlessは `/var/jb` 配下) を内包します。
+     - `RUIN-<version>-LiveContainer.dylib` (LiveContainer 向け単体ユニバーサル `arm64`+`arm64e` dylib。`ja`/`en`/`ko`/`zh-Hans`/`zh-Hant` の5言語、`Info.plist`、全 Tabler PNG を内包し、必要時にコンテンツ単位のキャッシュバンドルへ展開しつつネイティブ `NSBundle` と英語フォールバックで解決するため外部 `RUINResources.bundle` 不要。外部バンドルの併用も引き続き対応)
+     - `SHA256SUMS` (上記4つのバイナリ配布物の SHA-256 ハッシュ一覧)
+   - 全配布物は同一の Apple システム専用ユニバーサル `arm64`+`arm64e` `RUIN.dylib` から生成され、LiveContainer・通常 IPA sideload・rootless/rootful jailbreak 間でランタイム実装を共有します。
+   - rootful/rootless の MobileSubstrate フィルタ・配置パスおよびパッケージ構成は変更せず、全DEBパッケージに5言語対応 `RUINResources.bundle`、LINE限定XMLフィルタ、ライセンス通知 (`usr/share/doc/com.tqmane.ruin/RUIN-ThirdPartyNotices.txt`、rootlessは `/var/jb` 配下) を内包します。`jailed.deb` を用いた ESign/GBox 注入および既存の `package.py` 個人署名フローを引き続きサポートし、CI には IPA や署名証明書を含めません。
+   - 検証では署名・アーキテクチャ・依存関係・各スライス内包ファイル一式を確認し、外部バンドルなしの Foundation フィクスチャで全翻訳・フォールバック・バイナリアイコンを検証します（全4環境・全ネイティブ機能の実機検証完了を主張するものではありません）。

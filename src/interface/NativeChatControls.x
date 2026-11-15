@@ -806,9 +806,9 @@ static BOOL RUINReadExceptionEnabled(NSString *key)
 }
 
 static UIImage *RUINReadExceptionSymbol(BOOL exempt) {
-    NSBundle *bundle = RUINResourceBundle();
-    return [[UIImage imageNamed:exempt ? @"tabler-eye" : @"tabler-eye-off"
-        inBundle:bundle compatibleWithTraitCollection:nil] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+    NSString *name = exempt ? @"tabler-eye" : @"tabler-eye-off";
+    return [[UIImage imageNamed:name inBundle:RUINResourceBundleForImage(name)
+        compatibleWithTraitCollection:nil] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
 }
 
 static UIColor *RUINDisplayedIconColor(UIImageView *view) {

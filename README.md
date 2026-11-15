@@ -93,11 +93,15 @@ LINE の **「設定」タブ最下部** に追加される **「RUIN」** か�
 > [!NOTE]
 > Cydia Substrate や libhooker などの外部フックライブラリへの動的リンクは不要で、各環境の注入ローダーからそのまま読み込めます。
 
-### LiveContainer / Sideload 環境（非脱獄）
-1. LINE iOS **26.17.0** の復号済み IPA を用意します。
-2. リリースページの `RUIN-<version>-jailed.deb`（またはビルドした `RUIN.dylib` と `RUINResources.bundle`）を用意します。
+### LiveContainer（単体 dylib）
+1. リリースページから `RUIN-<version>-LiveContainer.dylib` をダウンロードし、未改変（RUIN 未注入）の LINE iOS **26.17.0** 復号済み IPA を用意します（RUIN 注入済み IPA には二重注入しないでください）。
+   - 5言語の翻訳・設定情報・アイコンがバイナリ内に同梱されているため、外部の `RUINResources.bundle` は不要です（従来の外部バンドル併用も引き続き対応しています）。
+2. LiveContainer に LINE を導入し、標準の TweakLoader（Tweak 管理機能）から `RUIN-<version>-LiveContainer.dylib` を選択して LINE 向けに有効化します。
+
+### Sideload（IPA 注入・非脱獄）
+1. 未改変（RUIN 未注入）の LINE iOS **26.17.0** 復号済み IPA と、リリースページの `RUIN-<version>-jailed.deb` を用意します（RUIN 注入済み IPA には二重注入しないでください）。
    - `jailed.deb` 内では `/Library/MobileSubstrate/DynamicLibraries/` 配下に `RUIN.dylib` と `RUINResources.bundle` が格納されています。
-3. **LiveContainer** で読み込むか、**ESign** / **GBox** などの署名ツールで `RUIN.dylib` と `RUINResources.bundle` の両方をアプリへ注入・署名してインストールします。
+2. **ESign** / **GBox** などの署名ツール、または既存の `package.py` による個人署名フローで `RUIN.dylib` と `RUINResources.bundle` の両方をアプリへ注入・署名してインストールします。
    - 無料の Apple ID でも有料の購入証明書でも利用できます。
 
 > [!TIP]
@@ -117,7 +121,7 @@ LINE の **「設定」タブ最下部** に追加される **「RUIN」** か�
 # Universal dylib (arm64 + arm64e) とツールをビルド -> build/RUIN.dylib
 make -j4 all
 
-# 配布用パッケージ (.deb 3種 + SHA256SUMS) を生成 -> dist/
+# 配布用パッケージ (.deb 3種・LC用dylib・SHA256SUMS) を生成 -> dist/
 make dist
 
 # ホストテストの実行（任意）
@@ -126,7 +130,7 @@ make -j4 check-host
 
 ビルド成果物は以下に生成されます。
 - **バイナリ**: `build/RUIN.dylib`（手動注入時は `resources/RUINResources.bundle` も同梱してください）
-- **配布パッケージ**: `dist/RUIN-<version>-{rootless,rootful,jailed}.deb` および `dist/SHA256SUMS`
+- **配布パッケージ**: `dist/RUIN-<version>-{rootless,rootful,jailed}.deb`、`dist/RUIN-<version>-LiveContainer.dylib`、`dist/SHA256SUMS`
 
 ### 署名済み IPA の生成（開発者向け）
 手元の `.ipa`・証明書（`.p12`）・プロファイル（`.mobileprovision`）を使って署名済み IPA を直接ビルドするスクリプトも同梱しています。

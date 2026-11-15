@@ -63,6 +63,14 @@ NSBundle *RUINResourceBundle(void) {
     return RUINExternalResourceBundle() ?: RUINEmbeddedResourceBundle();
 }
 
+NSBundle *RUINResourceBundleForImage(NSString *name) {
+    NSBundle *external = RUINExternalResourceBundle();
+    for (NSString *suffix in @[@"", @"@2x", @"@3x"])
+        if ([external pathForResource:[name stringByAppendingString:suffix] ofType:@"png"])
+            return external;
+    return RUINEmbeddedResourceBundle();
+}
+
 static NSString *RUINLanguageForPreferences(NSArray<NSString *> *preferences) {
     return [NSBundle preferredLocalizationsFromArray:RUINSupportedLanguages()
         forPreferences:preferences].firstObject ?: @"en";

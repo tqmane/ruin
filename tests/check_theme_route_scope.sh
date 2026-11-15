@@ -13,6 +13,7 @@ xcrun --sdk macosx clang -isysroot "$MACOS_SDK" -fobjc-arc -fblocks -Wall -Wextr
 xcrun swiftc -parse-as-library -module-name ThemeRouteScopeHostTest \
     "$ROOT/src/themes/ThemeRouteScope.swift" "$ROOT/tests/check_theme_route_scope.swift" \
     "$OUT/check_theme_route_scope-host.o" -o "$OUT/check_theme_route_scope-host"
+codesign --force --sign - "$OUT/check_theme_route_scope-host"
 "$OUT/check_theme_route_scope-host"
 
 for ARCH in arm64 arm64e; do

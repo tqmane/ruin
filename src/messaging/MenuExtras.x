@@ -1078,7 +1078,7 @@ static UICollectionViewCell *RUINMenuExtrasActionCell(
 static UICollectionViewCell *RUINMenuExtrasReadUsersCell(
     UICollectionView *collectionView, NSIndexPath *indexPath)
 {
-    UIImage *image = [[UIImage imageNamed:@"tabler-eye" inBundle:RUINResourceBundle() compatibleWithTraitCollection:nil]
+    UIImage *image = [[UIImage imageNamed:@"tabler-eye" inBundle:RUINResourceBundleForImage(@"tabler-eye") compatibleWithTraitCollection:nil]
         imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
     return RUINMenuExtrasActionCell(collectionView, indexPath, RUINLocalizedString(@"readers.title"), image);
 }
@@ -1092,7 +1092,7 @@ static UICollectionViewCell *RUINMenuExtrasStickerGIFCell(
 
 static UICollectionViewCell *RUINMenuExtrasReadUntilCell(UICollectionView *collectionView, NSIndexPath *indexPath)
 {
-    UIImage *image = [[UIImage imageNamed:@"tabler-checks" inBundle:RUINResourceBundle() compatibleWithTraitCollection:nil]
+    UIImage *image = [[UIImage imageNamed:@"tabler-checks" inBundle:RUINResourceBundleForImage(@"tabler-checks") compatibleWithTraitCollection:nil]
         imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
     return RUINMenuExtrasActionCell(collectionView, indexPath, RUINLocalizedString(@"menu.mark_read_until"), image);
 }
@@ -1100,7 +1100,7 @@ static UICollectionViewCell *RUINMenuExtrasReadUntilCell(UICollectionView *colle
 static UICollectionViewCell *RUINMenuExtrasRetainedMediaCell(
     UICollectionView *collectionView, NSIndexPath *indexPath)
 {
-    UIImage *image = [[UIImage imageNamed:@"tabler-eye" inBundle:RUINResourceBundle() compatibleWithTraitCollection:nil]
+    UIImage *image = [[UIImage imageNamed:@"tabler-eye" inBundle:RUINResourceBundleForImage(@"tabler-eye") compatibleWithTraitCollection:nil]
         imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
     return RUINMenuExtrasActionCell(collectionView, indexPath,
         RUINLocalizedString(@"menu.retained_media"), image);

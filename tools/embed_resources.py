@@ -78,7 +78,8 @@ def main():
     args = parser.parse_args()
     contents = render_header(bundle_files(args.bundle))
     args.header.parent.mkdir(parents=True, exist_ok=True)
-    args.header.write_text(contents, encoding="ascii", newline="\n")
+    with args.header.open("w", encoding="ascii", newline="\n") as output:
+        output.write(contents)
 
 
 if __name__ == "__main__":

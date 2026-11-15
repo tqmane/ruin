@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build resource-inclusive rootful, rootless, and jailed Debian packages."""
+"""Build three resource-inclusive Debian packages and a LiveContainer dylib."""
 import argparse
 import gzip
 import hashlib
@@ -269,6 +269,9 @@ def build_distribution(dylib, resources, output, version, epoch=None):
         package = output / f"RUIN-{version}-{variant}.deb"
         package.write_bytes(deb_archive(files, version, variant, epoch))
         artifacts.append(package)
+    livecontainer = output / f"RUIN-{version}-LiveContainer.dylib"
+    livecontainer.write_bytes(Path(dylib).read_bytes())
+    artifacts.append(livecontainer)
     sums = "".join(
         f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n"
         for path in artifacts
@@ -287,6 +290,8 @@ def main():
 
     version = validate_version(args.version)
     dependencies = verify_dylib(args.dylib)
+    from verify_embedded_resources import verify_embedded_resources
+    verify_embedded_resources(args.dylib, args.resources)
     artifacts = build_distribution(args.dylib, args.resources, args.output, version)
     print("Verified dylib dependencies:")
     for dependency in dependencies:

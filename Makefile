@@ -44,6 +44,7 @@ check-portable: logos
 
 check-packaging: build/insert_dylib build/RUIN.dylib
 	python3 tests/check_packaging_tools.py
+	python3 tools/verify_embedded_resources.py build/RUIN.dylib
 
 # These two integration checks require private, locally supplied fixtures.
 LINE_APP ?= build/unsigned/Payload/LINE.app
@@ -111,6 +112,7 @@ build/export_version_mappings: tools/export_version_mappings.m $(HOST_COMMON) $(
 	$(HOST_CC) -fobjc-arc -fblocks $(HOST_WARNINGS) $(CPPFLAGS) $< -framework Foundation -o $@
 
 check-mapping-manifest: build/export_version_mappings tests/fixtures/version-mappings.json
+	codesign --force --sign - build/export_version_mappings
 	./build/export_version_mappings --check tests/fixtures/version-mappings.json
 
 check-host: check-portable check-mapping-manifest $(HOST_FIXTURES)
@@ -258,7 +260,7 @@ build/check_localization: src/core/Localization.m src/core/Localization.h tests/
 	build/generated/EmbeddedResources.h
 	mkdir -p build
 	$(HOST_CC) -fobjc-arc -fblocks $(HOST_WARNINGS) $(CPPFLAGS) tests/check_localization.m \
-		-framework Foundation -o $@
+		-framework Foundation -framework ImageIO -o $@
 
 build/check_client_version_advertisement: $(call source,src/platform/ClientVersionAdvertisement.m) \
 	src/platform/ClientVersionAdvertisement.h src/core/Features.h

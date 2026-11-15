@@ -3,6 +3,8 @@
 NS_ASSUME_NONNULL_BEGIN
 
 FOUNDATION_EXPORT NSBundle * _Nullable RUINResourceBundle(void);
+// PNG base name, without the extension or scale suffix; UIImage chooses scale.
+FOUNDATION_EXPORT NSBundle * _Nullable RUINResourceBundleForImage(NSString *name);
 FOUNDATION_EXPORT NSDictionary *RUINLocalizationDiagnostics(void);
 
 #if defined(RUIN_HOST_CHECK) && !defined(RUIN_LOCALIZATION_HOST_CHECK)

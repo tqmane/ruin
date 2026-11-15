@@ -6,6 +6,7 @@
 #define RUIN_LOCALIZATION_HOST_CHECK 1
 #import "../src/core/Localization.m"
 #import <objc/runtime.h>
+#import <ImageIO/ImageIO.h>
 #include <assert.h>
 #include <stdlib.h>
 
@@ -53,6 +54,15 @@ static void CheckEmbeddedResources(NSString *source) {
         NSData *restored = [NSData dataWithContentsOfFile:
             [embedded.bundlePath stringByAppendingPathComponent:relative]];
         assert(original && [original isEqualToData:restored]);
+        if ([relative.pathExtension isEqual:@"png"]) {
+            CGImageSourceRef imageSource = CGImageSourceCreateWithData((__bridge CFDataRef)restored, NULL);
+            assert(imageSource && CGImageSourceGetCount(imageSource) == 1);
+            CGImageRef image = CGImageSourceCreateImageAtIndex(imageSource, 0,
+                (__bridge CFDictionaryRef)@{(__bridge NSString *)kCGImageSourceShouldCacheImmediately:@YES});
+            assert(image);
+            CFRelease(image);
+            CFRelease(imageSource);
+        }
     }
     for (NSString *relative in [files enumeratorAtPath:embedded.bundlePath]) {
         BOOL directory = NO;
@@ -76,6 +86,15 @@ static void CheckRuntime(NSString *source, NSString *app, NSString *expectedPath
         assert([resources.bundlePath isEqual:RUINEmbeddedResourceBundle().bundlePath]);
     }
     CheckEmbeddedResources(source);
+    NSString *scenario = app.lastPathComponent.stringByDeletingPathExtension;
+    for (NSString *name in @[@"tabler-eye", @"tabler-eye-off", @"tabler-checks"]) {
+        BOOL externalImage = expectedPath.length && ![scenario isEqual:@"stale-icons"] &&
+            (![@[@"partial-icons", @"base-icon", @"three-x-icon"] containsObject:scenario] ||
+                [name isEqual:@"tabler-eye"]);
+        NSBundle *imageBundle = RUINResourceBundleForImage(name);
+        NSBundle *expectedBundle = externalImage ? resources : RUINEmbeddedResourceBundle();
+        assert([imageBundle.bundlePath isEqual:expectedBundle.bundlePath]);
+    }
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
     NSString *unknown = @"tests.unknown_semantic_key";
     for (NSString *language in RUINSupportedLanguages()) {
@@ -152,6 +171,18 @@ static void CheckRuntimeProcess(NSString *executable, NSString *directory, NSStr
             CopyResources(source, imageResources, NO, NO);
             expected = imageResources;
         }
+    } else if ([@[@"stale-icons", @"partial-icons", @"base-icon", @"three-x-icon"] containsObject:scenario]) {
+        CopyResources(source, appResources, [scenario isEqual:@"stale-icons"], NO);
+        expected = appResources;
+        for (NSString *relative in [files enumeratorAtPath:appResources]) {
+            if (![relative.pathExtension isEqual:@"png"]) continue;
+            if ([scenario isEqual:@"partial-icons"] && [relative isEqual:@"tabler-eye@2x.png"]) continue;
+            if ([scenario isEqual:@"three-x-icon"] && [relative isEqual:@"tabler-eye@3x.png"]) continue;
+            assert([files removeItemAtPath:[appResources stringByAppendingPathComponent:relative] error:NULL]);
+        }
+        if ([scenario isEqual:@"base-icon"])
+            assert([files copyItemAtPath:[source stringByAppendingPathComponent:@"tabler-eye@2x.png"]
+                toPath:[appResources stringByAppendingPathComponent:@"tabler-eye.png"] error:NULL]);
     } else {
         assert([scenario isEqual:@"missing-resources"]);
     }
@@ -261,7 +292,8 @@ int main(int argc, const char **argv) {
             // A real main bundle and image path exercise discovery independently
             // of the source checkout and the header-only host resource override.
             for (NSString *scenario in @[@"missing-resources", @"app-root", @"image-sibling", @"frameworks",
-                @"stale-root", @"stale-root-current-sibling", @"invalid-sibling"])
+                @"stale-root", @"stale-root-current-sibling", @"invalid-sibling", @"stale-icons",
+                @"partial-icons", @"base-icon", @"three-x-icon"])
                 CheckRuntimeProcess(executable, temporary, bundlePath, scenario);
         } @finally {
             [files removeItemAtPath:temporary error:NULL];
@@ -273,7 +305,7 @@ int main(int argc, const char **argv) {
             isEqual:@"項目：値"]));
         assert(([[NSString stringWithFormat:RUINHostLocalizedString(@"common.member_count"), (long)12]
             isEqual:@"12人"]));
-        puts("PASS five catalogs, native embedded resources, production bundle discovery, stale-resource fallback, regional locales and formats");
+        puts("PASS five catalogs, embedded PNG decoding, per-image external fallback, bundle discovery, regional locales and formats");
     }
     return 0;
 }
