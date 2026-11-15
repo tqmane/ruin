@@ -190,6 +190,10 @@ static void CheckReadOnly(NSManagedObjectModel *model, NSURL *root)
         @autoreleasepool { (void)Fixture(model, URL, NO); }
         RUINRegistrationFixture *fixture = Fixture(model, URL, YES);
         assert(!RUINNativeThemeRegistrationCaptureContextForTesting(fixture.context));
+        NSDictionary *diagnostics = RUINNativeThemeRegistrationDiagnostics();
+        assert([diagnostics[@"lastScopeStatus"] isEqual:@"readonly_owned_store"]);
+        assert([diagnostics[@"observedStoreRoot"] isEqual:@"application_support"]);
+        assert([diagnostics[@"observedStoreReadOnly"] boolValue]);
     }
 }
 
@@ -224,6 +228,9 @@ static void CheckInvalidAccountsAndStores(NSManagedObjectModel *model, NSURL *ro
     assert(!RUINNativeThemeRegistrationCaptureContextForTesting(foreignApp.context));
     RUINRegistrationFixture *groupStore = Fixture(model, StoreURL(groupURL, primary, @"Owned Themes"), NO);
     assert(!RUINNativeThemeRegistrationCaptureContextForTesting(groupStore.context));
+    NSDictionary *diagnostics = RUINNativeThemeRegistrationDiagnostics();
+    assert([diagnostics[@"lastScopeStatus"] isEqual:@"owned_store_outside_application_support"]);
+    assert([diagnostics[@"observedStoreRoot"] isEqual:@"mapped_group"]);
     RUINRegistrationFixture *validRoot = Fixture(model,
         StoreURL(root, Account(@"P", @"9"), @"Owned Themes"), NO);
     RUINNativeThemeRegistrationSetApplicationSupportForTesting(nil);
@@ -452,6 +459,42 @@ static void CheckObservedAccountChange(NSManagedObjectModel *model, NSURL *root,
     assert(Fetch(previous.context, @"c0768339-c2d3-4189-9653-2909e9bb6f58") == nil);
 }
 
+static void CheckCatalogDoesNotChangeAccount(NSManagedObjectModel *model, NSURL *root,
+    RUINRegistrationFixture *primary)
+{
+    assert(RUINNativeThemeRegistrationCaptureContextForTesting(primary.context));
+    id primaryScope = RUINNativeThemeRegistrationScopeToken();
+    NSNumber *captures = RUINNativeThemeRegistrationDiagnostics()[@"captures"];
+    RUINRegistrationFixture *secondaryReader = nil;
+    for (NSString *role in @[@"P", @"S"]) {
+        NSURL *URL = StoreURL(root, Account(role, @"8"), @"Owned Themes");
+        @autoreleasepool { (void)Fixture(model, URL, NO); }
+        RUINRegistrationFixture *reader = Fixture(model, URL, YES);
+        if ([role isEqual:@"S"]) secondaryReader = reader;
+        [reader.context performBlockAndWait:^{
+            RUINPerformThemeCatalogRead(^{
+                RUINPerformThemeCatalogRead(^{
+                    assert(!RUINNativeThemeRegistrationCaptureContextForTesting(reader.context));
+                });
+            });
+        }];
+        assert(RUINNativeThemeRegistrationAvailable());
+        assert(RUINNativeThemeRegistrationScopeToken() == primaryScope);
+        assert([RUINNativeThemeRegistrationDiagnostics()[@"captures"] isEqual:captures]);
+    }
+    @try {
+        RUINPerformThemeCatalogRead(^{ [NSException raise:@"FixtureCatalog" format:@"Expected"]; });
+        assert(NO);
+    } @catch (NSException *exception) { assert([exception.name isEqual:@"FixtureCatalog"]); }
+    assert(!NSThread.currentThread.threadDictionary[@"RUINNativeThemeRegistration.writer"]);
+    // A real native observation from another account still invalidates P_,
+    // even when that observation is not a writable context to capture.
+    assert(!RUINNativeThemeRegistrationCaptureContextForTesting(secondaryReader.context));
+    assert(!RUINNativeThemeRegistrationAvailable() && !RUINNativeThemeRegistrationScopeToken());
+    assert(RUINNativeThemeRegistrationCaptureContextForTesting(primary.context));
+    assert(RUINNativeThemeRegistrationScopeToken() != primaryScope);
+}
+
 int main(int argc, const char *argv[])
 {
     @autoreleasepool {
@@ -481,6 +524,7 @@ int main(int argc, const char *argv[])
             StoreURL(root, Account(@"P", @"a"), @"Owned Themes"), NO);
         assert(RUINNativeThemeRegistrationCaptureContextForTesting(fixture.context));
         assert(RUINNativeThemeRegistrationAvailable());
+        CheckCatalogDoesNotChangeAccount(model, root, fixture);
         CheckPackageURL(groupURL);
         CheckRoleAndPackageScopes(model, root, groupURL, fixture);
         NSError *scopeError = nil;

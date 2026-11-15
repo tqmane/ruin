@@ -11,6 +11,7 @@
 #import "RuntimeInspector.h"
 #import "ThemeApplyEvent.h"
 #import "NativeThemeValidation.h"
+#import "NativeThemeRegistration.h"
 
 #import <CoreData/CoreData.h>
 #import <objc/runtime.h>
@@ -497,6 +498,7 @@ static NSArray<NSDictionary<NSString *, id> *> *RUINThemeReadProductStoreBody(NS
     __block NSArray *result = nil;
     __block NSError *fetchError = nil;
     [context performBlockAndWait:^{
+        RUINPerformThemeCatalogRead(^{
             NSArray *records = [context executeFetchRequest:request error:&fetchError];
             if (!records && !fetchError) {
                 fetchError = RUINThemeStoreError(@"Core Data returned no result for the theme product fetch.", nil);
@@ -530,6 +532,7 @@ static NSArray<NSDictionary<NSString *, id> *> *RUINThemeReadProductStoreBody(NS
                 [installed addObject:[item copy]];
             }
             result = [installed copy];
+        });
         }];
 
     if (fetchError) {

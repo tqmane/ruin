@@ -14,5 +14,6 @@ FOUNDATION_EXPORT void RUINRefreshNativeMyThemes(UIViewController *controller,
 FOUNDATION_EXPORT void RUINSetNativeMyThemesDidAppearHandler(
     RUINNativeMyThemesDidAppearHandler _Nullable handler);
 FOUNDATION_EXPORT void RUINInstallNativeMyThemesDidAppearHook(void);
+FOUNDATION_EXPORT NSDictionary *RUINNativeMyThemesObservationDiagnostics(void);
 
 NS_ASSUME_NONNULL_END

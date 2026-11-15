@@ -15,6 +15,7 @@
 #import <CoreFoundation/CoreFoundation.h>
 #import <objc/runtime.h>
 #import <os/lock.h>
+#import <stdatomic.h>
 #import <errno.h>
 #import <limits.h>
 #import <math.h>
@@ -23,6 +24,7 @@
 
 static NSString *const kRUINRegistrationErrorDomain = @"RUINNativeThemeRegistration";
 static NSString *const kRUINWriterThreadKey = @"RUINNativeThemeRegistration.writer";
+NSNotificationName const RUINNativeThemeRegistrationAvailableNotification = @"app.ruin.theme.registrationAvailable";
 static os_unfair_lock gCaptureLock = OS_UNFAIR_LOCK_INIT;
 static dispatch_once_t gHookOnce;
 static dispatch_once_t gQueueOnce;
@@ -34,6 +36,10 @@ static __weak NSPersistentStoreCoordinator *gNativeCoordinator;
 static __weak NSPersistentStore *gNativeStore;
 static NSString *gNativeStorePath;
 static NSString *gNativeAccount;
+static _Atomic(const char *) gThemeScopeStatus = "not_observed";
+static _Atomic(const char *) gThemeStoreRoot = "unknown";
+static atomic_bool gThemeStoreReadOnly;
+static atomic_uint_fast64_t gThemeScopeObservations, gThemeContextCaptures;
 static dispatch_queue_t gRegistrationQueue;
 static NSURL *RUINNativeApplicationSupportURL(void);
 static NSURL *RUINMappedGroupContainerURL(void);
@@ -130,12 +136,17 @@ static BOOL RUINContextNativeScope(NSManagedObjectContext *context,
     NSPersistentStoreCoordinator **coordinatorOut, NSPersistentStore **storeOut,
     NSString **pathOut, NSString **accountOut, BOOL requireWritable)
 {
+    atomic_fetch_add(&gThemeScopeObservations, 1);
     if (!context || (context.concurrencyType != NSPrivateQueueConcurrencyType &&
-                     context.concurrencyType != NSMainQueueConcurrencyType)) return NO;
+                     context.concurrencyType != NSMainQueueConcurrencyType)) {
+        atomic_store(&gThemeScopeStatus, "unsupported_context_queue"); return NO;
+    }
     NSPersistentStoreCoordinator *coordinator = context.persistentStoreCoordinator;
     NSManagedObjectModel *model = coordinator.managedObjectModel;
     NSEntityDescription *entity = model.entitiesByName[@"OwnedThemeProduct"];
-    if (!coordinator || !RUINTheme2EntityIsSupported(entity)) return NO;
+    if (!coordinator || !RUINTheme2EntityIsSupported(entity)) {
+        atomic_store(&gThemeScopeStatus, "unsupported_theme_schema"); return NO;
+    }
 
     NSPersistentStore *match = nil;
     NSString *path = nil, *account = nil;
@@ -148,15 +159,33 @@ static BOOL RUINContextNativeScope(NSManagedObjectContext *context,
         path = candidatePath;
         account = candidateAccount;
     }
-    if (matches != 1 || !match || (requireWritable && !RUINStoreIsWritableSQLite(match))) return NO;
+    if (matches != 1 || !match) {
+        atomic_store(&gThemeScopeStatus, matches ? "ambiguous_owned_store" : "owned_store_namespace_mismatch"); return NO;
+    }
+    atomic_store(&gThemeStoreReadOnly, !RUINStoreIsWritableSQLite(match));
     // LINE keeps its owned-theme DB in the app container, separate from packages.
     NSURL *applicationSupport = RUINNativeApplicationSupportURL();
-    if (!applicationSupport.isFileURL) return NO;
+    if (!applicationSupport.isFileURL) {
+        atomic_store(&gThemeScopeStatus, "application_support_unavailable"); return NO;
+    }
     NSString *relativePath = [NSString pathWithComponents:@[@"PrivateStore", account,
         @"Owned Themes", @"OwnedThemeProduct.sqlite"]];
     NSURL *expected = [applicationSupport.URLByResolvingSymlinksInPath URLByAppendingPathComponent:relativePath];
-    if (![match.URL.URLByResolvingSymlinksInPath.standardizedURL.path
-        isEqual:expected.standardizedURL.path]) return NO;
+    NSString *actual = match.URL.URLByResolvingSymlinksInPath.standardizedURL.path;
+    if (![actual isEqual:expected.standardizedURL.path]) {
+        NSURL *group = RUINMappedGroupContainerURL();
+        NSURL *groupSupport = [group.URLByResolvingSymlinksInPath
+            URLByAppendingPathComponent:@"Library/Application Support" isDirectory:YES];
+        NSURL *groupStore = [groupSupport URLByAppendingPathComponent:relativePath];
+        atomic_store(&gThemeStoreRoot, groupStore && [actual isEqual:groupStore.standardizedURL.path]
+            ? "mapped_group" : "outside_trusted_roots");
+        atomic_store(&gThemeScopeStatus, "owned_store_outside_application_support"); return NO;
+    }
+    atomic_store(&gThemeStoreRoot, "application_support");
+    if (requireWritable && !RUINStoreIsWritableSQLite(match)) {
+        atomic_store(&gThemeScopeStatus, "readonly_owned_store"); return NO;
+    }
+    atomic_store(&gThemeScopeStatus, "validated");
     if (modelOut) *modelOut = model;
     if (entityOut) *entityOut = entity;
     if (coordinatorOut) *coordinatorOut = coordinator;
@@ -193,6 +222,7 @@ static void RUINObserveAccount(NSString *account)
 
 static BOOL RUINCaptureNativeContext(NSManagedObjectContext *context)
 {
+    if ([NSThread.currentThread.threadDictionary[kRUINWriterThreadKey] boolValue]) return NO;
     NSString *path = nil, *account = nil;
     if (!RUINContextNativeScope(context, NULL, NULL, NULL, NULL, &path, &account, NO)) return NO;
     RUINObserveAccount(account);
@@ -214,7 +244,12 @@ static BOOL RUINCaptureNativeContext(NSManagedObjectContext *context)
     gNativeStore = store;
     gNativeStorePath = [path copy];
     gNativeAccount = [account copy];
+    atomic_fetch_add(&gThemeContextCaptures, 1);
     os_unfair_lock_unlock(&gCaptureLock);
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [NSNotificationCenter.defaultCenter postNotificationName:RUINNativeThemeRegistrationAvailableNotification
+            object:context];
+    });
     return YES;
 }
 
@@ -332,6 +367,7 @@ static BOOL RUINNativeServerRevocationFetch(void)
 - (NSArray *)executeFetchRequest:(NSFetchRequest *)request error:(NSError **)error
 {
     NSManagedObjectContext *context = self;
+    if ([NSThread.currentThread.threadDictionary[kRUINWriterThreadKey] boolValue]) return %orig(request, error);
     NSFetchRequest *effectiveRequest = request;
     NSSet *localIDs = nil;
     @try {
@@ -407,6 +443,31 @@ BOOL RUINNativeThemeRegistrationAvailable(void)
         gNativeStore != nil && gCaptureToken != nil;
     os_unfair_lock_unlock(&gCaptureLock);
     return available;
+}
+
+void RUINPerformThemeCatalogRead(void (^read)(void))
+{
+    NSMutableDictionary *state = NSThread.currentThread.threadDictionary;
+    id previous = state[kRUINWriterThreadKey];
+    state[kRUINWriterThreadKey] = @YES;
+    @try { read(); }
+    @finally {
+        if (previous) state[kRUINWriterThreadKey] = previous;
+        else [state removeObjectForKey:kRUINWriterThreadKey];
+    }
+}
+
+NSDictionary *RUINNativeThemeRegistrationDiagnostics(void)
+{
+    os_unfair_lock_lock(&gCaptureLock);
+    NSDictionary *lifetime = @{@"contextAlive":@(gNativeContext != nil),
+        @"coordinatorAlive":@(gNativeCoordinator != nil), @"storeAlive":@(gNativeStore != nil)};
+    os_unfair_lock_unlock(&gCaptureLock);
+    return @{@"lastScopeStatus":@(atomic_load(&gThemeScopeStatus)),
+        @"observedStoreRoot":@(atomic_load(&gThemeStoreRoot)),
+        @"observedStoreReadOnly":@(atomic_load(&gThemeStoreReadOnly)),
+        @"scopeObservations":@(atomic_load(&gThemeScopeObservations)),
+        @"captures":@(atomic_load(&gThemeContextCaptures)), @"lifetime":lifetime};
 }
 
 id RUINNativeThemeRegistrationScopeToken(void)

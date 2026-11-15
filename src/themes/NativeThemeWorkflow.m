@@ -16,9 +16,10 @@ static NSMutableSet<NSString *> *gImportedArchives;
 static BOOL gImporting;
 static NSUInteger gImportedCount, gFailedCount;
 static NSUInteger gRefreshAttempts, gRefreshSkippedForSelection;
+static NSUInteger gNativeAppearanceRequests;
 static NSString *gLastImportError;
 static id gImportedScope;
-static char gHandledAppearance;
+static __weak UIViewController *gPendingMyThemesController;
 
 static NSArray *RUINNativeSelectedThemeIDs(UIViewController *controller)
 {
@@ -118,8 +119,15 @@ static NSArray *RUINPreferredArchives(NSArray *catalog)
 
 static void RUINImportOnNativeAppearance(UIViewController *controller, NSUInteger retry)
 {
-    if (!controller.viewIfLoaded.window || controller.navigationController.topViewController != controller) return;
-    if (gImporting || objc_getAssociatedObject(controller, &gHandledAppearance)) return;
+    if (!retry) gNativeAppearanceRequests++;
+    if (!controller.viewIfLoaded.window || controller.navigationController.topViewController != controller) {
+        gLastImportError = @"native_theme_screen_not_visible"; return;
+    }
+    gPendingMyThemesController = controller;
+    // A controller can reappear after another archive is saved or an early
+    // account-scope lookup fails. Receipts/import identities deduplicate work;
+    // the lifetime of the view controller is not a completed import boundary.
+    if (gImporting) return;
     if (!RUINNativeThemeRegistrationAvailable()) {
         if (retry < 12) {
             __weak UIViewController *weakController = controller;
@@ -129,7 +137,6 @@ static void RUINImportOnNativeAppearance(UIViewController *controller, NSUIntege
         } else gLastImportError = @"native_theme_context_unavailable";
         return;
     }
-    objc_setAssociatedObject(controller, &gHandledAppearance, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     id scope = RUINNativeThemeRegistrationScopeToken();
     if (gImportedScope != scope) {
         [gImportedArchives removeAllObjects];
@@ -182,13 +189,18 @@ void RUINInstallNativeThemeWorkflow(void)
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         gImportedArchives = [NSMutableSet set];
+        [NSNotificationCenter.defaultCenter addObserverForName:RUINNativeThemeRegistrationAvailableNotification
+            object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
+                UIViewController *controller = gPendingMyThemesController;
+                if (controller) RUINImportOnNativeAppearance(controller, 0);
+            }];
         RUINInstallNativeThemeRegistrationCapture();
-        RUINInstallNativeMyThemesDidAppearHook();
         RUINSetNativeMyThemesDidAppearHandler(^(UIViewController *controller) {
             RUINImportOnNativeAppearance(controller, 0);
             RUINRequestRuntimeSnapshot();
         });
     });
+    RUINInstallNativeMyThemesDidAppearHook();
 }
 
 void RUINOpenDownloadedThemes(UIViewController *owner)
@@ -207,6 +219,9 @@ void RUINOpenDownloadedThemes(UIViewController *owner)
 NSDictionary *RUINNativeThemeWorkflowDiagnostics(void)
 {
     return @{@"nativeContextAvailable": @(RUINNativeThemeRegistrationAvailable()),
+        @"registration":RUINNativeThemeRegistrationDiagnostics(),
+        @"appearanceHook":RUINNativeMyThemesObservationDiagnostics(),
+        @"appearanceImportRequests":@(gNativeAppearanceRequests),
         @"importInProgress": @(gImporting), @"imported": @(gImportedCount),
         @"failed": @(gFailedCount), @"lastError": gLastImportError ?: @"",
         @"listRefreshes":@(gRefreshAttempts), @"refreshSkippedForSelection":@(gRefreshSkippedForSelection),

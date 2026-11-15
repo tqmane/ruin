@@ -9,6 +9,8 @@
 #import <objc/runtime.h>
 #import <os/lock.h>
 #import <string.h>
+#import <stdlib.h>
+#import <stdatomic.h>
 
 static NSString *const RUINNativeThemeSettingsClassName =
     @"LineShopProductSettingsUI.ThemeSettingsViewController";
@@ -52,6 +54,9 @@ typedef NS_ENUM(NSUInteger, RUINNativeThemeSelectionResult) {
 static os_unfair_lock gNativeMyThemesHandlerLock = OS_UNFAIR_LOCK_INIT;
 static RUINNativeMyThemesDidAppearHandler gNativeMyThemesDidAppearHandler;
 static BOOL gNativeMyThemesHookInstalled;
+static const char *gNativeMyThemesHookStatus = "not_attempted";
+static BOOL gNativeMyThemesOwnAppearance;
+static atomic_uint_fast64_t gNativeMyThemesAppearanceCalls;
 
 static NSError *RUINNativeThemeNavigationError(RUINNativeThemeNavigationErrorCode code,
     NSString *description)
@@ -388,6 +393,7 @@ void RUINRefreshNativeMyThemes(UIViewController *controller, RUINNativeMyThemesC
 - (void)viewDidAppear:(BOOL)animated
 {
     %orig;
+    atomic_fetch_add(&gNativeMyThemesAppearanceCalls, 1);
     id object = self;
 
     os_unfair_lock_lock(&gNativeMyThemesHandlerLock);
@@ -429,21 +435,53 @@ static BOOL RUINClassOwnsSelector(Class cls, SEL selector)
     return owns;
 }
 
+static BOOL RUINNativeMyThemesClassOwnerMatches(Class cls)
+{
+    const char *owner = cls ? class_getImageName(cls) : NULL;
+    const char *executable = NSBundle.mainBundle.executablePath.fileSystemRepresentation;
+    char *ownerPath = owner ? realpath(owner, NULL) : NULL;
+    char *executablePath = executable ? realpath(executable, NULL) : NULL;
+    BOOL matches = ownerPath && executablePath && !strcmp(ownerPath, executablePath);
+    free(ownerPath); free(executablePath);
+    return matches;
+}
+
+NSDictionary *RUINNativeMyThemesObservationDiagnostics(void)
+{
+    os_unfair_lock_lock(&gNativeMyThemesHandlerLock);
+    BOOL handler = gNativeMyThemesDidAppearHandler != nil;
+    os_unfair_lock_unlock(&gNativeMyThemesHandlerLock);
+    return @{@"installed":@(gNativeMyThemesHookInstalled), @"status":@(gNativeMyThemesHookStatus),
+        @"calls":@(atomic_load(&gNativeMyThemesAppearanceCalls)), @"handlerAvailable":@(handler),
+        @"classOwnedMethodBeforeHook":@(gNativeMyThemesOwnAppearance)};
+}
+
 void RUINInstallNativeMyThemesDidAppearHook(void)
 {
     if (!NSThread.isMainThread) {
         dispatch_async(dispatch_get_main_queue(), ^{ RUINInstallNativeMyThemesDidAppearHook(); });
         return;
     }
-    if (gNativeMyThemesHookInstalled || !RUINNativeThemeNavigationTargetMatches()) return;
+    if (gNativeMyThemesHookInstalled) return;
+    if (!RUINNativeThemeNavigationTargetMatches()) {
+        gNativeMyThemesHookStatus = "target_mismatch"; return;
+    }
     Class cls = RUINNativeClass(RUINNativeMyThemesClassName);
     SEL selector = @selector(viewDidAppear:);
     Method method = cls ? class_getInstanceMethod(cls, selector) : NULL;
     const char *encoding = method ? method_getTypeEncoding(method) : NULL;
-    if (!cls || !method || !encoding || strcmp(encoding, "v20@0:8B16") ||
-        RUINClassOwnsSelector(cls, selector)) return;
+    if (!cls || !method || !encoding || strcmp(encoding, "v20@0:8B16")) {
+        gNativeMyThemesHookStatus = "appearance_method_abi_unavailable"; return;
+    }
+    gNativeMyThemesOwnAppearance = RUINClassOwnsSelector(cls, selector);
+    if (!RUINNativeMyThemesClassOwnerMatches(cls)) {
+        gNativeMyThemesHookStatus = "controller_class_owner_mismatch"; return;
+    }
 
-    if (!method_getImplementation(method)) return;
+    if (!method_getImplementation(method)) {
+        gNativeMyThemesHookStatus = "appearance_method_implementation_unavailable"; return;
+    }
     %init(RUINNativeMyThemes, RUINNativeMyThemesController=cls);
     gNativeMyThemesHookInstalled = YES;
+    gNativeMyThemesHookStatus = "installed";
 }

@@ -1,6 +1,10 @@
 #import <CoreData/CoreData.h>
 
 NS_ASSUME_NONNULL_BEGIN
+// Run on the catalog context's own queue. Inspection must neither capture nor
+// invalidate native account authority; nested scopes restore their prior state.
+FOUNDATION_EXPORT void RUINPerformThemeCatalogRead(void (^read)(void));
+FOUNDATION_EXPORT NSNotificationName const RUINNativeThemeRegistrationAvailableNotification;
 FOUNDATION_EXPORT BOOL RUINIsRegisteredNativeThemeID(NSString *productID);
 
 /// Installs the native context capture hook after target and method ABI checks.
@@ -10,6 +14,8 @@ FOUNDATION_EXPORT void RUINInstallNativeThemeRegistrationCapture(void);
 /// Application Support directory has been captured. Packages use a separate
 /// mapped app-group root.
 FOUNDATION_EXPORT BOOL RUINNativeThemeRegistrationAvailable(void);
+/// Non-identifying scope rejection and captured-object lifetime diagnostics.
+FOUNDATION_EXPORT NSDictionary *RUINNativeThemeRegistrationDiagnostics(void);
 
 /// Opaque in-process account/store identity; contains no account identifier.
 FOUNDATION_EXPORT id _Nullable RUINNativeThemeRegistrationScopeToken(void);

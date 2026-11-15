@@ -2,6 +2,7 @@
 #import "ThemeFeatures.h"
 #import "ThemeShop.h"
 #import "ThemeVersion.h"
+#import "ThemeProductIdentity.h"
 #import "ThemeStoreResolver.h"
 #import "NativeThemeWorkflow.h"
 #import "../core/Localization.h"
@@ -12,6 +13,14 @@ static BOOL gThemeUIDownloading;
 static BOOL gThemeUIDownloadSaved;
 static NSString *gThemeUIDownloadName;
 static NSError *gThemeUIDownloadError;
+
+typedef NS_ENUM(NSInteger, RUINThemeUISection) {
+    RUINThemeUISectionDownload,
+    RUINThemeUISectionShop,
+    RUINThemeUISectionSaved,
+    RUINThemeUISectionNative,
+    RUINThemeUISectionCount
+};
 
 static NSString *RUINThemeUIString(id value)
 {
@@ -48,6 +57,33 @@ static NSURL *RUINThemeUIArchiveURL(NSDictionary *record)
     return RUINThemeUIFlag(record[@"downloadedLocally"]) &&
         RUINThemeUIFlag(record[@"archiveStructureValidated"]) && url.isFileURL &&
         [url.pathExtension.lowercaseString isEqualToString:@"linetheme"] ? url : nil;
+}
+
+static NSArray<NSDictionary *> *RUINThemeUIVisibleArchives(NSArray<NSDictionary *> *archives)
+{
+    NSMutableArray *visible = [NSMutableArray array];
+    NSMutableDictionary<NSArray *, NSNumber *> *indices = [NSMutableDictionary dictionary];
+    for (NSDictionary *record in archives) {
+        NSURL *URL = RUINThemeUIArchiveURL(record);
+        if (!URL) continue;
+        NSString *productID = RUINCanonicalThemeProductID(record[@"productID"]);
+        NSString *version = RUINThemeDownloadVersion(RUINThemeUIString(record[@"version"]));
+        if (!version.length) version = RUINThemeDownloadVersion(RUINThemeUIString(record[@"versionString"]));
+        // Names and archive UUID filenames are not product identity. Preserve
+        // distinct versions and rows whose metadata cannot establish identity.
+        if (!productID.length || !version.length) { [visible addObject:record]; continue; }
+        NSArray *key = @[productID, version];
+        NSNumber *index = indices[key];
+        if (!index) {
+            indices[key] = @(visible.count);
+            [visible addObject:record];
+        } else if ([URL.path compare:RUINThemeUIArchiveURL(visible[index.unsignedIntegerValue]).path] == NSOrderedAscending) {
+            // Stable representative across scan order; retain its original URL
+            // for preview/share validation. Never modify the underlying archive.
+            visible[index.unsignedIntegerValue] = record;
+        }
+    }
+    return [visible copy];
 }
 
 static NSString *RUINThemeUINativeStatus(NSDictionary *record)
@@ -209,7 +245,7 @@ static NSString *RUINThemeUITrim(NSString *value)
                 owner.catalogLoading = NO;
                 owner.catalogError = resultError;
                 if (catalog) {
-                    owner.archives = archives;
+                    owner.archives = RUINThemeUIVisibleArchives(archives);
                     owner.nativeRecords = nativeRecords;
                     owner.hasCatalog = YES;
                 }
@@ -232,32 +268,32 @@ static NSString *RUINThemeUITrim(NSString *value)
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView
 {
-    return 4;
+    return RUINThemeUISectionCount;
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
-    if (section == 0) return 3 + (self.hasDownloadStatus ? 1 : 0) + (self.catalogError ? 1 : 0);
-    if (section == 3) return 2;
-    return MAX((NSInteger)(section == 1 ? self.archives.count : self.nativeRecords.count), 1);
+    if (section == RUINThemeUISectionDownload) return 3 + (self.hasDownloadStatus ? 1 : 0) + (self.catalogError ? 1 : 0);
+    if (section == RUINThemeUISectionShop) return 2;
+    return MAX((NSInteger)(section == RUINThemeUISectionSaved ? self.archives.count : self.nativeRecords.count), 1);
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section
 {
-    if (section == 0) return RUINLocalizedString(@"common.download");
-    if (section == 1) return [NSString stringWithFormat:(RUINLocalizedString(@"themes.saved_file_count") ?: @"保存済みファイル（%lu）"), (unsigned long)self.archives.count];
-    if (section == 3) return RUINLocalizedString(@"shops.theme_title");
+    if (section == RUINThemeUISectionDownload) return RUINLocalizedString(@"common.download");
+    if (section == RUINThemeUISectionSaved) return [NSString stringWithFormat:(RUINLocalizedString(@"themes.saved_file_count") ?: @"保存済みファイル（%lu）"), (unsigned long)self.archives.count];
+    if (section == RUINThemeUISectionShop) return RUINLocalizedString(@"shops.theme_title");
     return [NSString stringWithFormat:(RUINLocalizedString(@"themes.native_record_count") ?: @"LINEの着せかえ記録（%lu）"), (unsigned long)self.nativeRecords.count];
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section
 {
-    if (section == 3) return nil;
-    if (section == 0) {
+    if (section == RUINThemeUISectionShop) return nil;
+    if (section == RUINThemeUISectionDownload) {
         if (!self.downloadAvailable) return RUINLocalizedString(@"themes.download_unavailable");
         return RUINLocalizedString(@"themes.download_help");
     }
-    NSString *note = section == 1
+    NSString *note = section == RUINThemeUISectionSaved
         ? RUINLocalizedString(@"themes.downloaded_files_footer")
         : (self.nativeCatalogAvailable
             ? RUINLocalizedString(@"themes.native_records_footer")
@@ -286,7 +322,7 @@ static NSString *RUINThemeUITrim(NSString *value)
     cell.userInteractionEnabled = YES;
     BOOL spinning = NO;
 
-    if (path.section == 0 && path.row == 0) {
+    if (path.section == RUINThemeUISectionDownload && path.row == 0) {
         cell.textLabel.text = RUINLocalizedString(@"themes.enable_downloads");
         UISwitch *toggle = [UISwitch new];
         toggle.on = [NSUserDefaults.standardUserDefaults boolForKey:RUINThemeShopDownloadEnabledDefaultsKey];
@@ -294,26 +330,26 @@ static NSString *RUINThemeUITrim(NSString *value)
         toggle.accessibilityLabel = cell.textLabel.text;
         [toggle addTarget:self action:@selector(downloadEnabledChanged:) forControlEvents:UIControlEventValueChanged];
         cell.accessoryView = toggle;
-    } else if (path.section == 0 && path.row == 1) {
+    } else if (path.section == RUINThemeUISectionDownload && path.row == 1) {
         cell.textLabel.text = RUINLocalizedString(@"themes.download_from_url");
         cell.detailTextLabel.text = RUINLocalizedString(@"themes.url_download_hint");
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         cell.userInteractionEnabled = self.canDownload;
         cell.textLabel.textColor = self.canDownload ? UIColor.labelColor : UIColor.secondaryLabelColor;
         cell.selectionStyle = self.canDownload ? UITableViewCellSelectionStyleDefault : UITableViewCellSelectionStyleNone;
-    } else if (path.section == 0 && path.row == 2) {
+    } else if (path.section == RUINThemeUISectionDownload && path.row == 2) {
         cell.textLabel.text = RUINLocalizedString(@"themes.manual_download");
         cell.detailTextLabel.text = RUINLocalizedString(@"themes.manual_download_hint");
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         cell.userInteractionEnabled = self.canDownload;
         cell.textLabel.textColor = self.canDownload ? UIColor.labelColor : UIColor.secondaryLabelColor;
         cell.selectionStyle = self.canDownload ? UITableViewCellSelectionStyleDefault : UITableViewCellSelectionStyleNone;
-    } else if (path.section == 0 && self.catalogError && path.row == 3 + (self.hasDownloadStatus ? 1 : 0)) {
+    } else if (path.section == RUINThemeUISectionDownload && self.catalogError && path.row == 3 + (self.hasDownloadStatus ? 1 : 0)) {
         cell.textLabel.text = RUINLocalizedString(@"themes.list_refresh_failed");
         cell.detailTextLabel.text = RUINLocalizedString(@"common.view_reason");
         cell.textLabel.textColor = UIColor.systemRedColor;
         cell.selectionStyle = UITableViewCellSelectionStyleDefault;
-    } else if (path.section == 0) {
+    } else if (path.section == RUINThemeUISectionDownload) {
         spinning = gThemeUIDownloading || self.checkingArchive;
         if (gThemeUIDownloading) {
             cell.textLabel.text = RUINLocalizedString(@"themes.download_checking");
@@ -328,21 +364,21 @@ static NSString *RUINThemeUITrim(NSString *value)
             cell.textLabel.text = RUINLocalizedString(@"themes.file_saved");
             cell.detailTextLabel.text = gThemeUIDownloadName;
         }
-    } else if (path.section == 3) {
+    } else if (path.section == RUINThemeUISectionShop) {
         cell.textLabel.text = RUINLocalizedString(path.row == 0
             ? @"themes.open_shop" : @"themes.open_my_themes");
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         cell.selectionStyle = UITableViewCellSelectionStyleDefault;
     } else {
-        NSArray<NSDictionary *> *records = path.section == 1 ? self.archives : self.nativeRecords;
+        NSArray<NSDictionary *> *records = path.section == RUINThemeUISectionSaved ? self.archives : self.nativeRecords;
         if (records.count) {
             NSDictionary *record = records[path.row];
             cell.textLabel.text = RUINThemeUIName(record);
             cell.detailTextLabel.text = [NSString stringWithFormat:(RUINLocalizedString(@"themes.downloaded_file_details") ?: @"商品ID: %@\nバージョン: %@%@"),
                 RUINThemeUIString(record[@"productID"]), RUINThemeUIVersion(record),
-                path.section == 2 ? [@" · " stringByAppendingString:RUINThemeUINativeStatus(record)] : @""];
-            cell.accessoryType = path.section == 1 ? UITableViewCellAccessoryDisclosureIndicator : UITableViewCellAccessoryDetailButton;
-            cell.userInteractionEnabled = path.section == 2 || (!gThemeUIDownloading && !self.checkingArchive);
+                path.section == RUINThemeUISectionNative ? [@" · " stringByAppendingString:RUINThemeUINativeStatus(record)] : @""];
+            cell.accessoryType = path.section == RUINThemeUISectionSaved ? UITableViewCellAccessoryDisclosureIndicator : UITableViewCellAccessoryDetailButton;
+            cell.userInteractionEnabled = path.section == RUINThemeUISectionNative || (!gThemeUIDownloading && !self.checkingArchive);
             cell.selectionStyle = cell.userInteractionEnabled ? UITableViewCellSelectionStyleDefault : UITableViewCellSelectionStyleNone;
         } else {
             spinning = self.catalogLoading;
@@ -351,8 +387,8 @@ static NSString *RUINThemeUITrim(NSString *value)
                 cell.textLabel.text = RUINLocalizedString(@"themes.list_fetch_failed");
                 cell.detailTextLabel.text = RUINLocalizedString(@"common.view_reason");
                 cell.selectionStyle = UITableViewCellSelectionStyleDefault;
-            } else if (path.section == 2 && !self.nativeCatalogAvailable) cell.textLabel.text = RUINLocalizedString(@"themes.native_records_failed");
-            else cell.textLabel.text = path.section == 1 ? RUINLocalizedString(@"themes.no_saved_files") : RUINLocalizedString(@"themes.no_native_records");
+            } else if (path.section == RUINThemeUISectionNative && !self.nativeCatalogAvailable) cell.textLabel.text = RUINLocalizedString(@"themes.native_records_failed");
+            else cell.textLabel.text = path.section == RUINThemeUISectionSaved ? RUINLocalizedString(@"themes.no_saved_files") : RUINLocalizedString(@"themes.no_native_records");
             cell.textLabel.textColor = UIColor.secondaryLabelColor;
         }
     }
@@ -397,12 +433,12 @@ static NSString *RUINThemeUITrim(NSString *value)
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)path
 {
     [tableView deselectRowAtIndexPath:path animated:YES];
-    if (path.section == 3) {
+    if (path.section == RUINThemeUISectionShop) {
         if (path.row == 0) RUINOpenThemeShop(self);
         else RUINOpenDownloadedThemes(self);
         return;
     }
-    if (path.section == 0) {
+    if (path.section == RUINThemeUISectionDownload) {
         if (path.row == 1) [self showStoreURLPrompt];
         else if (path.row == 2) [self showDownloadPrompt];
         else if (self.catalogError && path.row == 3 + (self.hasDownloadStatus ? 1 : 0)) [self showError:self.catalogError title:RUINLocalizedString(@"themes.list_refresh_failed")];
@@ -410,19 +446,19 @@ static NSString *RUINThemeUITrim(NSString *value)
             [self showError:gThemeUIDownloadError title:RUINLocalizedString(@"themes.download_failed")];
         return;
     }
-    NSArray<NSDictionary *> *records = path.section == 1 ? self.archives : self.nativeRecords;
+    NSArray<NSDictionary *> *records = path.section == RUINThemeUISectionSaved ? self.archives : self.nativeRecords;
     if (!records.count) {
         if (self.catalogError && !self.catalogLoading) [self showError:self.catalogError title:RUINLocalizedString(@"themes.list_fetch_failed")];
         return;
     }
     NSDictionary *record = records[path.row];
-    if (path.section == 2) [self showNativeRecord:record];
+    if (path.section == RUINThemeUISectionNative) [self showNativeRecord:record];
     else if (!gThemeUIDownloading && !self.checkingArchive) [self showArchiveActions:record atIndexPath:path];
 }
 
 - (void)tableView:(UITableView *)tableView accessoryButtonTappedForRowWithIndexPath:(NSIndexPath *)path
 {
-    if (path.section == 2 && (NSUInteger)path.row < self.nativeRecords.count) [self showNativeRecord:self.nativeRecords[path.row]];
+    if (path.section == RUINThemeUISectionNative && (NSUInteger)path.row < self.nativeRecords.count) [self showNativeRecord:self.nativeRecords[path.row]];
 }
 
 - (void)showNativeRecord:(NSDictionary *)record
