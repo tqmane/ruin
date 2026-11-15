@@ -2,6 +2,7 @@
 #import "VersionMapping.h"
 #import <mach/mach.h>
 #import <mach-o/dyld.h>
+#import <mach-o/dyld_images.h>
 #import <objc/runtime.h>
 #import <dlfcn.h>
 #include <assert.h>
@@ -73,6 +74,214 @@ static void MakeImage(TestImage *image, const RUINHostIdentity *host, uint32_t f
         .vmaddr=(uintptr_t)image, .vmsize=sizeof(*image), .initprot=VM_PROT_READ};
     strcpy(image->text.segname, "__TEXT");
 }
+
+// Compile a second copy of the production resolver with only its environment
+// inputs replaced. In particular, native selection, conversion detection,
+// UUID/CPU/slide checks and loader-lifetime decisions are not test substitutes.
+static const char *runtimeBundlePath, *runtimeProcessPath, *runtimeOwnerPath;
+static RUINDyldImageCandidate runtimeCandidates[2];
+static RUINDyldImageCandidate runtimeMainCandidate;
+static struct dyld_image_info runtimeKernelImage;
+static struct { uint32_t version, count; const struct dyld_image_info *images; } runtimeKernelInfo;
+static BOOL runtimeMainAvailable, runtimeKernelAvailable, runtimePinAvailable;
+static unsigned runtimeSnapshotCalls, runtimeOpenCalls, runtimeCloseCalls, runtimeKernelCalls;
+static int runtimeLoaderToken;
+
+@interface FeatureImageBundleFixture : NSObject
++ (instancetype)mainBundle;
+- (NSString *)executablePath;
+@end
+@implementation FeatureImageBundleFixture
++ (instancetype)mainBundle {
+    static FeatureImageBundleFixture *bundle;
+    if (!bundle) bundle = [self new];
+    return bundle;
+}
+- (NSString *)executablePath { return runtimeBundlePath ? @(runtimeBundlePath) : nil; }
+@end
+
+static BOOL RuntimeMainImage(RUINMainExecutableImage *image) {
+    return runtimeMainAvailable && RUINResolveMainExecutableImageFromCandidates(runtimeProcessPath,
+        &runtimeMainCandidate, 1, image);
+}
+static int RuntimeExecutablePath(char *path, uint32_t *size) {
+    uint32_t needed = runtimeProcessPath ? (uint32_t)strlen(runtimeProcessPath) + 1 : 0;
+    if (!needed || !path || *size < needed) { *size = needed; return -1; }
+    memcpy(path, runtimeProcessPath, needed);
+    return 0;
+}
+static const char *RuntimeClassImage(Class cls) { return cls ? runtimeOwnerPath : NULL; }
+static uint32_t RuntimeImageCount(void) { runtimeSnapshotCalls++; return 2; }
+static const struct mach_header *RuntimeImageHeader(uint32_t index) {
+    assert(index < 2); return (const void *)runtimeCandidates[index].header;
+}
+static intptr_t RuntimeImageSlide(uint32_t index) {
+    assert(index < 2); return runtimeCandidates[index].slide;
+}
+static const char *RuntimeImageName(uint32_t index) {
+    assert(index < 2); return runtimeCandidates[index].imageName;
+}
+static void RuntimeImageObserver(void (*callback)(const struct mach_header *, intptr_t)) {
+    (void)callback;
+}
+static void *RuntimeOpen(const char *path, int mode) {
+    runtimeOpenCalls++;
+    assert(path && (mode & RTLD_NOLOAD));
+    return runtimePinAvailable ? &runtimeLoaderToken : NULL;
+}
+static int RuntimeClose(void *reference) {
+    assert(reference == &runtimeLoaderToken); runtimeCloseCalls++; return 0;
+}
+static kern_return_t RuntimeTaskInfo(task_name_t task, task_flavor_t flavor,
+    task_info_t output, mach_msg_type_number_t *count) {
+    (void)task; runtimeKernelCalls++;
+    assert(flavor == TASK_DYLD_INFO && *count == TASK_DYLD_INFO_COUNT);
+    if (!runtimeKernelAvailable) return KERN_FAILURE;
+    task_dyld_info_data_t *info = (void *)output;
+    *info = (task_dyld_info_data_t){.all_image_info_addr=(mach_vm_address_t)&runtimeKernelInfo,
+        .all_image_info_size=sizeof(runtimeKernelInfo), .all_image_info_format=TASK_DYLD_ALL_IMAGE_INFO_64};
+    return KERN_SUCCESS;
+}
+
+#define NSBundle FeatureImageBundleFixture
+#define RUINResolveMainExecutableImage RuntimeMainImage
+#define _NSGetExecutablePath RuntimeExecutablePath
+#define class_getImageName RuntimeClassImage
+#define _dyld_image_count RuntimeImageCount
+#define _dyld_get_image_header RuntimeImageHeader
+#define _dyld_get_image_vmaddr_slide RuntimeImageSlide
+#define _dyld_get_image_name RuntimeImageName
+#define _dyld_register_func_for_add_image RuntimeImageObserver
+#define _dyld_register_func_for_remove_image RuntimeImageObserver
+#define dlopen RuntimeOpen
+#define dlclose RuntimeClose
+#define task_info RuntimeTaskInfo
+#define RUINFeatureImageResolutionStatus RuntimeResolutionStatus
+#define RUINFeatureImageMatches RuntimeImageMatches
+#define RUINResolveFeatureImageFromCandidates RuntimeResolveCandidates
+#define RUINFeatureImageIsProcessMainForTesting RuntimeIsProcessMain
+#define RUINResolveNativeFeatureImage RuntimeResolveNative
+#define RUINResolveFeatureImage RuntimeResolveFeature
+#define RUINReleaseFeatureImage RuntimeReleaseFeature
+#define RUINReadFeatureImageBytes RuntimeReadBytes
+#define RUINVerifyFeatureInstructions RuntimeVerifyInstructions
+#include "../src/known/FeatureImage.m"
+#undef NSBundle
+#undef RUINResolveMainExecutableImage
+#undef _NSGetExecutablePath
+#undef class_getImageName
+#undef _dyld_image_count
+#undef _dyld_get_image_header
+#undef _dyld_get_image_vmaddr_slide
+#undef _dyld_get_image_name
+#undef _dyld_register_func_for_add_image
+#undef _dyld_register_func_for_remove_image
+#undef dlopen
+#undef dlclose
+#undef task_info
+#undef RUINFeatureImageResolutionStatus
+#undef RUINFeatureImageMatches
+#undef RUINResolveFeatureImageFromCandidates
+#undef RUINFeatureImageIsProcessMainForTesting
+#undef RUINResolveNativeFeatureImage
+#undef RUINResolveFeatureImage
+#undef RUINReleaseFeatureImage
+#undef RUINReadFeatureImageBytes
+#undef RUINVerifyFeatureInstructions
+
+static void ResetRuntimeProof(TestImage *image, const char *line, const char *process, const char *alias) {
+    runtimeBundlePath = line; runtimeProcessPath = process; runtimeOwnerPath = alias;
+    runtimeMainCandidate = (RUINDyldImageCandidate){&image->header, 0, line};
+    runtimeCandidates[0] = runtimeMainCandidate;
+    runtimeCandidates[1] = (RUINDyldImageCandidate){&image->header, 0, alias};
+    runtimeKernelImage = (struct dyld_image_info){.imageLoadAddress=(const void *)&image->header};
+    runtimeKernelInfo.version = 1; runtimeKernelInfo.count = 1; runtimeKernelInfo.images = &runtimeKernelImage;
+    runtimeMainAvailable = runtimeKernelAvailable = YES;
+    runtimePinAvailable = NO;
+    runtimeSnapshotCalls = runtimeOpenCalls = runtimeCloseCalls = runtimeKernelCalls = 0;
+    // Each synthetic scenario represents a fresh process. The production cache
+    // is only a positive kernel proof and has no reset API.
+    atomic_store(&nativeProcessHeader, NULL);
+}
+
+static void CheckRuntimeBoundaries(const RUINHostIdentity *host,
+    const char *line, const char *process, const char *alias) {
+    TestImage native, guest, other;
+    MakeImage(&native, host, MH_EXECUTE);
+    native.header.flags = MH_PIE;
+    native.identifier.command.cmd = LC_LOAD_DYLIB;
+    MakeImage(&guest, host, MH_DYLIB);
+    MakeImage(&other, host, MH_EXECUTE);
+    RUINFeatureImage image;
+
+    ResetRuntimeProof(&native, line, line, alias);
+    // A genuine native process must not be gated by an unrelated unload race or
+    // by dlopen refusing to provide a handle for the main executable.
+    runtimeCandidates[1].imageName = (const void *)1;
+    assert(RuntimeResolveFeature(host, FeatureImageOwner.class, &image));
+    assert(image.image.header == &native.header && !image.loaderReference && !image.convertedExecutable);
+    assert(!runtimeSnapshotCalls && !runtimeOpenCalls && runtimeKernelCalls == 1);
+    RuntimeReleaseFeature(&image);
+    runtimeKernelAvailable = NO;
+    assert(RuntimeResolveNative(host, &image));
+    assert(runtimeKernelCalls == 1); // A positive process-lifetime proof is reused.
+    assert(!runtimeSnapshotCalls && !runtimeOpenCalls);
+    native.uuid.uuid[0]++;
+    assert(!RuntimeResolveNative(host, &image) && !image.image.header);
+    native.uuid.uuid[0]--;
+    native.header.cpusubtype = CPU_SUBTYPE_ARM64E;
+    assert(!RuntimeResolveNative(host, &image));
+    native.header.cpusubtype = CPU_SUBTYPE_ARM64_ALL;
+    runtimeMainCandidate.slide++;
+    assert(!RuntimeResolveNative(host, &image));
+    runtimeMainCandidate.slide--;
+    runtimeOwnerPath = process;
+    assert(!RuntimeResolveFeature(host, FeatureImageOwner.class, &image));
+    assert(!runtimeSnapshotCalls && !runtimeOpenCalls);
+
+    ResetRuntimeProof(&native, line, line, alias);
+    runtimeKernelAvailable = NO;
+    assert(!RuntimeResolveNative(host, &image));
+    runtimeKernelAvailable = YES;
+    assert(RuntimeResolveNative(host, &image)); // Failed proofs are never cached.
+    assert(runtimeKernelCalls == 2);
+
+    ResetRuntimeProof(&native, line, line, alias);
+    runtimeKernelImage.imageLoadAddress = (const void *)&other.header;
+    assert(!RuntimeResolveNative(host, &image));
+    assert(!RuntimeResolveFeature(host, FeatureImageOwner.class, &image));
+    assert(runtimeSnapshotCalls && runtimeOpenCalls == 1 && !image.image.header);
+
+    ResetRuntimeProof(&guest, line, process, alias);
+    assert(!RuntimeResolveNative(host, &image));
+    assert(!RuntimeResolveFeature(host, FeatureImageOwner.class, &image));
+    assert(runtimeOpenCalls == 1 && !image.image.header);
+    runtimePinAvailable = YES;
+    assert(RuntimeResolveFeature(host, FeatureImageOwner.class, &image));
+    assert(image.convertedExecutable && image.loaderReference == &runtimeLoaderToken);
+    RuntimeReleaseFeature(&image);
+    assert(runtimeCloseCalls == 1);
+
+    // A virtualized process path and MH_EXECUTE rewrite still cannot turn a
+    // converted guest into the no-pin native case, even if kernel input lies.
+    guest.header.filetype = MH_EXECUTE;
+    ResetRuntimeProof(&guest, line, line, alias);
+    assert(!RuntimeResolveNative(host, &image));
+    assert(!RuntimeResolveFeature(host, FeatureImageOwner.class, &image));
+    assert(!runtimeKernelCalls && runtimeOpenCalls == 1);
+    runtimePinAvailable = YES;
+    assert(RuntimeResolveFeature(host, FeatureImageOwner.class, &image));
+    assert(image.convertedExecutable && image.loaderReference == &runtimeLoaderToken);
+    RuntimeReleaseFeature(&image);
+    assert(runtimeCloseCalls == 1);
+
+    ResetRuntimeProof(&guest, line, line, alias);
+    runtimePinAvailable = YES;
+    runtimeCandidates[1].imageName = (const void *)1;
+    assert(!RuntimeResolveFeature(host, FeatureImageOwner.class, &image));
+    assert(runtimeOpenCalls == 1 && runtimeCloseCalls == 1 && !image.image.header);
+}
+
 int main(void) { @autoreleasepool {
     CheckHookIndependentClassOwner();
     const RUINVersionMapping *version = RUINMappingForInfo(@{@"CFBundleIdentifier":@"jp.naver.line",
@@ -83,6 +292,7 @@ int main(void) { @autoreleasepool {
     snprintf(line,sizeof(line),"%s/LINE",dir); MakeFile(line);
     snprintf(host,sizeof(host),"%s/Container",dir); MakeFile(host);
     snprintf(alias,sizeof(alias),"%s/current",dir); assert(!symlink(line,alias));
+    CheckRuntimeBoundaries(&version->host, line, host, alias);
     TestImage guest, other; MakeImage(&guest,&version->host,MH_DYLIB);
     MakeImage(&other,&version->host,MH_DYLIB);
     assert(RUINFeatureImageIsProcessMainForTesting(_dyld_get_image_header(0)));
@@ -131,5 +341,5 @@ int main(void) { @autoreleasepool {
     assert(!RUINReadFeatureImageBytes(&(RUINFeatureImage){.image.header=(const void *)1},1,&magic,4,"__TEXT"));
     RUINReleaseFeatureImage(&image); assert(!image.image.header);
     unlink(alias); unlink(line); unlink(host); rmdir(dir);
-    puts("PASS feature image: canonical owner, LC conversion/type rewrite, UUID/CPU, aliases/conflicts, safe reads, strict main unchanged");
+    puts("PASS feature image: native process fast path/cache/retry, LC pin lifetime and type rewrite, canonical owner, UUID/CPU/slide, safe reads and strict main unchanged");
 } return 0; }

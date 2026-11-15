@@ -349,16 +349,17 @@ static const RUINThemeMappings *RUINThemeShopMappingForInfo(NSDictionary *info)
     const RUINThemeMappings *mapping = versionMapping ? &versionMapping->themes : NULL;
     if (!mapping || mapping->shopNavigation.status != RUINMappingStatusVerified) return NULL;
 #if !defined(RUIN_THEMESHOP_HOST_CHECK)
-    // Preserve the existing native/sideload verifier and routing path.
-    RUINMainExecutableImage nativeImage;
+    // Preserve the native/sideload verifier, but prove process lifetime first:
+    // LiveContainer can rewrite a converted guest's type back to MH_EXECUTE.
+    RUINFeatureImage nativeImage;
     if (!gThemeShopImageVersion && RUINCurrentMapping() == versionMapping &&
-        RUINResolveMainExecutableImage(&nativeImage)) {
+        RUINResolveNativeFeatureImage(&versionMapping->host, &nativeImage)) {
         char URL[sizeof("line://shop/theme")];
-        if (!RUINVerifyInstructions(nativeImage.header, nativeImage.slide, mapping->shopNavigation.anchors,
+        if (!RUINVerifyInstructions(nativeImage.image.header, nativeImage.image.slide, mapping->shopNavigation.anchors,
                 mapping->shopNavigation.anchorCount) ||
-            !RUINReadImageBytes(nativeImage.header, nativeImage.slide, mapping->shopNavigation.themeURLString,
+            !RUINReadImageBytes(nativeImage.image.header, nativeImage.image.slide, mapping->shopNavigation.themeURLString,
                 URL, sizeof(URL), "__TEXT") || memcmp(URL, RUINThemeShopURLString.UTF8String, sizeof(URL))) return NULL;
-        gThemeShopSlide = nativeImage.slide;
+        gThemeShopSlide = nativeImage.image.slide;
         return mapping;
     }
     if (gThemeShopImageVersion) {
@@ -394,9 +395,10 @@ static BOOL RUINThemeShopVerifyEligibility(const RUINThemeMappings *mapping)
     if (!mapping || mapping->shopEligibility.nativeReadAdapterStatus != RUINMappingStatusVerified) return NO;
     if (!gThemeShopImageVersion) {
         const RUINVersionMapping *nativeVersion = RUINCurrentMapping();
-        RUINMainExecutableImage nativeImage;
-        if (nativeVersion && &nativeVersion->themes == mapping && RUINResolveMainExecutableImage(&nativeImage))
-            return RUINVerifyInstructions(nativeImage.header, nativeImage.slide, mapping->shopEligibility.anchors,
+        RUINFeatureImage nativeImage;
+        if (nativeVersion && &nativeVersion->themes == mapping &&
+            RUINResolveNativeFeatureImage(&nativeVersion->host, &nativeImage))
+            return RUINVerifyInstructions(nativeImage.image.header, nativeImage.image.slide, mapping->shopEligibility.anchors,
                 mapping->shopEligibility.anchorCount);
     }
     const RUINVersionMapping *versionMapping = gThemeShopImageVersion;
@@ -410,8 +412,10 @@ static BOOL RUINThemeShopVerifyEligibility(const RUINThemeMappings *mapping)
 #if !defined(RUIN_THEMESHOP_HOST_CHECK)
 static void RUINThemeShopInstallGate(void)
 {
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
+    // An early Objective-C shop route may run before image verification is
+    // ready. Remember successful installation, not a transient failed attempt.
+    @synchronized (NSUserDefaults.class) {
+        if (atomic_load(&gThemeShopGateReady)) return;
         if (!gThemeShopMappings ||
             gThemeShopMappings->shopEligibility.nativeReadAdapterStatus != RUINMappingStatusVerified) {
             atomic_store(&gThemeShopGateStatus, 5); return;
@@ -432,7 +436,7 @@ static void RUINThemeShopInstallGate(void)
         %init(RUINThemeDefaults, RUINThemeDefaultsStore=cls);
         atomic_store(&gThemeShopGateStatus, 3);
         atomic_store(&gThemeShopGateReady, YES);
-    });
+    }
 }
 #endif
 
@@ -468,12 +472,7 @@ const RUINVersionMapping *RUINCopyVerifiedThemeImage(RUINFeatureImage *image)
 #if !defined(RUIN_THEMESHOP_HOST_CHECK)
     if (!atomic_load_explicit(&gThemeShopImageReady, memory_order_acquire)) {
         const RUINVersionMapping *nativeVersion = RUINCurrentMapping();
-        RUINMainExecutableImage nativeImage;
-        if (nativeVersion && RUINResolveMainExecutableImage(&nativeImage)) {
-            *image = (RUINFeatureImage){.image=nativeImage, .fileType=MH_EXECUTE};
-            if (RUINFeatureImageMatches(image, &nativeVersion->host)) return nativeVersion;
-            memset(image, 0, sizeof(*image));
-        }
+        if (nativeVersion && RUINResolveNativeFeatureImage(&nativeVersion->host, image)) return nativeVersion;
     }
     if (!atomic_load_explicit(&gThemeShopImageReady, memory_order_acquire)) return NULL;
     const RUINVersionMapping *version = gThemeShopImageVersion;
@@ -493,8 +492,10 @@ void RUINInstallThemePersistenceAdapter(void)
         dispatch_async(dispatch_get_main_queue(), ^{ RUINInstallThemePersistenceAdapter(); });
         return;
     }
-    RUINMainExecutableImage mainImage;
-    if (!gThemeShopImageVersion && !RUINResolveMainExecutableImage(&mainImage)) {
+    const RUINVersionMapping *nativeVersion = RUINCurrentMapping();
+    RUINFeatureImage nativeImage;
+    if (!gThemeShopImageVersion && (!nativeVersion ||
+        !RUINResolveNativeFeatureImage(&nativeVersion->host, &nativeImage))) {
         // A guest may still be running its image initializers. Pin/verify it
         // after returning to the main loop rather than reopening it under dyld.
         static BOOL queued;

@@ -3,12 +3,85 @@
 #import <assert.h>
 #import <stdio.h>
 #import "TargetMetadata.h"
+#import "FeatureImage.h"
 #import <stdatomic.h>
 #import <dlfcn.h>
+#import <mach-o/dyld.h>
+#include <fcntl.h>
+#include <limits.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+static void NativeLogin(id self, SEL selector);
+typedef struct {
+    struct mach_header_64 header;
+    struct uuid_command uuid;
+    struct { struct dylib_command command; char name[8]; } identifier;
+    struct segment_command_64 text;
+} RUINSecondaryTestImage;
+static RUINSecondaryTestImage fixtureGuestImage;
+static char fixtureLinePath[PATH_MAX], fixtureProcessPath[PATH_MAX];
+static Class fixtureWelcomeOwner;
+static BOOL fixtureImageEnabled, fixtureOwnerAvailable, fixturePinAllowed, fixtureNativeImage;
+static BOOL fixtureGuestCaller, fixtureProofOnMainThread = YES;
+static BOOL fixtureForeignOwnerPath, fixtureForeignCallerPath;
+static NSUInteger fixtureImageProofs;
+
+// Substitute only the environment/lifetime inputs. The production image
+// candidate parser still verifies canonical paths, conversion shape and UUID.
+static BOOL FixtureResolveLoginImage(const RUINHostIdentity *host, Class owner, RUINFeatureImage *image) {
+    fixtureImageProofs++;
+    fixtureProofOnMainThread &= NSThread.isMainThread;
+    if (!fixtureImageEnabled || !fixtureOwnerAvailable) return NO;
+    assert(owner == fixtureWelcomeOwner);
+    RUINDyldImageCandidate candidate = {&fixtureGuestImage.header, 0, fixtureLinePath};
+    if (!RUINResolveFeatureImageFromCandidates(host, fixtureLinePath,
+        fixtureNativeImage ? fixtureLinePath : fixtureProcessPath, fixtureLinePath,
+        &fixtureGuestImage.header, &candidate, 1, image)) return NO;
+    if (!fixturePinAllowed) { memset(image, 0, sizeof(*image)); return NO; }
+    image->loaderReference = dlopen(NULL, RTLD_LAZY);
+    assert(image->loaderReference);
+    return YES;
+}
+
+static int FixtureLoginDladdr(const void *address, Dl_info *info) {
+    int found = dladdr(address, info);
+    Dl_info native = {0};
+    if (fixtureGuestCaller && found && dladdr((const void *)NativeLogin, &native) &&
+        info->dli_fbase == native.dli_fbase) {
+        memset(info, 0, sizeof(*info));
+        info->dli_fbase = &fixtureGuestImage.header;
+        info->dli_fname = fixtureForeignCallerPath ? fixtureProcessPath : fixtureLinePath;
+        return 1;
+    }
+    return found;
+}
+
+static const char *FixtureLoginClassImageName(Class owner) {
+    if (!fixtureImageEnabled) return class_getImageName(owner);
+    assert(owner == fixtureWelcomeOwner);
+    return fixtureOwnerAvailable ? (fixtureForeignOwnerPath ? fixtureProcessPath : fixtureLinePath) : NULL;
+}
+
+static uint32_t FixtureLoginDyldImageCount(void) {
+    return fixtureGuestCaller ? 1 : _dyld_image_count();
+}
+static const struct mach_header *FixtureLoginDyldImageHeader(uint32_t index) {
+    if (!fixtureGuestCaller) return _dyld_get_image_header(index);
+    assert(index == 0);
+    return (const void *)&fixtureGuestImage.header;
+}
+static intptr_t FixtureLoginDyldImageSlide(uint32_t index) {
+    if (!fixtureGuestCaller) return _dyld_get_image_vmaddr_slide(index);
+    assert(index == 0);
+    return 0;
+}
 
 static atomic_uint_fast64_t strictImageResolutions;
 static BOOL CountMainExecutableResolution(RUINMainExecutableImage *image) {
     atomic_fetch_add(&strictImageResolutions, 1);
+    if (fixtureGuestCaller) return NO;
     return RUINResolveMainExecutableImage(image);
 }
 
@@ -113,10 +186,12 @@ static UIUserInterfaceIdiom physicalIdiom, lifecycleIdiom, actionIdiom;
 @interface RUINSecondaryFixtureBundle : NSObject
 + (instancetype)mainBundle;
 @property(nonatomic, readonly) NSDictionary *infoDictionary;
+@property(nonatomic, readonly) NSString *executablePath;
 @end
 @implementation RUINSecondaryFixtureBundle
 + (instancetype)mainBundle { static RUINSecondaryFixtureBundle *value; if (!value) value = [self new]; return value; }
 - (NSDictionary *)infoDictionary { return @{@"CFBundleIdentifier":@"jp.naver.line", @"CFBundleShortVersionString":@"26.17.0", @"CFBundleVersion":@"2026.1103.1841"}; }
+- (NSString *)executablePath { return fixtureImageEnabled ? @(fixtureLinePath) : NSBundle.mainBundle.executablePath; }
 @end
 static BOOL storageReady = YES, keychainReady = YES, throwOnLogin;
 static NSUInteger storageInstalls, keychainInstalls, loginCalls, qrCalls, primaryDeviceLoginCalls;
@@ -128,7 +203,19 @@ BOOL RUINKeychainCompatibilityReady(void) { return keychainReady; }
 #define NSUserDefaults RUINSecondaryFixtureDefaults
 #define NSBundle RUINSecondaryFixtureBundle
 #define RUINResolveMainExecutableImage CountMainExecutableResolution
+#define RUINResolveFeatureImage FixtureResolveLoginImage
+#define dladdr FixtureLoginDladdr
+#define class_getImageName FixtureLoginClassImageName
+#define _dyld_image_count FixtureLoginDyldImageCount
+#define _dyld_get_image_header FixtureLoginDyldImageHeader
+#define _dyld_get_image_vmaddr_slide FixtureLoginDyldImageSlide
 #import "SecondaryLoginUnderTest.m"
+#undef _dyld_get_image_vmaddr_slide
+#undef _dyld_get_image_header
+#undef _dyld_image_count
+#undef class_getImageName
+#undef dladdr
+#undef RUINResolveFeatureImage
 #undef RUINResolveMainExecutableImage
 #undef NSBundle
 #undef NSUserDefaults
@@ -198,6 +285,121 @@ static void DrainMainQueue(void) {
         CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.005, true);
 }
 
+static void ResetLoginGuestProof(void) {
+    // Test-only process reset. Production keeps a published proof for hook lifetime.
+    assert(!atomic_load(&loginGuestProofScheduled));
+    atomic_store(&verifiedLoginGuestImage, NULL);
+    RUINReleaseFeatureImage(&loginGuestImage);
+}
+
+static void CheckLoginGuestImageProof(Class welcomeClass) {
+    char directory[PATH_MAX];
+    int length = snprintf(directory, sizeof(directory), "%sruin-login-XXXXXX", NSTemporaryDirectory().fileSystemRepresentation);
+    assert(length > 0 && (size_t)length < sizeof(directory) && mkdtemp(directory));
+    length = snprintf(fixtureLinePath, sizeof(fixtureLinePath), "%s/LINE", directory);
+    assert(length > 0 && (size_t)length < sizeof(fixtureLinePath));
+    length = snprintf(fixtureProcessPath, sizeof(fixtureProcessPath), "%s/Container", directory);
+    assert(length > 0 && (size_t)length < sizeof(fixtureProcessPath));
+    int line = open(fixtureLinePath, O_CREAT | O_EXCL | O_WRONLY, 0600);
+    int process = open(fixtureProcessPath, O_CREAT | O_EXCL | O_WRONLY, 0600);
+    assert(line >= 0 && process >= 0); close(line); close(process);
+    const RUINVersionMapping *mapping = RUINMappingForInfo(RUINSecondaryFixtureBundle.mainBundle.infoDictionary);
+    assert(mapping && welcomeHookInstalled);
+    fixtureGuestImage.header = (struct mach_header_64){.magic=MH_MAGIC_64, .cputype=CPU_TYPE_ARM64,
+        .cpusubtype=CPU_SUBTYPE_ARM64_ALL, .filetype=MH_DYLIB, .ncmds=3,
+        .sizeofcmds=sizeof(fixtureGuestImage)-sizeof(fixtureGuestImage.header), .flags=MH_NO_REEXPORTED_DYLIBS};
+    fixtureGuestImage.uuid = (struct uuid_command){.cmd=LC_UUID, .cmdsize=sizeof(fixtureGuestImage.uuid)};
+    [[[NSUUID alloc] initWithUUIDString:@(mapping->host.uuid)] getUUIDBytes:fixtureGuestImage.uuid.uuid];
+    fixtureGuestImage.identifier.command = (struct dylib_command){.cmd=LC_ID_DYLIB,
+        .cmdsize=sizeof(fixtureGuestImage.identifier), .dylib.name.offset=sizeof(struct dylib_command)};
+    strcpy(fixtureGuestImage.identifier.name, "LINE");
+    fixtureGuestImage.text = (struct segment_command_64){.cmd=LC_SEGMENT_64,
+        .cmdsize=sizeof(fixtureGuestImage.text), .vmaddr=(uintptr_t)&fixtureGuestImage,
+        .vmsize=sizeof(fixtureGuestImage), .initprot=VM_PROT_READ};
+    strcpy(fixtureGuestImage.text.segname, "__TEXT");
+    fixtureWelcomeOwner = welcomeClass;
+    fixtureImageEnabled = fixturePinAllowed = YES;
+    fixtureOwnerAvailable = NO;
+
+    // Hooks are already installed: an initially missing owner still gets a
+    // later proof attempt, and no loader API runs in an initializer/callback.
+    NSUInteger before = fixtureImageProofs;
+    RUINInstallSecondaryLogin(); RUINInstallSecondaryLogin();
+    assert(fixtureImageProofs == before);
+    DrainMainQueue();
+    assert(fixtureImageProofs == before + 1 && !atomic_load(&verifiedLoginGuestImage));
+    fixtureOwnerAvailable = YES;
+    fixtureGuestImage.uuid.uuid[0] ^= 1;
+    RUINInstallSecondaryLogin(); DrainMainQueue();
+    assert(!atomic_load(&verifiedLoginGuestImage));
+    fixtureGuestImage.uuid.uuid[0] ^= 1;
+    fixturePinAllowed = NO;
+    RUINInstallSecondaryLogin(); DrainMainQueue();
+    assert(!atomic_load(&verifiedLoginGuestImage));
+    fixturePinAllowed = YES;
+
+    // The action IMP now belongs to Foundation, while the original class owner
+    // remains LINE. Never invoke this temporary replacement; only resolve owner.
+    Method action = class_getInstanceMethod(welcomeClass, @selector(loginButtonAction));
+    IMP savedAction = method_setImplementation(action,
+        class_getMethodImplementation(NSObject.class, @selector(description)));
+    for (NSUInteger i = 0; i < 2; i++) {
+        fixtureGuestImage.header.filetype = i ? MH_EXECUTE : MH_DYLIB;
+        before = fixtureImageProofs;
+        RUINInstallSecondaryLogin();
+        assert(fixtureImageProofs == before);
+        // Startup can cache the idiom before the main queue/pin runs. The live
+        // caller gets a temporary verified answer without a loader reference.
+        fixtureGuestCaller = YES;
+        assert(RUINLoginCallerIsLINE((void *)NativeLogin));
+        assert(UIDevice.currentDevice.userInterfaceIdiom ==
+            (activeSecondaryMode ? UIUserInterfaceIdiomPad : physicalIdiom));
+        assert(!RUINLoginCallerIsLINE((void *)NSClassFromString));
+        assert(!atomic_load(&verifiedLoginGuestImage) && !loginGuestImage.loaderReference);
+        fixtureGuestImage.uuid.uuid[0] ^= 1;
+        assert(!RUINLoginCallerIsLINE((void *)NativeLogin));
+        fixtureGuestImage.uuid.uuid[0] ^= 1;
+        fixtureForeignOwnerPath = YES;
+        assert(!RUINLoginCallerIsLINE((void *)NativeLogin));
+        fixtureForeignOwnerPath = NO;
+        fixtureForeignCallerPath = YES;
+        assert(!RUINLoginCallerIsLINE((void *)NativeLogin));
+        fixtureForeignCallerPath = NO;
+        assert(fixtureImageProofs == before);
+        fixtureGuestCaller = NO;
+        DrainMainQueue();
+        assert(fixtureImageProofs == before + 1);
+        assert(atomic_load(&verifiedLoginGuestImage) == &fixtureGuestImage.header);
+        assert(loginGuestImage.convertedExecutable && loginGuestImage.loaderReference);
+        fixtureGuestCaller = YES;
+        uint64_t resolutions = atomic_load(&strictImageResolutions);
+        for (NSUInteger query = 0; query < 1000; query++) {
+            assert(RUINLoginCallerIsLINE((void *)NativeLogin));
+            assert(!RUINLoginCallerIsLINE((void *)NSClassFromString));
+        }
+        assert(atomic_load(&strictImageResolutions) == resolutions);
+        RUINInstallSecondaryLogin(); DrainMainQueue();
+        assert(fixtureImageProofs == before + 1); // One pin, no repeated scans.
+        fixtureGuestCaller = NO;
+        ResetLoginGuestProof();
+    }
+    method_setImplementation(action, savedAction);
+
+    // A real native process image keeps the original strict native fallback.
+    fixtureNativeImage = YES;
+    fixtureGuestImage.header.filetype = MH_EXECUTE;
+    fixtureGuestImage.header.flags = MH_PIE;
+    RUINInstallSecondaryLogin(); DrainMainQueue();
+    assert(!atomic_load(&verifiedLoginGuestImage) && !loginGuestImage.loaderReference);
+    uint64_t resolutions = atomic_load(&strictImageResolutions);
+    assert(RUINLoginCallerIsLINE((void *)NativeLogin));
+    assert(atomic_load(&strictImageResolutions) == resolutions + 1);
+    assert(fixtureProofOnMainThread);
+    fixtureImageEnabled = fixtureNativeImage = NO;
+    assert(!unlink(fixtureLinePath) && !unlink(fixtureProcessPath) && !rmdir(directory));
+    puts("PASS login image proof: early live caller, hooked action, converted/retyped guests, UUID/path/lifetime gates, queued retries, native fallback");
+}
+
 int main(int argc, const char **argv) { @autoreleasepool {
     CheckVerifiedGuestCallerFastPath();
     BOOL enabled = argc < 2 || strcmp(argv[1], "normal") != 0;
@@ -253,6 +455,7 @@ int main(int argc, const char **argv) { @autoreleasepool {
     assert(backgroundWelcome.view.gestureRecognizers.count == 0); // Background scenes are excluded.
     RUINInstallSecondaryLogin(); RUINInstallSecondaryLogin(); DrainMainQueue();
     assert(welcome.view.gestureRecognizers.count == 2); // Repeated install/catch-up is idempotent.
+    CheckLoginGuestImageProof(welcomeClass);
     if (mismatch) { puts("PASS secondary ABI mismatch rejected before group init"); return 0; }
 
     [welcome viewDidLoad]; assert(welcome.loads == 2 && loginProjectionDepth == 0);

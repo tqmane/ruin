@@ -190,6 +190,48 @@ static BOOL IsProcessMain(const void *header) {
 BOOL RUINFeatureImageIsProcessMainForTesting(const void *header) { return IsProcessMain(header); }
 #endif
 
+static char *CopyProcessExecutablePath(void) {
+    uint32_t size = 0;
+    _NSGetExecutablePath(NULL, &size);
+    char *path = size && size <= 1024 * 1024 ? malloc(size) : NULL;
+    if (path && !_NSGetExecutablePath(path, &size)) return path;
+    free(path);
+    return NULL;
+}
+
+// Cache only a successful kernel proof. The genuine process main cannot unload;
+// current bundle identity, conversion shape, CPU, UUID and slide are still
+// checked on every use. A miss during early initialization remains retryable.
+static _Atomic(const struct mach_header_64 *) nativeProcessHeader;
+
+BOOL RUINResolveNativeFeatureImage(const RUINHostIdentity *host, RUINFeatureImage *result) {
+    if (!result) return NO;
+    memset(result, 0, sizeof(*result));
+    if (!host || !host->uuid) return NO;
+    RUINMainExecutableImage native;
+    if (!RUINResolveMainExecutableImage(&native)) return NO;
+    const char *bundle = NSBundle.mainBundle.executablePath.fileSystemRepresentation;
+    char *process = CopyProcessExecutablePath();
+    BOOL samePath = SamePath(bundle, process);
+    free(process);
+    if (!samePath) return NO;
+
+    struct mach_header_64 header;
+    uint8_t uuid[16]; BOOL converted = NO;
+    NSData *commands = CopyCommands(native.header, &header, uuid, &converted);
+    RUINDyldImageCandidate candidate = {.header=native.header, .slide=native.slide};
+    if (!commands || header.filetype != MH_EXECUTE || converted ||
+        !HeaderMatchesSlide(commands, &header, &candidate)) return NO;
+    RUINFeatureImage image = {.image=native, .fileType=MH_EXECUTE};
+    if (!RUINFeatureImageMatches(&image, host)) return NO;
+    if (atomic_load_explicit(&nativeProcessHeader, memory_order_acquire) != native.header) {
+        if (!IsProcessMain(native.header)) return NO;
+        atomic_store_explicit(&nativeProcessHeader, native.header, memory_order_release);
+    }
+    *result = image;
+    return YES;
+}
+
 BOOL RUINResolveFeatureImage(const RUINHostIdentity *host, Class nativeClass,
     RUINFeatureImage *result) {
     if (!result) return NO;
@@ -200,22 +242,23 @@ BOOL RUINResolveFeatureImage(const RUINHostIdentity *host, Class nativeClass,
     const char *bundle = NSBundle.mainBundle.executablePath.fileSystemRepresentation;
     atomic_store(&resolutionStatus, "nativeClassOwnerUnavailable");
     if (!bundle || !ownerPath || !SamePath(bundle, ownerPath)) return NO;
+    if (RUINResolveNativeFeatureImage(host, result)) {
+        atomic_store(&resolutionStatus, "nativeProcessImage");
+        return YES;
+    }
     static dispatch_once_t observers;
     dispatch_once(&observers, ^{
         _dyld_register_func_for_add_image(ImageListChanged);
         _dyld_register_func_for_remove_image(ImageListChanged);
     });
-    uint32_t pathSize = 0;
-    _NSGetExecutablePath(NULL, &pathSize);
-    char *process = pathSize && pathSize <= 1024 * 1024 ? malloc(pathSize) : NULL;
-    BOOL pathValid = process && !_NSGetExecutablePath(process, &pathSize);
+    char *process = CopyProcessExecutablePath();
     // NOLOAD never loads a substitute. A genuine process executable may have no
     // dlopen handle; only the kernel image-list proof permits that lifetime case.
     void *reference = dlopen(bundle, RTLD_LAZY | RTLD_NOLOAD);
     uint64_t generation = atomic_load_explicit(&imageGeneration, memory_order_acquire);
     uint32_t count = _dyld_image_count();
     RUINDyldImageCandidate *candidates = count ? calloc(count, sizeof(*candidates)) : NULL;
-    BOOL complete = pathValid && candidates;
+    BOOL complete = process && candidates;
     const struct mach_header_64 *ownerHeader = NULL;
     for (uint32_t i = 0; complete && i < count; i++) {
         candidates[i] = (RUINDyldImageCandidate){

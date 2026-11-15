@@ -6,9 +6,9 @@
 #import "../core/Localization.h"
 #import "Features.h"
 #import "../core/TargetMetadata.h"
-#import "../core/NativeFunctionPointer.h"
 #import "LINEPrivateCalls.h"
 #import "BinaryVerifier.h"
+#import "FeatureImage.h"
 #import <UIKit/UIKit.h>
 #import <UIKit/UIGestureRecognizerSubclass.h>
 #import <objc/runtime.h>
@@ -31,7 +31,9 @@ static BOOL autoLoginOpened;
 static BOOL autoQROpened;
 static atomic_ulong appIdiomRequests, enabledIdiomQueries, LINEIdiomQueries;
 static atomic_ulong unscopedLINEQueries, backgroundLINEQueries, otherImageQueries;
-static const void *verifiedLoginGuestImage;
+static _Atomic(const void *) verifiedLoginGuestImage;
+static RUINFeatureImage loginGuestImage;
+static atomic_bool loginGuestProofScheduled = ATOMIC_VAR_INIT(false);
 static char gestureKey;
 static NSString *lastLoginScreen;
 static __weak UIViewController *loginProjectionOwner;
@@ -69,32 +71,57 @@ static BOOL RUINSecondaryLoginTargetMatches(void) {
     return RUINTargetMetadataMatchesInfo(info);
 }
 
-// LiveContainer changes the guest executable's Mach-O type. This permission is
-// only for public idiom queries from the verified owner of LINE's Welcome
-// implementation; numeric/Swift main-image resolvers remain unchanged.
-static void RUINRememberLoginGuestImage(Class welcome) {
-    Method action = class_getInstanceMethod(welcome, sel_registerName("loginButtonAction"));
-    Dl_info owner;
-    const void *implementation = action ? (const void *)RUINNativeFunctionPointerRaw((const void *)method_getImplementation(action)) : NULL;
-    if (!implementation || !dladdr(implementation, &owner)) return;
-    const struct mach_header_64 *header = owner.dli_fbase;
-    const RUINVersionMapping *mapping = RUINMappingForInfo(NSBundle.mainBundle.infoDictionary);
-    if (!mapping || strcmp(mapping->host.version, "26.17.0") || !header ||
-        header->magic != MH_MAGIC_64 || header->filetype != MH_DYLIB || header->cputype != CPU_TYPE_ARM64 ||
-        header->ncmds > 4096 || header->sizeofcmds > 1024 * 1024) return;
-    NSUUID *expected = [[NSUUID alloc] initWithUUIDString:@(mapping->host.uuid)];
-    uuid_t UUID; [expected getUUIDBytes:UUID];
-    const uint8_t *cursor = (const uint8_t *)(header + 1), *end = cursor + header->sizeofcmds;
-    for (uint32_t i = 0; i < header->ncmds; i++) {
-        if ((size_t)(end - cursor) < sizeof(struct load_command)) return;
-        const struct load_command *command = (const void *)cursor;
-        if (command->cmdsize < sizeof(*command) || command->cmdsize > (size_t)(end - cursor)) return;
-        if (command->cmd == LC_UUID && command->cmdsize >= sizeof(struct uuid_command) && expected &&
-            !memcmp(((const struct uuid_command *)command)->uuid, UUID, sizeof(UUID))) {
-            verifiedLoginGuestImage = header; return;
+// Resolve the class owner, not its replaceable login action IMP. Run loader
+// lifetime proof after initialization/dyld callbacks have returned; a failed
+// attempt can be retried by the next explicit install or activation.
+static void RUINScheduleLoginGuestImageProof(Class welcome) {
+    if (!welcome || atomic_load_explicit(&verifiedLoginGuestImage, memory_order_acquire)) return;
+    bool expected = false;
+    if (!atomic_compare_exchange_strong(&loginGuestProofScheduled, &expected, true)) return;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        atomic_store(&loginGuestProofScheduled, false);
+        if (atomic_load_explicit(&verifiedLoginGuestImage, memory_order_acquire)) return;
+        const RUINVersionMapping *mapping = RUINMappingForInfo(NSBundle.mainBundle.infoDictionary);
+        RUINFeatureImage image = {0};
+        if (!mapping || !RUINResolveFeatureImage(&mapping->host, welcome, &image)) return;
+        if (!image.convertedExecutable) {
+            // Native/JB/sideload callers retain the existing strict resolver,
+            // including version-independent public UIKit support.
+            RUINReleaseFeatureImage(&image);
+            return;
         }
-        cursor += command->cmdsize;
+        loginGuestImage = image; // Retain the guest while the idiom hook uses it.
+        atomic_store_explicit(&verifiedLoginGuestImage, image.image.header, memory_order_release);
+    });
+}
+
+static BOOL RUINLoginCallerIsUnpinnedGuest(const Dl_info *caller) {
+    Class welcome = objc_getClass("_TtC18LineRegistrationUI21WelcomeViewController");
+    const char *ownerPath = welcome ? class_getImageName(welcome) : NULL;
+    const RUINVersionMapping *mapping = RUINMappingForInfo(NSBundle.mainBundle.infoDictionary);
+    if (!mapping || !ownerPath || !caller->dli_fbase || !caller->dli_fname) return NO;
+
+    // This caller is executing now, so its image must remain alive through the
+    // public idiom query. Borrow that lifetime only for this call, never cache
+    // its base or open a loader handle while LINE/LC may still be initializing.
+    // Compare headers first; do not canonicalize every unrelated dyld path.
+    RUINDyldImageCandidate candidate = {0};
+    uint32_t count = _dyld_image_count();
+    for (uint32_t i = 0; i < count; i++) {
+        const struct mach_header_64 *header = (const void *)_dyld_get_image_header(i);
+        if (header != caller->dli_fbase) continue;
+        intptr_t slide = _dyld_get_image_vmaddr_slide(i);
+        if (candidate.header && candidate.slide != slide) return NO;
+        candidate = (RUINDyldImageCandidate){header, slide, caller->dli_fname};
     }
+    if (!candidate.header || count != _dyld_image_count()) return NO;
+    RUINFeatureImage image = {0};
+    // A null process path deliberately requires the converted-guest shape.
+    // The shared parser safely copies/validates commands, canonical paths,
+    // architecture, UUID and slide; this proof authorizes no numeric calls.
+    return RUINResolveFeatureImageFromCandidates(&mapping->host,
+        NSBundle.mainBundle.executablePath.fileSystemRepresentation, NULL, ownerPath,
+        candidate.header, &candidate, 1, &image) && image.convertedExecutable;
 }
 
 static BOOL RUINLoginCallerIsLINE(void *caller) {
@@ -102,9 +129,12 @@ static BOOL RUINLoginCallerIsLINE(void *caller) {
     if (!dladdr(caller, &info)) return NO;
     // The verified guest already identifies LINE. A strict MH_EXECUTE lookup
     // cannot resolve this MH_DYLIB and must not run on every UIKit idiom query.
-    if (verifiedLoginGuestImage) return info.dli_fbase == verifiedLoginGuestImage;
+    const void *guest = atomic_load_explicit(&verifiedLoginGuestImage, memory_order_acquire);
+    if (guest) return info.dli_fbase == guest;
     RUINMainExecutableImage image;
-    return RUINResolveMainExecutableImage(&image) && info.dli_fbase == (const void *)image.header;
+    if (RUINResolveMainExecutableImage(&image) && info.dli_fbase == (const void *)image.header) return YES;
+    // LINE can cache its role before the queued guest pin is able to run.
+    return RUINLoginCallerIsUnpinnedGuest(&info);
 }
 
 %group RUINSecondaryDeviceRole
@@ -476,7 +506,6 @@ void RUINInstallSecondaryLogin(void) {
             RUINSecondaryMethodMatches(welcome, "loginButtonAction", "v16@0:8") &&
             !class_getInstanceMethod(welcome, sel_registerName("ruin_chooseLoginMode:")) &&
             !class_getInstanceMethod(welcome, sel_registerName("ruin_loginTap:"))) {
-            RUINRememberLoginGuestImage(welcome);
             %init(RUINWelcomeLogin, RUINWelcomeController = welcome);
             welcomeHookInstalled = YES;
             atomic_store(&welcomeHooksReady, true);
@@ -494,6 +523,8 @@ void RUINInstallSecondaryLogin(void) {
             secondaryScreenHookInstalled = YES;
         }
     }
+    if (welcomeHookInstalled)
+        RUINScheduleLoginGuestImageProof(objc_getClass("_TtC18LineRegistrationUI21WelcomeViewController"));
     RUINScheduleWelcomeCatchUp();
 }
 
@@ -510,7 +541,7 @@ NSDictionary *RUINSecondaryLoginDiagnostics(void) {
         @"queriesFromLINEOutsideVisibleLogin":@(atomic_load(&unscopedLINEQueries)),
         @"queriesFromLINEBackgroundThread":@(atomic_load(&backgroundLINEQueries)),
         @"queriesFromOtherImages":@(atomic_load(&otherImageQueries)),
-        @"verifiedLoginGuestImage":@(verifiedLoginGuestImage != NULL),
+        @"verifiedLoginGuestImage":@(atomic_load_explicit(&verifiedLoginGuestImage, memory_order_acquire) != NULL),
         @"loginProjectionActive": @(RUINHasLoginProjectionScope()),
         @"swiftUILoginBindings": @(atomic_load(&swiftUILoginBindings)),
         @"lastLoginScreen": lastLoginScreen ?: @"not_observed",

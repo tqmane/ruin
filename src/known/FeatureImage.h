@@ -13,6 +13,10 @@ typedef struct {
 
 FOUNDATION_EXPORT BOOL RUINResolveFeatureImage(const RUINHostIdentity *host,
     Class nativeClass, RUINFeatureImage *result);
+// A nonconverted, kernel-proven process main needs no loader pin or mutable
+// snapshot of unrelated images. Converted guests must use the owner-aware path.
+FOUNDATION_EXPORT BOOL RUINResolveNativeFeatureImage(const RUINHostIdentity *host,
+    RUINFeatureImage *result);
 FOUNDATION_EXPORT void RUINReleaseFeatureImage(RUINFeatureImage *image);
 FOUNDATION_EXPORT NSString *RUINFeatureImageResolutionStatus(void);
 FOUNDATION_EXPORT BOOL RUINFeatureImageMatches(const RUINFeatureImage *image,
