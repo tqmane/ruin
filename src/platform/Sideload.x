@@ -123,11 +123,12 @@ static void RUINPrepareStorageBindings(NSDictionary *requestedMap) {
         NSURL *resolved = nil; NSString *suite = nil; NSError *error = nil;
         RUINAppGroupStorageDisposition disposition;
         // An existing owner pin keeps unrelated profile stores out of legacy
-        // discovery. Native, explicit and persisted bindings still resolve normally.
+        // discovery. The resolver also verifies it before retaining a populated
+        // sandbox over a newly introduced empty explicit target.
         NSArray *legacy = [logical isEqual:@"group.com.linecorp.line"] && account.length &&
             !RUINVerifySandboxAppGroupStorageBinding(logical, signingIdentifier, fallback, NULL)
             ? authorized.allValues : @[];
-        BOOL ok = RUINResolveAppGroupStorage(logical,account,authorized[logical],fallback,
+        BOOL ok = RUINResolveAppGroupStorage(logical,account,authorized[logical],fallback,signingIdentifier,
             requestedMap,authorized,legacy,&resolved,&suite,&disposition,&error);
         if (!ok || disposition == RUINAppGroupStorageDispositionUnsafe ||
             disposition == RUINAppGroupStorageDispositionLegacyMainCandidate) {
@@ -155,7 +156,11 @@ static void RUINPrepareStorageBindings(NSDictionary *requestedMap) {
         URLs[logical] = resolved;
         if (suite.length && ![suite isEqual:logical]) suites[logical] = suite;
         if (ok && disposition == RUINAppGroupStorageDispositionExplicitMap &&
-            !RUINRecordExplicitAppGroupBinding(logical,suite,authorized,NULL)) unsafeStorageCount++;
+            !RUINRecordExplicitAppGroupBinding(logical,suite,authorized,&error)) {
+            unsafeStorageCount++;
+            [errors addObject:@{@"namespace":logical, @"disposition":@(disposition),
+                @"errorCode":@(error.code), @"stage":@"recordExplicitMap"}];
+        }
     }
     storageBindingErrors = [errors copy];
     resolvedGroupURLs = [URLs copy];

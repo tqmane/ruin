@@ -33,7 +33,7 @@ def main():
     environment = os.environ.copy()
     for name in ('RUIN_SECONDARY_LOGIN', 'RUIN_OPEN_SECONDARY_LOGIN'):
         environment.pop(name, None)
-    for mode in ('secondary', 'normal', 'abi'):
+    for mode in ('secondary', 'normal', 'abi', 'renamed', 'unknown', 'ipad', 'return-abi'):
         subprocess.run([str(executable), mode], cwd=ROOT, env=environment, check=True, timeout=30)
 
 

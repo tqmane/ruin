@@ -34,7 +34,7 @@ static BOOL Resolve(NSString *account,
                     NSURL **resolvedURL,
                     NSString **suiteName,
                     RUINAppGroupStorageDisposition *disposition) {
-    return RUINResolveAppGroupStorage(@"group.com.linecorp.line", account, nativeURL, fallbackURL,
+    return RUINResolveAppGroupStorage(@"group.com.linecorp.line", account, nativeURL, fallbackURL, nil,
                                       explicitMap, authorized, legacyCandidates,
                                       resolvedURL, suiteName, disposition, NULL);
 }
@@ -306,7 +306,7 @@ static void TestDistinctStoresThroughParentAlias(NSURL *root) {
     RUINAppGroupStorageDisposition status;
     NSError *error = nil;
     assert(RUINResolveAppGroupStorage(@"group.com.linecorp.line", @"fixture-account",
-        native, fallback, nil, nil, nil, &resolved, &suite, &status, &error));
+        native, fallback, nil, nil, nil, nil, &resolved, &suite, &status, &error));
     assert(status == RUINAppGroupStorageDispositionUnsafe);
     assert([error.domain isEqualToString:RUINAppGroupStorageErrorDomain] &&
            error.code == RUINAppGroupStorageErrorConflictingStores);
@@ -389,6 +389,84 @@ static void TestPinnedFallbackWithUnrelatedLegacy(NSURL *root) {
     AssertUnsafePreservesFallback(fallback, @"fixture-account", nil, authorized, @[]);
 }
 
+static void TestPinnedFallbackWithNewExplicitMap(NSURL *root) {
+    NSString *logical = @"group.com.linecorp.line", *owner = @"TEAM.fixture.app";
+    NSString *group = @"group.profile.new";
+    NSURL *fallback = [root URLByAppendingPathComponent:@"pinned" isDirectory:YES];
+    assert(RUINPinSandboxAppGroupStorage(logical, owner, fallback, NULL));
+    NSURL *messages = Directory(fallback, @"Library/Application Support/PrivateStore/P_fixture-account/Messages");
+    // A partial store (WAL only) is still meaningful data. Never open a database.
+    NSURL *dataURL = [messages URLByAppendingPathComponent:@"ChatExt.sqlite-wal"];
+    NSData *data = [@"preserve fixture bytes" dataUsingEncoding:NSUTF8StringEncoding];
+    assert([data writeToURL:dataURL options:0 error:NULL]);
+    NSURL *marker = [fallback URLByAppendingPathComponent:
+        @"Library/Application Support/RUINAppGroupBindings/group.com.linecorp.line.plist"];
+    NSData *markerBefore = [NSData dataWithContentsOfURL:marker];
+    NSURL *mapped = Directory(root, @"new-target");
+    NSDictionary *authorized = @{group:mapped}, *mapping = @{logical:group};
+    NSURL *resolved = nil; NSString *suite = nil; NSError *error = nil;
+    RUINAppGroupStorageDisposition status;
+    // Owner routing must also work before an account ID is available, and on restart.
+    for (NSString *account in @[@"", @"fixture-account"]) {
+        assert(RUINResolveAppGroupStorage(logical, account, nil, fallback, owner,
+            mapping, authorized, @[], &resolved, &suite, &status, &error));
+        assert(status == RUINAppGroupStorageDispositionExistingFallback);
+        assert([resolved isEqual:fallback] && !suite && !error);
+        assert(RUINPinSandboxAppGroupStorage(logical, owner, resolved, &error));
+        assert([[NSData dataWithContentsOfURL:dataURL] isEqual:data]);
+        assert([[NSData dataWithContentsOfURL:marker] isEqual:markerBefore]);
+        assert([NSFileManager.defaultManager contentsOfDirectoryAtPath:mapped.path error:NULL].count == 0);
+    }
+    for (NSString *wrongOwner in @[@"", @"OTHER.fixture.app"]) {
+        assert(RUINResolveAppGroupStorage(logical, @"", nil, fallback, wrongOwner,
+            mapping, authorized, @[], &resolved, &suite, &status, &error));
+        assert(status == RUINAppGroupStorageDispositionUnsafe && [resolved isEqual:fallback] && !suite);
+        assert(error.code == RUINAppGroupStorageErrorConflictingStores);
+    }
+    NSURL *unmarked = Directory(root, @"unmarked"); AddLINEStore(unmarked, @"P_fixture-account");
+    assert(RUINResolveAppGroupStorage(logical, @"", nil, unmarked, owner,
+        mapping, authorized, @[], &resolved, &suite, &status, &error));
+    assert(status == RUINAppGroupStorageDispositionUnsafe && [resolved isEqual:unmarked]);
+
+    // Empty owner pins must never hide an existing native or explicitly mapped store.
+    NSURL *empty = [root URLByAppendingPathComponent:@"empty-pin" isDirectory:YES];
+    assert(RUINPinSandboxAppGroupStorage(logical, owner, empty, NULL));
+    NSURL *native = Directory(root, @"native"); AddLINEStore(native, @"P_fixture-account");
+    assert(RUINResolveAppGroupStorage(logical, @"", native, empty, owner,
+        mapping, authorized, @[], &resolved, &suite, &status, &error));
+    assert(status == RUINAppGroupStorageDispositionNative && [resolved isEqual:native]);
+    AddLINEStore(mapped, @"S_other-account");
+    assert(RUINResolveAppGroupStorage(logical, @"", nil, empty, owner,
+        mapping, authorized, @[], &resolved, &suite, &status, &error));
+    assert(status == RUINAppGroupStorageDispositionExplicitMap && [resolved isEqual:mapped]);
+    assert(RUINResolveAppGroupStorage(logical, @"", nil, fallback, owner,
+        mapping, authorized, @[], &resolved, &suite, &status, &error));
+    assert(status == RUINAppGroupStorageDispositionUnsafe && [resolved isEqual:fallback]);
+
+    // Even an empty persisted target is an established competing purpose binding.
+    NSURL *bound = Directory(root, @"bound-target");
+    NSDictionary *boundAuthorized = @{group:bound};
+    assert(RUINRecordExplicitAppGroupBinding(logical, group, boundAuthorized, NULL));
+    assert(RUINResolveAppGroupStorage(logical, @"", nil, fallback, owner,
+        mapping, boundAuthorized, @[], &resolved, &suite, &status, &error));
+    assert(status == RUINAppGroupStorageDispositionUnsafe && [resolved isEqual:fallback]);
+    assert([[NSData dataWithContentsOfURL:dataURL] isEqual:data]);
+    assert([[NSData dataWithContentsOfURL:marker] isEqual:markerBefore]);
+
+    // Diagnose permissions without rewriting or chmod'ing an existing marker.
+    NSURL *boundMarker = [bound URLByAppendingPathComponent:
+        @"Library/Application Support/RUINAppGroupBindings/group.com.linecorp.line.plist"];
+    NSData *boundBytes = [NSData dataWithContentsOfURL:boundMarker];
+    assert([NSFileManager.defaultManager setAttributes:@{NSFilePosixPermissions:@0644}
+        ofItemAtPath:boundMarker.path error:NULL]);
+    assert(!RUINRecordExplicitAppGroupBinding(logical, group, boundAuthorized, &error));
+    assert(error.code == RUINAppGroupStorageErrorInvalidMarker);
+    assert([[NSData dataWithContentsOfURL:boundMarker] isEqual:boundBytes]);
+    assert(RUINResolveAppGroupStorage(logical, @"", nil, fallback, owner,
+        mapping, boundAuthorized, @[], &resolved, &suite, &status, &error));
+    assert(status == RUINAppGroupStorageDispositionUnsafe && error.code == RUINAppGroupStorageErrorInvalidMarker);
+}
+
 int main(void) {
     @autoreleasepool {
         NSURL *root = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString]
@@ -400,6 +478,7 @@ int main(void) {
         TestNativeAndFallbackPolicy(Directory(root, @"native-test"));
         TestSandboxOwnerBinding(Directory(root, @"sandbox-owner-test"));
         TestPinnedFallbackWithUnrelatedLegacy(Directory(root, @"pinned-legacy-test"));
+        TestPinnedFallbackWithNewExplicitMap(Directory(root, @"pinned-explicit-test"));
         TestExplicitMapAndPersistedBinding(Directory(root, @"marker-test"));
         TestEmptyAccountResolution(Directory(root, @"empty-account-test"));
         TestFallbackPreservedAndLegacyCandidate(Directory(root, @"legacy-test"));

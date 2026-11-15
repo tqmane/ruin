@@ -236,6 +236,7 @@ BOOL RUINResolveAppGroupStorage(NSString *logicalGroupIdentifier,
                                 NSString * _Nullable verifiedAccountIdentifier,
                                 NSURL *nativeContainerURL,
                                 NSURL *currentFallbackURL,
+                                NSString *signingIdentifier,
                                 NSDictionary<NSString *,NSString *> *explicitGroupMap,
                                 NSDictionary<NSString *,NSURL *> *authorizedGroupContainers,
                                 NSArray<NSURL *> *legacyMainLINECandidates,
@@ -350,6 +351,16 @@ BOOL RUINResolveAppGroupStorage(NSString *logicalGroupIdentifier,
                                       currentFallbackURL, resolvedContainerURL, suiteName, disposition, error);
         }
         if (fallbackHasData && !RUINSameDirectory(currentFallbackURL, mappedURL)) {
+            // Packaging may introduce profile maps after this sandbox was
+            // pinned and populated. Keep that store in place only when the
+            // new target has no data and no persisted binding competes.
+            if (!mappedHasData && !markerURL &&
+                RUINVerifySandboxAppGroupStorageBinding(logicalGroupIdentifier,
+                    signingIdentifier, currentFallbackURL, NULL)) {
+                return RUINSetResolution(currentFallbackURL, nil,
+                    RUINAppGroupStorageDispositionExistingFallback,
+                    resolvedContainerURL, suiteName, disposition);
+            }
             return RUINFailResolution(RUINAppGroupStorageErrorConflictingStores,
                                       currentFallbackURL, resolvedContainerURL, suiteName, disposition, error);
         }

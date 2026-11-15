@@ -38,6 +38,7 @@ enum { UIAccessibilityTraitButton = 1, UIAccessibilityTraitNotEnabled = 1 << 8 }
 @property(nonatomic, copy) NSArray *fixtureAccessibilityElements;
 - (NSInteger)accessibilityElementCount;
 - (id)accessibilityElementAtIndex:(NSInteger)index;
+- (id)accessibilityHitTest:(CGPoint)point withEvent:(id)event;
 @end
 
 @interface UIView : NSObject <UIAccessibilityIdentification>
@@ -48,6 +49,8 @@ enum { UIAccessibilityTraitButton = 1, UIAccessibilityTraitNotEnabled = 1 << 8 }
 @property(nonatomic, strong) UIWindow *window;
 @property(nonatomic, copy) NSArray<UIView *> *subviews;
 @property(nonatomic, strong) NSMutableArray<UIGestureRecognizer *> *gestureRecognizers;
+@property(nonatomic, strong) id fixtureAccessibilityHit;
+@property(nonatomic) CGPoint fixtureScreenOrigin;
 - (void)addGestureRecognizer:(UIGestureRecognizer *)recognizer;
 @end
 @interface UIWindow : UIView
@@ -127,6 +130,8 @@ enum { UIAccessibilityTraitButton = 1, UIAccessibilityTraitNotEnabled = 1 << 8 }
 + (instancetype)currentDevice;
 @end
 
-static inline CGRect UIAccessibilityConvertFrameToScreenCoordinates(CGRect frame, __unused UIView *view) {
+static inline CGRect UIAccessibilityConvertFrameToScreenCoordinates(CGRect frame, UIView *view) {
+    frame.origin.x += view.fixtureScreenOrigin.x;
+    frame.origin.y += view.fixtureScreenOrigin.y;
     return frame;
 }

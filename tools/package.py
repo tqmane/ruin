@@ -42,6 +42,24 @@ def profile_entitlements(profile):
     return app_id, ent
 
 
+def app_group_mapping(info, entitlements):
+    # Profile order does not identify a group's purpose. Inventing aliases here
+    # can switch an existing installation away from its populated sandbox.
+    mapping = info.get('RUINAppGroupMap', {})
+    logical_groups = {
+        'group.com.linecorp.line', 'group.com.linecorp.Line.encrypted.app',
+        'group.share.com.linecorp.line', 'group.com.linecorp.Line.encrypted.share',
+        'group.ly-app.family',
+    }
+    allowed = entitlements.get('com.apple.security.application-groups', [])
+    if not isinstance(mapping, dict) or any(
+        key not in logical_groups or not isinstance(value, str) or value not in allowed
+        for key, value in mapping.items()
+    ):
+        raise ValueError('Existing App Group mapping is not authorized by this profile.')
+    return dict(mapping)
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--ipa', type=Path, required=True)
@@ -100,11 +118,7 @@ def main():
     info['RUINSigningApplicationIdentifier'] = signing_app_id
     info['RUINSignedTeamIdentifier'] = ent['com.apple.developer.team-identifier']
     info['RUINPushEnvironment'] = ent.get('aps-environment', 'unavailable')
-    info['RUINAppGroupMap'] = dict(zip([
-        'group.com.linecorp.line', 'group.com.linecorp.Line.encrypted.app',
-        'group.share.com.linecorp.line', 'group.com.linecorp.Line.encrypted.share',
-        'group.ly-app.family',
-    ], ent.get('com.apple.security.application-groups', [])))
+    info['RUINAppGroupMap'] = app_group_mapping(info, ent)
     info_path.write_bytes(plistlib.dumps(info, fmt=plistlib.FMT_BINARY))
     for localized_info in app.glob('*.lproj/InfoPlist.strings'):
         localized = plistlib.loads(run('plutil', '-convert', 'xml1', '-o', '-', localized_info, capture=True))

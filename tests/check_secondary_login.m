@@ -87,6 +87,7 @@ static BOOL CountMainExecutableResolution(RUINMainExecutableImage *image) {
 
 static char traitsKey, frameKey, hiddenKey, elementsKey;
 static NSUInteger fixtureSynchronizeCount, syncCountAtLastAlertPresentation;
+static NSDictionary *fixtureBundleInfo;
 static NSString *lastPresentedAlertTitle;
 static void (*registeredImageCallback)(const struct mach_header *, intptr_t);
 static NSUInteger imageCallbackRegistrations;
@@ -108,10 +109,15 @@ void RUINTestRegisterFuncForAddImage(void (*callback)(const struct mach_header *
 - (void)setFixtureAccessibilityElements:(NSArray *)value { objc_setAssociatedObject(self, &elementsKey, [value copy], OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
 - (NSInteger)accessibilityElementCount { return (NSInteger)self.fixtureAccessibilityElements.count; }
 - (id)accessibilityElementAtIndex:(NSInteger)index { return self.fixtureAccessibilityElements[(NSUInteger)index]; }
+- (id)accessibilityHitTest:(__unused CGPoint)point withEvent:(__unused id)event { return nil; }
 @end
 @implementation UIView
 - (instancetype)init { if ((self = [super init])) { _alpha = 1; _subviews = @[]; _gestureRecognizers = [NSMutableArray array]; } return self; }
 - (void)addGestureRecognizer:(UIGestureRecognizer *)recognizer { recognizer.view = self; [self.gestureRecognizers addObject:recognizer]; }
+- (id)accessibilityHitTest:(CGPoint)point withEvent:(__unused id)event {
+    id hit = self.fixtureAccessibilityHit;
+    return hit && CGRectContainsPoint([(NSObject *)hit accessibilityFrame], point) ? hit : nil;
+}
 @end
 @implementation UIWindow @end
 @implementation UIAccessibilityElement @end
@@ -190,11 +196,11 @@ static UIUserInterfaceIdiom physicalIdiom, lifecycleIdiom, actionIdiom;
 @end
 @implementation RUINSecondaryFixtureBundle
 + (instancetype)mainBundle { static RUINSecondaryFixtureBundle *value; if (!value) value = [self new]; return value; }
-- (NSDictionary *)infoDictionary { return @{@"CFBundleIdentifier":@"jp.naver.line", @"CFBundleShortVersionString":@"26.17.0", @"CFBundleVersion":@"2026.1103.1841"}; }
+- (NSDictionary *)infoDictionary { return fixtureBundleInfo ?: @{@"CFBundleIdentifier":@"jp.naver.line", @"CFBundleShortVersionString":@"26.17.0", @"CFBundleVersion":@"2026.1103.1841"}; }
 - (NSString *)executablePath { return fixtureImageEnabled ? @(fixtureLinePath) : NSBundle.mainBundle.executablePath; }
 @end
 static BOOL storageReady = YES, keychainReady = YES, throwOnLogin;
-static NSUInteger storageInstalls, keychainInstalls, loginCalls, qrCalls, primaryDeviceLoginCalls;
+static NSUInteger storageInstalls, keychainInstalls, loginCalls, qrCalls, primaryDeviceLoginCalls, registrationFlowCalls;
 void RUINInstallCompatibility(void) { storageInstalls++; }
 void RUINInstallKeychainCompatibility(void) { keychainInstalls++; }
 BOOL RUINStorageMigrationReady(void) { return storageReady; }
@@ -224,6 +230,7 @@ BOOL RUINKeychainCompatibilityReady(void) { return keychainReady; }
 - (void)loginButtonAction;
 - (void)showQRCodeLoginButtonPressed;
 - (void)showPrimaryDeviceLoginButtonPressed;
+- (void)showRegistrationFlowButtonPressed;
 - (void)ruin_loginTap:(UITapGestureRecognizer *)recognizer;
 - (void)ruin_chooseLoginMode:(UILongPressGestureRecognizer *)recognizer;
 @end
@@ -243,6 +250,7 @@ static void NativeLogin(__unused id self, __unused SEL selector) {
 }
 static void NativeQR(__unused id self, __unused SEL selector) { qrCalls++; actionIdiom = UIDevice.currentDevice.userInterfaceIdiom; }
 static void NativePrimaryDeviceLogin(__unused id self, __unused SEL selector) { primaryDeviceLoginCalls++; }
+static void NativeRegistrationFlow(__unused id self, __unused SEL selector) { registrationFlowCalls++; }
 static void CheckVerifiedGuestCallerFastPath(void) {
     Dl_info guest, framework;
     assert(dladdr((const void *)NativeLogin, &guest));
@@ -283,6 +291,31 @@ static void Tap(id<RUINSecondaryFixtureActions> owner, UITapGestureRecognizer *t
 static void DrainMainQueue(void) {
     for (NSUInteger i = 0; i < 20; i++)
         CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.005, true);
+}
+
+static void CheckRegistrationReturn(Class secondaryClass, BOOL enabled) {
+    // Reproduce a screen whose appearance predates hook installation. Returning
+    // must not depend on Welcome, a gesture, AX initialization or preflight.
+    UIViewController *controller = [secondaryClass new];
+    RUINSecondaryFixtureDefaults *defaults = RUINSecondaryFixtureDefaults.standardUserDefaults;
+    NSUInteger nativeBefore = registrationFlowCalls, syncBefore = fixtureSynchronizeCount;
+    NSUInteger storageBefore = storageInstalls, keychainBefore = keychainInstalls;
+    storageReady = keychainReady = NO;
+    [(id<RUINSecondaryFixtureActions>)controller showRegistrationFlowButtonPressed];
+    assert(registrationFlowCalls == nativeBefore + (enabled ? 0 : 1));
+    assert(fixtureSynchronizeCount == syncBefore + (enabled ? 1 : 0));
+    assert(![defaults boolForKey:RUINSecondaryLoginEnabledKey]);
+    assert(activeSecondaryMode == enabled); // No live/native role mutation.
+    DrainMainQueue();
+    if (enabled) {
+        assert([((UIAlertController *)controller.presentedViewController).title isEqual:@"ログイン方法を切り替えました"]);
+        assert(syncCountAtLastAlertPresentation == syncBefore + 1);
+    } else assert(!controller.presentedViewController);
+    assert(storageInstalls == storageBefore && keychainInstalls == keychainBefore);
+    assert([defaults.values[@"nativeRole"] isEqual:@"primary"] && defaults.values.count == 2);
+    storageReady = keychainReady = YES;
+    [defaults setBool:enabled forKey:RUINSecondaryLoginEnabledKey]; // Reset only the fixture.
+    puts("PASS native bottom return: persisted RUIN OFF before restart notice; native original once when mode OFF");
 }
 
 static void ResetLoginGuestProof(void) {
@@ -402,8 +435,19 @@ static void CheckLoginGuestImageProof(Class welcomeClass) {
 
 int main(int argc, const char **argv) { @autoreleasepool {
     CheckVerifiedGuestCallerFastPath();
-    BOOL enabled = argc < 2 || strcmp(argv[1], "normal") != 0;
+    BOOL ipad = argc > 1 && strcmp(argv[1], "ipad") == 0;
+    BOOL enabled = !ipad && (argc < 2 || strcmp(argv[1], "normal") != 0);
     BOOL mismatch = argc > 1 && strcmp(argv[1], "abi") == 0;
+    BOOL returnMismatch = argc > 1 && strcmp(argv[1], "return-abi") == 0;
+    BOOL unknown = argc > 1 && strcmp(argv[1], "unknown") == 0;
+    BOOL renamed = argc > 1 && strcmp(argv[1], "renamed") == 0;
+    if (unknown || renamed) {
+        fixtureBundleInfo = @{@"CFBundleIdentifier": renamed ? @"test.sideload.line" : @"jp.naver.line",
+            @"RUINOriginalBundleIdentifier": @"jp.naver.line",
+            @"CFBundleShortVersionString": unknown ? @"99.0.0" : @"26.17.0",
+            @"CFBundleVersion": unknown ? @"2099.0101.1234" : @"2026.1103.1841"};
+    }
+    if (ipad) physicalIdiom = UIUserInterfaceIdiomPad;
     RUINSecondaryFixtureDefaults *defaults = RUINSecondaryFixtureDefaults.standardUserDefaults;
     defaults.values[@"nativeRole"] = @"primary";
     [defaults setBool:enabled forKey:RUINSecondaryLoginEnabledKey];
@@ -411,15 +455,17 @@ int main(int argc, const char **argv) { @autoreleasepool {
     assert(deviceIdiomHookInstalled && !welcomeHookInstalled && !secondaryScreenHookInstalled);
     assert(imageCallbackRegistrations == 1 && registeredImageCallback);
     NSUInteger original = deviceQueries;
-    assert(UIDevice.currentDevice.userInterfaceIdiom == (enabled ? UIUserInterfaceIdiomPad : UIUserInterfaceIdiomPhone));
+    assert(UIDevice.currentDevice.userInterfaceIdiom == (enabled ? UIUserInterfaceIdiomPad : physicalIdiom));
     assert(deviceQueries == original + 1); // LINE-owned startup queries participate before Welcome is visible.
 
+    // Unrelated loads can occur in more than eight separate main-queue turns
+    // before the guest/registration image arrives. None may consume its retry.
+    for (NSUInteger load = 0; load < 10; load++) {
+        registeredImageCallback(NULL, 0);
+        DrainMainQueue();
+    }
     Class welcomeClass = RegisterController("_TtC18LineRegistrationUI21WelcomeViewController",
         @selector(loginButtonAction), (IMP)NativeLogin, "v16@0:8");
-    Class secondaryClass = RegisterController("_TtC20LineSecondaryLoginUI28SecondaryLoginViewController",
-        @selector(showQRCodeLoginButtonPressed), (IMP)NativeQR, "v16@0:8");
-    assert(class_addMethod(secondaryClass, @selector(showPrimaryDeviceLoginButtonPressed),
-        (IMP)NativePrimaryDeviceLogin, mismatch ? "q16@0:8" : "v16@0:8"));
 
     UIApplication *application = UIApplication.sharedApplication;
     UIWindowScene *activeScene = [UIWindowScene new]; activeScene.activationState = UISceneActivationStateForegroundActive;
@@ -448,14 +494,33 @@ int main(int argc, const char **argv) { @autoreleasepool {
     registeredImageCallback(NULL, 0); registeredImageCallback(NULL, 0); // Coalesced while the main-queue retry is pending.
     DrainMainQueue();
     assert(deviceIdiomHookInstalled && welcomeHookInstalled);
+    assert(!secondaryScreenHookInstalled);
+
+    // The secondary module may arrive after Welcome has already been hooked.
+    Class secondaryClass = RegisterController("_TtC20LineSecondaryLoginUI28SecondaryLoginViewController",
+        @selector(showQRCodeLoginButtonPressed), (IMP)NativeQR, "v16@0:8");
+    assert(class_addMethod(secondaryClass, @selector(showPrimaryDeviceLoginButtonPressed),
+        (IMP)NativePrimaryDeviceLogin, mismatch ? "q16@0:8" : "v16@0:8"));
+    assert(class_addMethod(secondaryClass, @selector(showRegistrationFlowButtonPressed),
+        (IMP)NativeRegistrationFlow, returnMismatch ? "q16@0:8" : "v16@0:8"));
+    registeredImageCallback(NULL, 0);
+    DrainMainQueue();
     assert(secondaryScreenHookInstalled == !mismatch);
+    assert(secondaryRegistrationReturnHookInstalled == !returnMismatch);
+    if (returnMismatch) assert(class_getMethodImplementation(secondaryClass,
+        @selector(showRegistrationFlowButtonPressed)) == (IMP)NativeRegistrationFlow);
+    if (!mismatch) {
+        registeredImageCallback(NULL, 0);
+        assert(!atomic_load(&secondaryLoginRetryScheduled));
+    }
     assert(imageCallbackRegistrations == 1);
     assert(!applicationAccessedOffMainThread); // The dyld callback never touches UIKit off-main.
     assert(welcome.view.gestureRecognizers.count == 2); // Catch-up attached the already-visible exact Welcome.
     assert(backgroundWelcome.view.gestureRecognizers.count == 0); // Background scenes are excluded.
     RUINInstallSecondaryLogin(); RUINInstallSecondaryLogin(); DrainMainQueue();
     assert(welcome.view.gestureRecognizers.count == 2); // Repeated install/catch-up is idempotent.
-    CheckLoginGuestImageProof(welcomeClass);
+    if (!unknown) CheckLoginGuestImageProof(welcomeClass);
+    if (!returnMismatch) CheckRegistrationReturn(secondaryClass, enabled);
     if (mismatch) { puts("PASS secondary ABI mismatch rejected before group init"); return 0; }
 
     [welcome viewDidLoad]; assert(welcome.loads == 2 && loginProjectionDepth == 0);
@@ -475,6 +540,68 @@ int main(int argc, const char **argv) { @autoreleasepool {
     UITouch *touch = [UITouch new]; touch.point = CGPointMake(40, 40);
     assert([tap.delegate gestureRecognizer:tap shouldReceiveTouch:touch]);
     assert(!RUINPointIsOnNativeLoginButton(welcome, CGPointMake(300, 300)));
+
+    // A hosting view can answer the native hit query before exposing enumerable
+    // AX children. Exercise actual gesture admission and menu presentation with
+    // that graph absent, including a nonzero screen origin (iPad/window layout).
+    welcome.view.fixtureAccessibilityElements = @[];
+    welcome.view.fixtureScreenOrigin = CGPointMake(200, 300);
+    button.accessibilityFrame = CGRectMake(210, 320, 120, 50);
+    welcome.view.fixtureAccessibilityHit = button;
+    assert([press.delegate gestureRecognizer:press shouldReceiveTouch:touch]);
+    storageReady = keychainReady = NO;
+    press.state = UIGestureRecognizerStateBegan;
+    [(id<RUINSecondaryFixtureActions>)welcome ruin_chooseLoginMode:press];
+    UIAlertController *swiftUIMenu = (id)welcome.presentedViewController;
+    assert(swiftUIMenu.actions.count == 3);
+    assert(swiftUIMenu.popoverPresentationController.sourceView == welcome.view);
+    assert(loginCalls == 0 && storageInstalls == 0 && keychainInstalls == 0);
+    storageReady = keychainReady = YES;
+    welcome.presentedViewController = nil;
+    assert(!RUINPointIsOnNativeLoginButton(welcome, CGPointMake(300, 300)));
+    button.accessibilityIdentifier = @"register";
+    assert(![press.delegate gestureRecognizer:press shouldReceiveTouch:touch]);
+    button.accessibilityIdentifier = @"login";
+    button.accessibilityTraits |= UIAccessibilityTraitNotEnabled;
+    assert(![press.delegate gestureRecognizer:press shouldReceiveTouch:touch]);
+    button.accessibilityTraits = UIAccessibilityTraitButton;
+    button.accessibilityElementsHidden = YES;
+    assert(![press.delegate gestureRecognizer:press shouldReceiveTouch:touch]);
+    button.accessibilityElementsHidden = NO;
+    welcome.view.accessibilityElementsHidden = YES;
+    assert(![press.delegate gestureRecognizer:press shouldReceiveTouch:touch]);
+    welcome.view.accessibilityElementsHidden = NO;
+    welcome.view.hidden = YES;
+    assert(![press.delegate gestureRecognizer:press shouldReceiveTouch:touch]);
+    welcome.view.hidden = NO;
+    welcome.view.alpha = 0;
+    assert(![press.delegate gestureRecognizer:press shouldReceiveTouch:touch]);
+    welcome.view.alpha = 1;
+    // Equivalent wrappers in the graph do not override the native hit result.
+    UIAccessibilityElement *wrapper = LoginElement(); wrapper.accessibilityFrame = button.accessibilityFrame;
+    welcome.view.fixtureAccessibilityElements = @[button, wrapper];
+    assert([press.delegate gestureRecognizer:press shouldReceiveTouch:touch]);
+    // An unidentified container result must preserve the established traversal
+    // fallback instead of regressing devices where that graph is available.
+    NSObject *unidentifiedHit = [NSObject new]; unidentifiedHit.accessibilityFrame = button.accessibilityFrame;
+    welcome.view.fixtureAccessibilityHit = unidentifiedHit;
+    welcome.view.fixtureAccessibilityElements = @[button];
+    assert([press.delegate gestureRecognizer:press shouldReceiveTouch:touch]);
+    welcome.view.fixtureAccessibilityHit = nil;
+    welcome.view.fixtureAccessibilityElements = @[];
+    assert(![press.delegate gestureRecognizer:press shouldReceiveTouch:touch]);
+    welcome.view.fixtureScreenOrigin = CGPointZero;
+    button.accessibilityFrame = CGRectMake(10, 20, 120, 50);
+    welcome.view.fixtureAccessibilityElements = @[button];
+
+    // Two visible Welcome controllers must not disable each other's recognizers.
+    UIViewController *otherWelcome = [welcomeClass new];
+    otherWelcome.view.window = activeWindow;
+    otherWelcome.view.fixtureAccessibilityElements = @[LoginElement()];
+    [otherWelcome viewDidAppear:NO];
+    assert([press.delegate gestureRecognizer:press shouldReceiveTouch:touch]);
+    [otherWelcome viewDidDisappear:NO];
+    assert([press.delegate gestureRecognizer:press shouldReceiveTouch:touch]);
     button.accessibilityIdentifier = @"login.suffix";
     assert(![tap.delegate gestureRecognizer:tap shouldReceiveTouch:touch]);
     button.accessibilityIdentifier = @"login";
@@ -509,7 +636,7 @@ int main(int argc, const char **argv) { @autoreleasepool {
         backgroundIdiom = UIDevice.currentDevice.userInterfaceIdiom; dispatch_semaphore_signal(done);
     });
     assert(dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC)) == 0);
-    assert(backgroundIdiom == (enabled ? UIUserInterfaceIdiomPad : UIUserInterfaceIdiomPhone));
+    assert(backgroundIdiom == (enabled ? UIUserInterfaceIdiomPad : physicalIdiom));
 
     for (NSUInteger failure = 0; failure < 2; failure++) {
         storageReady = failure != 0; keychainReady = failure == 0;
@@ -525,7 +652,7 @@ int main(int argc, const char **argv) { @autoreleasepool {
     @try { Tap((id)welcome, tap); assert(NO); } @catch (__unused NSException *exception) {}
     throwOnLogin = NO; assert(loginProjectionDepth == 0);
     [welcome viewDidDisappear:NO]; assert(welcome.disappearances == 1);
-    assert(UIDevice.currentDevice.userInterfaceIdiom == (enabled ? UIUserInterfaceIdiomPad : UIUserInterfaceIdiomPhone));
+    assert(UIDevice.currentDevice.userInterfaceIdiom == (enabled ? UIUserInterfaceIdiomPad : physicalIdiom));
     assert(!RUINPointIsOnNativeLoginButton(welcome, touch.point));
 
     UIViewController *secondary = [secondaryClass new];
@@ -553,7 +680,7 @@ int main(int argc, const char **argv) { @autoreleasepool {
         assert(!secondary.presentedViewController);
     }
     [secondary viewDidDisappear:NO];
-    assert(UIDevice.currentDevice.userInterfaceIdiom == (enabled ? UIUserInterfaceIdiomPad : UIUserInterfaceIdiomPhone));
+    assert(UIDevice.currentDevice.userInterfaceIdiom == (enabled ? UIUserInterfaceIdiomPad : physicalIdiom));
     physicalIdiom = UIUserInterfaceIdiomPad;
     assert(UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad);
     physicalIdiom = UIUserInterfaceIdiomPhone;
@@ -567,6 +694,7 @@ int main(int argc, const char **argv) { @autoreleasepool {
     assert(control.gestureRecognizers.count == 1 && unrelatedControl.gestureRecognizers.count == 0 &&
         legacy.view.gestureRecognizers.count == 0);
     UILongPressGestureRecognizer *legacyPress = (id)control.gestureRecognizers[0];
+    NSUInteger syncBeforeModeMenu = fixtureSynchronizeCount;
     legacyPress.state = UIGestureRecognizerStateChanged;
     [(id<RUINSecondaryFixtureActions>)legacy ruin_chooseLoginMode:legacyPress];
     assert(!legacy.presentedViewController);
@@ -575,12 +703,12 @@ int main(int argc, const char **argv) { @autoreleasepool {
     UIAlertController *menu = (id)legacy.presentedViewController;
     assert(menu.actions.count == 3 && [menu.actions[0].title isEqual:@"iPad扱いでサブ端末ログイン"]);
     menu.actions[0].handler(menu.actions[0]);
-    assert(fixtureSynchronizeCount == (enabled ? 2 : 1));
+    assert(fixtureSynchronizeCount == syncBeforeModeMenu + 1);
     assert([defaults boolForKey:RUINSecondaryLoginEnabledKey]);
     assert([defaults.values[@"nativeRole"] isEqual:@"primary"] && defaults.values.count == 2);
     DrainMainQueue();
     assert([lastPresentedAlertTitle isEqual:@"ログイン方法を切り替えました"]);
     assert(syncCountAtLastAlertPresentation == fixtureSynchronizeCount); // Persisted before the restart notice.
     assert([defaults.values[@"nativeRole"] isEqual:@"primary"] && defaults.values.count == 2);
-    puts("PASS secondary login: late-hook catch-up/retry, AX arrays/getters, idempotence, preflight, persisted preference, no native-role writes");
+    puts("PASS secondary login: late Welcome/secondary hooks, native AX hits without child graph, multi-window gestures, preflight, persisted preference, no native-role writes");
 } return 0; }

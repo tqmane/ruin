@@ -17,6 +17,8 @@
 // Only the mapped native result continuation, with the currently applied
 // registered local package, may override the server's result.
 static BOOL gInstalled;
+static _Atomic(const char *) gInstallStatus = "not_attempted";
+static BOOL gChainedExistingHook;
 static atomic_uint_fast64_t gCalls, gOverrides;
 static const RUINThemeMappings *gThemeMappings;
 static intptr_t gThemeImageSlide;
@@ -36,6 +38,23 @@ static uintptr_t RUINThemeValidationCanonicalIMP(IMP implementation)
     return (uintptr_t)implementation;
 #endif
 }
+
+#if !defined(RUIN_NATIVE_THEME_VALIDATION_HOST_CHECK)
+static BOOL RUINThemeValidationOwnerMatches(Class cls, const RUINVersionMapping *version,
+    const RUINFeatureImage *image)
+{
+    RUINFeatureImage owner = {0};
+    if (!RUINResolveFeatureImage(&version->host, cls, &owner)) return NO;
+    // Class ownership survives an Objective-C hook. Do not infer it from the
+    // current IMP, which may be a Logos/Substrate trampoline in another image.
+    BOOL matches = owner.image.header == image->image.header && owner.image.slide == image->image.slide;
+    uint32_t instruction;
+    matches = matches && RUINReadFeatureImageBytes(&owner,
+        version->themes.validation.resultMethodIMP, &instruction, sizeof(instruction), "__TEXT");
+    RUINReleaseFeatureImage(&owner);
+    return matches;
+}
+#endif
 
 %group RUINNativeThemeValidation
 %hook LineShopProductValidationResult
@@ -71,11 +90,15 @@ void RUINInstallNativeThemeValidation(void)
     const RUINVersionMapping *versionMapping = RUINCopyVerifiedThemeImage(&themeImage);
 #endif
     const RUINThemeMappings *mapping = versionMapping ? &versionMapping->themes : NULL;
-    if (!mapping || mapping->validation.status != RUINMappingStatusVerified) return;
+    if (!mapping || mapping->validation.status != RUINMappingStatusVerified) {
+        atomic_store(&gInstallStatus, "verified_mapping_unavailable"); return;
+    }
     char logString[sizeof("validateTheme result:")];
 #if defined(RUIN_NATIVE_THEME_VALIDATION_HOST_CHECK)
     RUINMainExecutableImage image;
-    if (!RUINResolveMainExecutableImage(&image)) return;
+    if (!RUINResolveMainExecutableImage(&image)) {
+        atomic_store(&gInstallStatus, "verified_image_unavailable"); return;
+    }
     intptr_t slide = image.slide;
     BOOL verified = RUINVerifyInstructions(image.header, slide, mapping->validation.anchors,
         mapping->validation.anchorCount) && RUINReadImageBytes(image.header, slide,
@@ -86,16 +109,28 @@ void RUINInstallNativeThemeValidation(void)
         mapping->validation.anchorCount) && RUINReadFeatureImageBytes(&themeImage,
         mapping->validation.resultLogString, logString, sizeof(logString), "__TEXT");
 #endif
-    if (!verified || memcmp(logString, "validateTheme result:", sizeof(logString))) return;
+    if (!verified || memcmp(logString, "validateTheme result:", sizeof(logString))) {
+        atomic_store(&gInstallStatus, "native_site_fingerprint_mismatch"); return;
+    }
     Class cls = NSClassFromString(@"LineShopProductValidationResult");
     Method method = cls ? class_getInstanceMethod(cls, @selector(isValidated)) : NULL;
     if (!method || strcmp(method_getTypeEncoding(method), "B16@0:8") ||
-        RUINThemeValidationCanonicalIMP(method_getImplementation(method)) !=
-            mapping->validation.resultMethodIMP + slide) return;
+        !method_getImplementation(method) ||
+        class_getInstanceMethod(class_getSuperclass(cls), @selector(isValidated)) == method) {
+        atomic_store(&gInstallStatus, "result_method_abi_mismatch"); return;
+    }
+#if !defined(RUIN_NATIVE_THEME_VALIDATION_HOST_CHECK)
+    if (!RUINThemeValidationOwnerMatches(cls, versionMapping, &themeImage)) {
+        atomic_store(&gInstallStatus, "result_class_owner_mismatch"); return;
+    }
+#endif
+    gChainedExistingHook = RUINThemeValidationCanonicalIMP(method_getImplementation(method)) !=
+        mapping->validation.resultMethodIMP + slide;
     gThemeMappings = mapping;
     gThemeImageSlide = slide;
     %init(RUINNativeThemeValidation, LineShopProductValidationResult=cls);
     gInstalled = YES;
+    atomic_store(&gInstallStatus, "installed");
 }
 
 NSDictionary *RUINNativeThemeValidationDiagnostics(void)
@@ -109,7 +144,8 @@ NSDictionary *RUINNativeThemeValidationDiagnostics(void)
     NSDictionary *persistence = RUINThemePersistenceDiagnostics();
 #endif
     const RUINThemeMappings *mapping = versionMapping ? &versionMapping->themes : NULL;
-    return @{@"installed":@(gInstalled), @"calls":@(atomic_load(&gCalls)),
+    return @{@"installed":@(gInstalled), @"status":@(atomic_load(&gInstallStatus)),
+        @"chainedExistingHook":@(gChainedExistingHook), @"calls":@(atomic_load(&gCalls)),
         @"localResultsAccepted":@(atomic_load(&gOverrides)),
         @"mappingAvailable":@(mapping && mapping->validation.status == RUINMappingStatusVerified),
         @"secondaryStylesheetPersistence":persistence[@"installed"],

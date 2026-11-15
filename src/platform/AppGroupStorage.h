@@ -35,11 +35,15 @@ FOUNDATION_EXPORT NSString *const RUINAppGroupStorageErrorDomain;
 // unsafe/ambiguous result, the current fallback URL to preserve. Callers must
 // gate login/use on disposition != RUINAppGroupStorageDispositionUnsafe.
 // This function never copies or merges store contents.
+// A signingIdentifier permits retaining an owner-pinned populated fallback over
+// a new, empty explicit target. Native and persisted bindings keep precedence;
+// a populated target or invalid/multiple purpose markers remain unsafe.
 FOUNDATION_EXPORT BOOL RUINResolveAppGroupStorage(
     NSString *logicalGroupIdentifier,
     NSString * _Nullable verifiedAccountIdentifier,
     NSURL * _Nullable nativeContainerURL,
     NSURL *currentFallbackURL,
+    NSString * _Nullable signingIdentifier,
     NSDictionary<NSString *, NSString *> * _Nullable explicitGroupMap,
     NSDictionary<NSString *, NSURL *> * _Nullable authorizedGroupContainers,
     NSArray<NSURL *> * _Nullable legacyMainLINECandidates,

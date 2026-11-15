@@ -251,11 +251,6 @@ static NSDictionary *RUINApplyAccessGroupBinding(NSDictionary *mapping, NSDictio
     return reconciled;
 }
 
-static BOOL RUINHasStableSharedNamespace(NSDictionary *mapping) {
-    NSString *group = mapping[RUINOldSharedAccessGroup] ?: RUINOldSharedAccessGroup;
-    return [group hasSuffix:@".com.linecorp.trident.shared"];
-}
-
 static BOOL RUINKeychainTargetEligible(NSString *identityStatus, NSDictionary *logicalInfo) {
     return [identityStatus isKindOfClass:NSString.class] &&
            ([identityStatus isEqualToString:@"installed"] ||
@@ -429,8 +424,10 @@ static BOOL RUINResolveSecurityItemOperations(void) {
 }
 
 void RUINInstallKeychainCompatibility(void) {
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
+    // Protected keychain data or bundle identity may be unavailable during
+    // early launch. A failed probe must not disable login for this process.
+    @synchronized (NSProcessInfo.processInfo) {
+        if (compatibilityReady) return;
         RUINInstallBundleIdentity();
         NSDictionary *logicalInfo = NSBundle.mainBundle.infoDictionary;
         NSString *status = RUINBundleIdentityDiagnostics()[@"status"];
@@ -472,8 +469,10 @@ void RUINInstallKeychainCompatibility(void) {
             return;
         }
 
-        BOOL stableNamespace = RUINHasStableSharedNamespace(mapping);
-        if (mapping.count && stableNamespace) {
+        // Personal signing profiles can authorize only the application's own
+        // group. Pin that proven mapping too, rather than requiring a specific
+        // shared-group suffix which grants no additional access or stability.
+        if (mapping.count) {
             NSString *bindingGroup = mapping[RUINOldSharedAccessGroup] ?: RUINOldSharedAccessGroup;
             OSStatus bindingStatus = errSecNotAvailable;
             NSDictionary *saved = RUINLoadNamespaceBinding(bindingGroup,&bindingStatus);
@@ -503,10 +502,10 @@ void RUINInstallKeychainCompatibility(void) {
         };
         int result = rebind_symbols_image((void *)mainImage.header, mainImage.slide,
             rebindings, sizeof(rebindings) / sizeof(rebindings[0]));
-        compatibilityReady = stableNamespace && result == 0 && originalSecItemCopyMatching && originalSecItemAdd &&
+        compatibilityReady = namespaceBindingPersisted && result == 0 && originalSecItemCopyMatching && originalSecItemAdd &&
             originalSecItemUpdate && originalSecItemDelete;
         keychainBindingStatus = compatibilityReady ? @"RebindReady" : @"RebindUnavailable";
-    });
+    }
 }
 #endif
 

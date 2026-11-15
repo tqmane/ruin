@@ -27,6 +27,7 @@ NSString *const RUINSecondaryLoginEnabledKey = @"RUINSecondaryLoginEnabled";
 
 static BOOL activeSecondaryMode;
 static BOOL deviceIdiomHookInstalled, welcomeHookInstalled, secondaryScreenHookInstalled;
+static BOOL secondaryRegistrationReturnHookInstalled;
 static BOOL autoLoginOpened;
 static BOOL autoQROpened;
 static atomic_ulong appIdiomRequests, enabledIdiomQueries, LINEIdiomQueries;
@@ -34,12 +35,13 @@ static atomic_ulong unscopedLINEQueries, backgroundLINEQueries, otherImageQuerie
 static _Atomic(const void *) verifiedLoginGuestImage;
 static RUINFeatureImage loginGuestImage;
 static atomic_bool loginGuestProofScheduled = ATOMIC_VAR_INIT(false);
-static char gestureKey;
+static char gestureKey, welcomeVisibleKey;
 static NSString *lastLoginScreen;
 static __weak UIViewController *loginProjectionOwner;
 static _Thread_local NSUInteger loginProjectionDepth;
 static atomic_ulong swiftUILoginBindings;
 static atomic_bool welcomeHooksReady = ATOMIC_VAR_INIT(false);
+static atomic_bool secondaryHooksReady = ATOMIC_VAR_INIT(false);
 static atomic_bool welcomeCatchUpScheduled = ATOMIC_VAR_INIT(false);
 static atomic_bool secondaryLoginRetryScheduled = ATOMIC_VAR_INIT(false);
 static atomic_uint secondaryLoginRetryCount = ATOMIC_VAR_INIT(0);
@@ -164,6 +166,19 @@ static void RUINShowLoginRestartNotice(UIViewController *controller) {
     [controller presentViewController:alert animated:YES completion:nil];
 }
 
+static BOOL RUINRequestPrimaryLoginAfterRestart(UIViewController *controller) {
+    if (!activeSecondaryMode) return NO;
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    [defaults setBool:NO forKey:RUINSecondaryLoginEnabledKey];
+    [defaults synchronize];
+    lastLoginScreen = @"primary_restart_requested";
+    __weak UIViewController *weakController = controller;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (weakController) RUINShowLoginRestartNotice(weakController);
+    });
+    return YES;
+}
+
 static void RUINPresentLoginModeMenu(UIViewController *controller, UILongPressGestureRecognizer *gesture) {
     if (gesture.state != UIGestureRecognizerStateBegan) return;
     if (controller.presentedViewController) return;
@@ -202,6 +217,18 @@ static UIControl *RUINFindLoginControl(UIView *view, id owner) {
     return nil;
 }
 
+static BOOL RUINIsNativeLoginElement(id object) {
+    if (![object isKindOfClass:NSObject.class]) return NO;
+    NSObject *element = object;
+    if ([element isKindOfClass:UIView.class] && ([(UIView *)element isHidden] || [(UIView *)element alpha] <= 0.01)) return NO;
+    return !element.accessibilityElementsHidden &&
+        [element respondsToSelector:@selector(accessibilityIdentifier)] &&
+        [[(id<UIAccessibilityIdentification>)element accessibilityIdentifier] isEqualToString:@"login"] &&
+        (element.accessibilityTraits & UIAccessibilityTraitButton) &&
+        !(element.accessibilityTraits & UIAccessibilityTraitNotEnabled) &&
+        !CGRectIsEmpty(element.accessibilityFrame);
+}
+
 static void RUINFindLoginAccessibilityElement(id object, NSHashTable *visited,
     NSUInteger depth, NSUInteger *budget, id *match, BOOL *ambiguous) {
     if (!object || [visited containsObject:object]) return;
@@ -213,11 +240,7 @@ static void RUINFindLoginAccessibilityElement(id object, NSHashTable *visited,
     if ([object isKindOfClass:NSObject.class]) {
         NSObject *element = object;
         if (element.accessibilityElementsHidden) return;
-        if ([element respondsToSelector:@selector(accessibilityIdentifier)] &&
-            [[(id<UIAccessibilityIdentification>)element accessibilityIdentifier] isEqualToString:@"login"] &&
-            (element.accessibilityTraits & UIAccessibilityTraitButton) &&
-            !(element.accessibilityTraits & UIAccessibilityTraitNotEnabled) &&
-            !CGRectIsEmpty(element.accessibilityFrame)) {
+        if (RUINIsNativeLoginElement(element)) {
             if (*match && *match != object) *ambiguous = YES;
             *match = object;
         }
@@ -245,7 +268,19 @@ static void RUINFindLoginAccessibilityElement(id object, NSHashTable *visited,
 
 static BOOL RUINPointIsOnNativeLoginButton(UIViewController *owner, CGPoint point) {
     UIView *root = owner.viewIfLoaded;
-    if (!root.window || owner.presentedViewController || loginProjectionOwner != owner) return NO;
+    if (!root.window || root.hidden || root.alpha <= 0.01 || root.accessibilityElementsHidden || owner.presentedViewController ||
+        ![objc_getAssociatedObject(owner, &welcomeVisibleKey) boolValue]) return NO;
+    CGRect screenPoint = UIAccessibilityConvertFrameToScreenCoordinates((CGRect){point, CGSizeZero}, root);
+    // Ask the native container for this touch before enumerating its children.
+    // SwiftUI may materialize an AX hit without exposing a full child graph;
+    // distinct wrappers in that graph need not be distinct buttons. iOS 18+.
+    id hit = [root accessibilityHitTest:screenPoint.origin withEvent:nil];
+    NSString *hitIdentifier = [hit respondsToSelector:@selector(accessibilityIdentifier)] ?
+        [(id<UIAccessibilityIdentification>)hit accessibilityIdentifier] : nil;
+    // Some containers return themselves without identifying a button; preserve
+    // the existing child traversal in that case. An identified hit is decisive.
+    if (hitIdentifier.length) return RUINIsNativeLoginElement(hit) &&
+        CGRectContainsPoint([(NSObject *)hit accessibilityFrame], screenPoint.origin);
     NSUInteger budget = 256;
     BOOL ambiguous = NO;
     id match = nil;
@@ -253,7 +288,6 @@ static BOOL RUINPointIsOnNativeLoginButton(UIViewController *owner, CGPoint poin
         [NSHashTable hashTableWithOptions:NSPointerFunctionsObjectPointerPersonality],
         0, &budget, &match, &ambiguous);
     if (!match || ambiguous || !budget) return NO;
-    CGRect screenPoint = UIAccessibilityConvertFrameToScreenCoordinates((CGRect){point, CGSizeZero}, root);
     return CGRectContainsPoint([(NSObject *)match accessibilityFrame], screenPoint.origin);
 }
 
@@ -287,6 +321,7 @@ static BOOL RUINPointIsOnNativeLoginButton(UIViewController *owner, CGPoint poin
 static void RUINWelcomeDidAppear(UIViewController *controller) {
     lastLoginScreen = @"welcome";
     loginProjectionOwner = controller;
+    objc_setAssociatedObject(controller, &welcomeVisibleKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     UIControl *control = RUINFindLoginControl(controller.view, controller);
     UIView *targetView = control ?: controller.view;
     if (!objc_getAssociatedObject(targetView, &gestureKey)) {
@@ -395,6 +430,7 @@ static void RUINScheduleWelcomeCatchUp(void) {
 - (void)viewDidDisappear:(BOOL)animated
 {
     %orig(animated);
+    objc_setAssociatedObject(self, &welcomeVisibleKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     if (loginProjectionOwner == self) loginProjectionOwner = nil;
 }
 - (void)loginButtonAction
@@ -448,14 +484,15 @@ static void RUINScheduleWelcomeCatchUp(void) {
     @try { %orig; } @finally { loginProjectionDepth--; }
 }
 - (void)showPrimaryDeviceLoginButtonPressed {
-    if (!activeSecondaryMode) { %orig; return; }
-    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
-    [defaults setBool:NO forKey:RUINSecondaryLoginEnabledKey];
-    [defaults synchronize];
-    __weak UIViewController *controller = self;
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if (controller) RUINShowLoginRestartNotice(controller);
-    });
+    if (!RUINRequestPrimaryLoginAfterRestart(self)) %orig;
+}
+%end
+%end
+
+%group RUINSecondaryRegistrationReturn
+%hook RUINSecondaryRegistrationController
+- (void)showRegistrationFlowButtonPressed {
+    if (!RUINRequestPrimaryLoginAfterRestart(self)) %orig;
 }
 %end
 %end
@@ -468,14 +505,16 @@ static BOOL RUINSecondaryMethodMatches(Class cls, const char *name, const char *
 }
 
 static void RUINSecondaryLoginImageAdded(__unused const struct mach_header *header, __unused intptr_t slide) {
-    if (atomic_load(&welcomeHooksReady) || atomic_load(&secondaryLoginRetryCount) >= 8) return;
+    if (atomic_load(&welcomeHooksReady) && atomic_load(&secondaryHooksReady)) return;
     bool expected = false;
     if (!atomic_compare_exchange_strong(&secondaryLoginRetryScheduled, &expected, true)) return;
     dispatch_async(dispatch_get_main_queue(), ^{
         atomic_store(&secondaryLoginRetryScheduled, false);
-        if (atomic_load(&welcomeHooksReady)) return;
-        unsigned retry = atomic_fetch_add(&secondaryLoginRetryCount, 1);
-        if (retry < 8) RUINInstallSecondaryLogin();
+        if (atomic_load(&welcomeHooksReady) && atomic_load(&secondaryHooksReady)) return;
+        // Unrelated dyld loads must not exhaust retries before LINE arrives,
+        // and Welcome being ready does not prove the secondary module is ready.
+        atomic_fetch_add(&secondaryLoginRetryCount, 1);
+        RUINInstallSecondaryLogin();
     });
 }
 
@@ -521,6 +560,17 @@ void RUINInstallSecondaryLogin(void) {
             RUINSecondaryMethodMatches(secondary, "showPrimaryDeviceLoginButtonPressed", "v16@0:8")) {
             %init(RUINSecondaryLoginScreen, RUINSecondaryController = secondary);
             secondaryScreenHookInstalled = YES;
+            atomic_store(&secondaryHooksReady, true);
+        }
+    }
+    // The native bottom return button targets this selector, independently of
+    // the phone/QR content-mode actions. Keep it optional and validate its ABI.
+    if (!secondaryRegistrationReturnHookInstalled) {
+        Class secondary = objc_getClass("_TtC20LineSecondaryLoginUI28SecondaryLoginViewController");
+        if ([secondary isSubclassOfClass:UIViewController.class] &&
+            RUINSecondaryMethodMatches(secondary, "showRegistrationFlowButtonPressed", "v16@0:8")) {
+            %init(RUINSecondaryRegistrationReturn, RUINSecondaryRegistrationController = secondary);
+            secondaryRegistrationReturnHookInstalled = YES;
         }
     }
     if (welcomeHookInstalled)
@@ -535,6 +585,8 @@ NSDictionary *RUINSecondaryLoginDiagnostics(void) {
         @"deviceIdiomHookInstalled": @(deviceIdiomHookInstalled),
         @"welcomeHooksInstalled": @(welcomeHookInstalled),
         @"secondaryScreenHookInstalled": @(secondaryScreenHookInstalled),
+        @"secondaryRegistrationReturnHookInstalled": @(secondaryRegistrationReturnHookInstalled),
+        @"hookRetryCount": @(atomic_load(&secondaryLoginRetryCount)),
         @"tabletQueriesFromLINE": @(atomic_load(&appIdiomRequests)),
         @"enabledIdiomQueries":@(atomic_load(&enabledIdiomQueries)),
         @"queriesFromLINE":@(atomic_load(&LINEIdiomQueries)),

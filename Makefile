@@ -119,6 +119,8 @@ check-host: check-portable check-mapping-manifest $(HOST_FIXTURES)
 	python3 tests/check_theme_product_identity.py
 	python3 tests/check_theme_ui_resolution.py
 	python3 tests/check_theme_image.py
+	python3 tests/check_theme_validation.py
+	python3 tests/check_keychain_startup.py
 	node tests/check_theme_store_web.js
 	python3 tests/check_messaging_review.py
 	python3 tests/check_interface_review.py

@@ -248,9 +248,20 @@ int main(void) {
         NSDictionary *deniedSharedCandidate = RUINMapWithPermissions(defaultGroup, @{}, RUINPermissions(
             @[], @[RUINOldAppAccessGroup, RUINOldSharedAccessGroup, defaultShared]));
         assert([deniedSharedCandidate[RUINOldSharedAccessGroup] isEqualToString:defaultGroup]);
-        assert(!RUINHasStableSharedNamespace(deniedSharedCandidate));
-        assert(RUINHasStableSharedNamespace(genericMissingMetadata));
-        assert(RUINHasStableSharedNamespace(@{}));
+        __block NSDictionary *fallbackBinding;
+        NSDictionary *pinnedFallback = RUINApplyAccessGroupBinding(deniedSharedCandidate, nil, defaultGroup,
+            ^RUINGroupPermission(NSString *group) { return [group isEqual:defaultGroup]
+                ? RUINGroupPermissionAllowed : RUINGroupPermissionDenied; },
+            ^BOOL(NSDictionary *mapping) { fallbackBinding = @{@"version":@1, @"groups":mapping}; return YES; });
+        assert([pinnedFallback isEqual:deniedSharedCandidate] && fallbackBinding);
+        assert([RUINReuseAccessGroupBinding(deniedSharedCandidate, fallbackBinding, defaultGroup,
+            ^RUINGroupPermission(NSString *group) { return [group isEqual:defaultGroup]
+                ? RUINGroupPermissionAllowed : RUINGroupPermissionDenied; }) isEqual:pinnedFallback]);
+        assert(!RUINApplyAccessGroupBinding(deniedSharedCandidate, nil, defaultGroup,
+            ^RUINGroupPermission(NSString *group) { (void)group; return RUINGroupPermissionAllowed; },
+            ^BOOL(NSDictionary *mapping) { (void)mapping; return NO; }));
+        assert(!RUINReuseAccessGroupBinding(deniedSharedCandidate, fallbackBinding, defaultGroup,
+            ^RUINGroupPermission(NSString *group) { (void)group; return RUINGroupPermissionUnknown; }));
 
         NSDictionary *unknownProbe = RUINMapWithPermissions(defaultGroup, @{}, RUINPermissions(
             @[defaultShared], @[RUINOldSharedAccessGroup]));
