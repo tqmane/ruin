@@ -25,6 +25,7 @@ static char fixtureLinePath[PATH_MAX], fixtureProcessPath[PATH_MAX];
 static Class fixtureWelcomeOwner;
 static BOOL fixtureImageEnabled, fixtureOwnerAvailable, fixturePinAllowed, fixtureNativeImage;
 static BOOL fixtureGuestCaller, fixtureProofOnMainThread = YES;
+static BOOL fixtureFrameworkCaller;
 static BOOL fixtureForeignOwnerPath, fixtureForeignCallerPath;
 static NSUInteger fixtureImageProofs;
 
@@ -46,6 +47,7 @@ static BOOL FixtureResolveLoginImage(const RUINHostIdentity *host, Class owner, 
 }
 
 static int FixtureLoginDladdr(const void *address, Dl_info *info) {
+    if (fixtureFrameworkCaller) return dladdr((const void *)NSClassFromString, info);
     int found = dladdr(address, info);
     Dl_info native = {0};
     if (fixtureGuestCaller && found && dladdr((const void *)NativeLogin, &native) &&
@@ -55,6 +57,9 @@ static int FixtureLoginDladdr(const void *address, Dl_info *info) {
         info->dli_fname = fixtureForeignCallerPath ? fixtureProcessPath : fixtureLinePath;
         return 1;
     }
+    // The native fixture's caller and Welcome owner describe the same image.
+    if (fixtureNativeImage && found && dladdr((const void *)NativeLogin, &native) &&
+        info->dli_fbase == native.dli_fbase) info->dli_fname = fixtureLinePath;
     return found;
 }
 
@@ -64,7 +69,9 @@ static const char *FixtureLoginClassImageName(Class owner) {
     return fixtureOwnerAvailable ? (fixtureForeignOwnerPath ? fixtureProcessPath : fixtureLinePath) : NULL;
 }
 
+static atomic_uint_fast64_t fixtureDyldImageQueries;
 static uint32_t FixtureLoginDyldImageCount(void) {
+    atomic_fetch_add(&fixtureDyldImageQueries, 1);
     return fixtureGuestCaller ? 1 : _dyld_image_count();
 }
 static const struct mach_header *FixtureLoginDyldImageHeader(uint32_t index) {
@@ -370,6 +377,20 @@ static void CheckLoginGuestImageProof(Class welcomeClass) {
     RUINInstallSecondaryLogin(); DrainMainQueue();
     assert(!atomic_load(&verifiedLoginGuestImage));
     fixturePinAllowed = YES;
+
+    // LC's queued pin has not succeeded. Model UIKit repeatedly asking the
+    // actual hooked getter while LINE creates buttons/traits. Neither strict
+    // resolution nor the unpinned guest dyld scan may run for these callers.
+    assert(!atomic_load(&verifiedLoginGuestImage));
+    fixtureFrameworkCaller = YES;
+    uint64_t strictBeforeUIKit = atomic_load(&strictImageResolutions);
+    uint64_t dyldBeforeUIKit = atomic_load(&fixtureDyldImageQueries);
+    for (NSUInteger query = 0; query < 1000; query++)
+        assert(UIDevice.currentDevice.userInterfaceIdiom == physicalIdiom);
+    assert(atomic_load(&strictImageResolutions) == strictBeforeUIKit);
+    assert(atomic_load(&fixtureDyldImageQueries) == dyldBeforeUIKit);
+    fixtureFrameworkCaller = NO;
+    puts("PASS unpinned LC getter: 1000 UIKit idiom queries, zero strict/dyld scans, physical idiom retained");
 
     // The action IMP now belongs to Foundation, while the original class owner
     // remains LINE. Never invoke this temporary replacement; only resolve owner.

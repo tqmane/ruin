@@ -136,6 +136,8 @@
 "settings.appearance_footer" = "變更後請重新開啟聊天畫面。";
 "settings.chat_names" = "聊天室顯示名稱";
 "settings.chat_names_footer" = "僅變更此裝置上的顯示名稱，不會套用至對方。若清單未更新，請重新啟動LINE。";
+"settings.clear_viewed_unread_badges" = "清除已開啟聊天的未讀標記";
+"settings.clear_viewed_unread_badges_footer" = "開啟「隱藏已讀回條」時，開啟聊天會在不傳送已讀回條的情況下清除此裝置上該聊天的未讀標記，並從底部「聊天」分頁的未讀總數中扣除。有新訊息時會重新計入，伺服器上的已讀狀態維持不變。";
 "settings.confirm_call" = "發起通話確認";
 "settings.confirm_camera_on" = "開啟相機前確認";
 "settings.confirm_disconnect" = "結束通話確認";
@@ -155,6 +157,8 @@
 "settings.hide_voice_input" = "隱藏語音輸入按鈕";
 "settings.history" = "歷史紀錄與附加功能（開發中）";
 "settings.keep_unsent_media" = "保留已收回文字與媒體";
+"settings.legacy_home" = "使用經典主頁版面";
+"settings.legacy_home_footer" = "僅調整此裝置的主頁版面選擇，不會變更登入狀態或主要／次要裝置模式。無論開啟或關閉，皆須完全重新啟動 LINE 後才會生效。";
 "settings.legacy_messaging" = "24小時收回與無聲訊息";
 "settings.line_features" = "LINE功能（開發中）";
 "settings.line_features_footer" = "應用程式圖示等功能在「本機 LYP」中設定，24小時收回與無聲訊息由獨立開關設定（變更後請重新啟動LINE）。無聲訊息請在文字輸入確定後長按傳送按鈕約2秒。";

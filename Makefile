@@ -116,6 +116,13 @@ check-mapping-manifest: build/export_version_mappings tests/fixtures/version-map
 	./build/export_version_mappings --check tests/fixtures/version-mappings.json
 
 check-host: check-portable check-mapping-manifest $(HOST_FIXTURES)
+	python3 tests/check_local_unread_badges.py
+	python3 tests/check_local_unread_tab_badge.py
+	python3 tests/check_local_unread_scheduler.py
+	python3 tests/check_legacy_home.py
+	python3 tests/check_talk_ads.py
+	python3 tests/check_talk_ad_insets.py
+	python3 tests/check_sideload_startup.py
 	python3 tests/check_siri_compatibility.py
 	python3 tests/check_theme_store_web_notifications.py
 	python3 tests/check_theme_product_identity.py

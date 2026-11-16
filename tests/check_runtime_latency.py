@@ -68,8 +68,10 @@ static void CheckKey(NSString *key, NSArray *expected) {
 int main(int argc, const char **argv) { @autoreleasepool {
     assert(argc==3); root=@(argv[2]); calls=[NSMutableArray array];
     if (!strcmp(argv[1],"routes")) {
-        CheckKey(RUINMarkReadOnReplyDefaultsKey,(@[@"RUINInstallFeatures",@"RUINInstallReadBoundary",@"RUINInstallReadOnReply",@"RUINRefreshAutomaticReadGate",@"RUINInstallNativeChatControls"]));
-        CheckKey(RUINLocalNamesByIdentityDefaultsKey,(@[@"RUINInstallFeatures",@"RUINInstallReadBoundary",@"RUINInstallReadOnReply",@"RUINRefreshAutomaticReadGate",@"RUINInstallNativeChatControls"]));
+        CheckKey(RUINClearViewedUnreadBadgesDefaultsKey,(@[@"RUINInstallLocalUnreadBadges"]));
+        CheckKey(RUINLegacyHomeEnabledDefaultsKey,(@[@"RUINInstallLegacyHome"]));
+        CheckKey(RUINMarkReadOnReplyDefaultsKey,(@[@"RUINInstallFeatures",@"RUINInstallReadBoundary",@"RUINInstallReadOnReply",@"RUINRefreshAutomaticReadGate",@"RUINInstallNativeChatControls",@"RUINInstallLocalUnreadBadges"]));
+        CheckKey(RUINLocalNamesByIdentityDefaultsKey,(@[@"RUINInstallFeatures",@"RUINInstallReadBoundary",@"RUINInstallReadOnReply",@"RUINRefreshAutomaticReadGate",@"RUINInstallNativeChatControls",@"RUINInstallLocalUnreadBadges"]));
         CheckKey(RUINLegacyMessagingEnabledDefaultsKey,(@[@"RUINInstallLegacyMessagingConfiguration",@"RUINInstallClientVersionAdvertisement",@"RUINInstallNativeMuteSend"]));
         CheckKey(RUINLocalLYPEnabledDefaultsKey,(@[@"RUINInstallLocalAppearance"]));
         CheckKey(RUINLocalNotificationsEnabledDefaultsKey,(@[@"RUINInstallLocalNotifications"]));

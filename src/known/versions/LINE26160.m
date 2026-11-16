@@ -120,5 +120,6 @@ const RUINVersionMapping RUINLINE26160 = {
             {0x70, 0x100725440, 0x1003d59a8, {0xf9403ac8, 0xaa0003f4, 0xaa1303e0, 0xaa1603e1, 0xd63f0100}},
             {0x50, 0x100725304, 0x1003d5170, {0x8b080260, 0xa941d815, 0x97f20c47, 0xf9402ac8, 0x97f21c0c}}
         }
-    }
+    },
+    .legacyHome = {.status = RUINMappingStatusUnsupported}
 };

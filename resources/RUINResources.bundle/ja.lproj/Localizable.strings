@@ -136,6 +136,8 @@
 "settings.appearance_footer" = "変更後はトーク画面を開き直してください。";
 "settings.chat_names" = "トークの表示名";
 "settings.chat_names_footer" = "この端末での表示名だけを変更します。相手には反映されません。一覧に反映されない場合はLINEを再起動してください。";
+"settings.clear_viewed_unread_badges" = "開いたトークの未読バッジを消す";
+"settings.clear_viewed_unread_badges_footer" = "「既読を隠す」がオンのとき、トークを開くと既読を送信せずにこの端末の未読バッジを消し、画面下の「トーク」タブの合計件数からも差し引きます。新着メッセージがあると再びカウントされ、サーバー上の既読状態は変わりません。";
 "settings.confirm_call" = "通話開始の確認";
 "settings.confirm_camera_on" = "カメラをオンにする前に確認";
 "settings.confirm_disconnect" = "通話終了の確認";
@@ -155,6 +157,8 @@
 "settings.hide_voice_input" = "音声入力ボタンを非表示";
 "settings.history" = "履歴・追加機能（開発中）";
 "settings.keep_unsent_media" = "送信取消された本文とメディアを保持";
+"settings.legacy_home" = "以前のホーム画面を使う";
+"settings.legacy_home_footer" = "この端末でのホーム画面レイアウトのみを切り替え、ログインやメイン／サブ端末のモードは変更しません。オン・オフいずれの変更も、LINEを完全に再起動すると反映されます。";
 "settings.legacy_messaging" = "24h送信取消・ミュートメッセージ";
 "settings.line_features" = "LINE機能（開発中）";
 "settings.line_features_footer" = "アプリアイコン等は「ローカルLYP」、24時間までの送信取消とミュート送信は別スイッチで設定します（変更後はLINEを再起動）。ミュート送信は入力確定後、送信ボタンを約2秒長押しします。";

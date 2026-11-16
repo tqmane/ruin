@@ -1,5 +1,7 @@
 #import "RUINSettings.h"
 #import "Features.h"
+#import "LocalUnreadBadges.h"
+#import "LegacyHome.h"
 #import "InterfaceFeatures.h"
 #import "Localization.h"
 #import "SecondaryLogin.h"
@@ -111,7 +113,7 @@ static BOOL RUINCanHideNativeService(NSString *key) {
 static NSArray<NSDictionary *> *RUINNativeTabRows(void) {
     NSDictionary *keys = RUINTabHideKeys();
     NSDictionary *titles = RUINTabTitles();
-    NSMutableArray *rows = [NSMutableArray array];
+    NSMutableArray *rows = [NSMutableArray arrayWithObject:Toggle(RUINLocalizedString(@"settings.legacy_home"), RUINLegacyHomeEnabledDefaultsKey)];
     for (NSString *identifier in RUINNativeTabIdentifiers()) {
         NSString *key = keys[identifier], *title = titles[identifier];
         if (key && title) [rows addObject:Toggle([NSString stringWithFormat:RUINLocalizedString(@"settings.hide_tab"), title], key)];
@@ -121,7 +123,7 @@ static NSArray<NSDictionary *> *RUINNativeTabRows(void) {
 }
 static NSArray<NSDictionary *> *ToggleRows(NSInteger section) {
     switch (section) {
-        case RUINSettingsSectionReadControls: return @[Toggle(RUINLocalizedString(@"settings.hide_read"), RUINReadControlEnabledDefaultsKey), Toggle(RUINLocalizedString(@"settings.mark_read_on_reply"), RUINMarkReadOnReplyDefaultsKey)];
+        case RUINSettingsSectionReadControls: return @[Toggle(RUINLocalizedString(@"settings.hide_read"), RUINReadControlEnabledDefaultsKey), Toggle(RUINLocalizedString(@"settings.mark_read_on_reply"), RUINMarkReadOnReplyDefaultsKey), Toggle(RUINLocalizedString(@"settings.clear_viewed_unread_badges"), RUINClearViewedUnreadBadgesDefaultsKey)];
         case RUINSettingsSectionConfirmations: return @[Toggle(RUINLocalizedString(@"settings.confirm_group_send"), RUINConfirmSendEnabledDefaultsKey), Toggle(RUINLocalizedString(@"settings.confirm_call"), RUINConfirmCallEnabledDefaultsKey), Toggle(RUINLocalizedString(@"settings.confirm_camera_on"), RUINConfirmCameraOnEnabledDefaultsKey), Toggle(RUINLocalizedString(@"settings.confirm_disconnect"), RUINConfirmDisconnectEnabledDefaultsKey)];
         case RUINSettingsSectionAppearance: return @[Toggle(RUINLocalizedString(@"settings.hide_ads"), RUINHideAdsDefaultsKey), Toggle(RUINLocalizedString(@"settings.hide_recommendations"), RUINHideRecommendationsDefaultsKey), Toggle(RUINLocalizedString(@"settings.hide_voice_input"), RUINHideVoiceInputDefaultsKey), Toggle(RUINLocalizedString(@"settings.hide_agent_bar"), RUINHideAgentIBarDefaultsKey)];
         case RUINSettingsSectionTabs: return RUINNativeTabRows();
@@ -172,7 +174,7 @@ static NSArray<NSDictionary *> *ToggleRows(NSInteger section) {
 - (NSString *)tableView:(__unused UITableView *)tableView titleForFooterInSection:(NSInteger)section {
     if (!self.compatible) return RUINLocalizedString(@"compatibility.build_unsupported");
     switch (section) {
-        case RUINSettingsSectionReadControls: return RUINLocalizedString(@"settings.read_controls_footer");
+        case RUINSettingsSectionReadControls: return [NSString stringWithFormat:@"%@\n%@", RUINLocalizedString(@"settings.read_controls_footer"), RUINLocalizedString(@"settings.clear_viewed_unread_badges_footer")];
         case RUINSettingsSectionLocalNames: return RUINLocalizedString(@"settings.chat_names_footer");
         case RUINSettingsSectionConfirmations: return RUINLocalizedString(@"settings.confirmations_footer");
         case RUINSettingsSectionAppearance: return RUINLocalizedString(@"settings.appearance_footer");
@@ -188,7 +190,7 @@ static NSArray<NSDictionary *> *ToggleRows(NSInteger section) {
                 [NSUserDefaults.standardUserDefaults boolForKey:RUINSecondaryLoginEnabledKey];
             if (alternateEntryExpected && ![RUINNativeEntryDiagnostics()[@"homeEntryAvailable"] boolValue])
                 footer = [footer stringByAppendingFormat:@"\n%@", RUINLocalizedString(@"settings.tabs_entry_not_ready")];
-            return footer;
+            return [footer stringByAppendingFormat:@"\n%@", RUINLocalizedString(@"settings.legacy_home_footer")];
         }
         case RUINSettingsSectionHistory: return RUINLocalizedString(@"media.history_footer");
         case RUINSettingsSectionSecondaryLogin: return RUINLocalizedString(@"settings.secondary_login_footer");
@@ -255,7 +257,8 @@ static NSArray<NSDictionary *> *ToggleRows(NSInteger section) {
         toggle.preferenceKey = key;
         toggle.on = [NSUserDefaults.standardUserDefaults boolForKey:key];
         toggle.accessibilityLabel = row[@"title"];
-        if (path.section == RUINSettingsSectionTabs) toggle.enabled = toggle.on || RUINCanHideNativeService(key);
+        if (path.section == RUINSettingsSectionTabs) toggle.enabled = toggle.on ||
+            ([key isEqual:RUINLegacyHomeEnabledDefaultsKey] ? RUINLegacyHomeAvailable() : RUINCanHideNativeService(key));
         if ([key isEqual:RUINHideSettingsTabDefaultsKey]) toggle.enabled = toggle.on ||
             (toggle.enabled && [RUINNativeEntryDiagnostics()[@"homeEntryAvailable"] boolValue]);
         cell.textLabel.textColor = toggle.enabled ? UIColor.labelColor : UIColor.secondaryLabelColor;

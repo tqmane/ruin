@@ -136,6 +136,8 @@
 "settings.appearance_footer" = "Please reopen the chat screen after making changes.";
 "settings.chat_names" = "Chat Display Name";
 "settings.chat_names_footer" = "Changes display names on this device only. Others will not see this change. If the list does not update, please restart LINE.";
+"settings.clear_viewed_unread_badges" = "Clear unread badges for opened chats";
+"settings.clear_viewed_unread_badges_footer" = "When Hide read receipts is on, opening a chat clears its unread badge on this device and updates the unread total on the bottom Talk tab without sending a read receipt. New messages are counted again, and your read status on the server stays unchanged.";
 "settings.confirm_call" = "Confirm starting call";
 "settings.confirm_camera_on" = "Confirm before turning on camera";
 "settings.confirm_disconnect" = "Confirm ending call";
@@ -155,6 +157,8 @@
 "settings.hide_voice_input" = "Hide voice input button";
 "settings.history" = "History & Additional Features (In Development)";
 "settings.keep_unsent_media" = "Retain Unsent Text and Media";
+"settings.legacy_home" = "Use Classic Home Layout";
+"settings.legacy_home_footer" = "Selects the Home layout on this device without changing your login or main/secondary device mode. Fully restart LINE after turning this on or off for the change to take effect.";
 "settings.legacy_messaging" = "24h Unsend & Silent Messages";
 "settings.line_features" = "LINE Features (In Development)";
 "settings.line_features_footer" = "App icons and other features are set in 'Local LYP', while 24-hour unsend and silent messaging use a separate switch (restart LINE after changes). To send silently, confirm text input and long-press the send button for about 2 seconds.";

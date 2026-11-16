@@ -18,6 +18,8 @@
 #import "ReadOnReply.h"
 #import "ReadBoundary.h"
 #import "NativeChatControls.h"
+#import "LocalUnreadBadges.h"
+#import "LegacyHome.h"
 #import "RuntimeInspector.h"
 #import "UnsendRetention.h"
 #import "UnsendOperation.h"
@@ -167,6 +169,8 @@ NSDictionary *RUINRuntimeDiagnostics(void) {
         @"push": RUINPushDiagnostics(),
         @"nativeEntry": RUINNativeEntryDiagnostics() ?: @{},
         @"nativeChat": RUINNativeChatControlsDiagnostics(),
+        @"localUnreadBadges": RUINLocalUnreadBadgesDiagnostics(),
+        @"legacyHome": RUINLegacyHomeDiagnostics(),
         @"runtimeInspector": RuntimeInspectorDiagnostics(),
         @"secondaryLogin": RUINSecondaryLoginDiagnostics(),
         @"replyObserver": RUINReplyDiagnostics(),
@@ -264,7 +268,9 @@ void RUINRefreshSettingsFeatures(void) {
     RUINInstallReadOnReply();
     RUINInstallConfirmations();
     RUINInstallNativeChatControls();
+    RUINInstallLocalUnreadBadges();
     RUINRefreshInterfaceFeatures();
+    RUINInstallLegacyHome();
     RUINInstallAutomaticReadGate();
     RUINInstallMessageHistory();
     RUINInstallUnsendRetention();
@@ -290,13 +296,18 @@ void RUINRefreshSettingsFeature(NSString *key) {
         dispatch_async(dispatch_get_main_queue(), ^{ RUINRefreshSettingsFeature(copiedKey); });
         return;
     }
-    if ([@[RUINReadControlEnabledDefaultsKey, RUINMarkReadOnReplyDefaultsKey, RUINReadExceptionsDefaultsKey,
+    if ([key isEqual:RUINClearViewedUnreadBadgesDefaultsKey]) {
+        RUINInstallLocalUnreadBadges();
+    } else if ([key isEqual:RUINLegacyHomeEnabledDefaultsKey]) {
+        RUINInstallLegacyHome();
+    } else if ([@[RUINReadControlEnabledDefaultsKey, RUINMarkReadOnReplyDefaultsKey, RUINReadExceptionsDefaultsKey,
            RUINLocalNamesDefaultsKey, RUINLocalNamesByIdentityDefaultsKey] containsObject:key]) {
         RUINInstallFeatures();
         RUINInstallReadBoundary();
         RUINInstallReadOnReply();
         RUINRefreshAutomaticReadGate();
         RUINInstallNativeChatControls();
+        RUINInstallLocalUnreadBadges();
     } else if ([key isEqual:RUINLegacyMessagingEnabledDefaultsKey]) {
         RUINInstallLegacyMessagingConfiguration();
         RUINInstallClientVersionAdvertisement();
@@ -371,6 +382,7 @@ static void RUINApplicationDidBecomeActive(void) {
         RUINInstallReadBoundary();
         RUINInstallNativeEntry();
         RUINInstallSecondaryLogin();
+        RUINInstallLegacyHome();
         RUINInstallReadOnReply();
         RUINInstallAutomaticReadGate();
         RUINInstallThemeFeatures();
@@ -389,6 +401,7 @@ static void RUINApplicationDidBecomeActive(void) {
         RUINInstallAgeVerification();
         RUINInstallMenuExtras();
         RUINInstallNativeChatControls();
+        RUINInstallLocalUnreadBadges();
         InstallRuntimeInspector();
     }
     RUINMaybeScheduleEnvironmentSettings();
@@ -411,6 +424,7 @@ __attribute__((constructor)) static void RUINConstructor(void) {
                 [defaults setBool:[defaults boolForKey:RUINLocalLYPEnabledDefaultsKey]
                     forKey:RUINLegacyMessagingEnabledDefaultsKey];
             RUINInstallSecondaryLogin();
+            RUINInstallLegacyHome();
             RUINInstallClientVersionAdvertisement();
             RUINInstallChatCatalog();
             RUINInstallLegacyMessagingConfiguration();

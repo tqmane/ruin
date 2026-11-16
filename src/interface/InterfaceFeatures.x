@@ -11,6 +11,7 @@
 #import <string.h>
 #import <mach-o/dyld.h>
 #import <dlfcn.h>
+#import <math.h>
 
 #import "Features.h"
 #import "NativeTabAvailability.h"
@@ -181,6 +182,19 @@ static BOOL gAgentIntrinsicInstalled;
 static atomic_uint_fast64_t gVoiceKindRestorations;
 static NSUInteger gViewHooksGeneration;
 static atomic_uint_fast64_t gVisibleViewScans, gVisibleViewScanSkips, gVoiceTypeReflections;
+static void RUINRefreshTalkInsetsForBanner(UIView *banner);
+static void RUINInstallTalkInsetHooks(void);
+static Class gTalkTopBannerClass;
+static atomic_int gTalkTopBannerStatus = ATOMIC_VAR_INIT(RUINHookPending);
+static atomic_uint_fast64_t gTalkTopBannerUpdates, gTalkTopBannerCollapses;
+
+@interface RUINTalkSmartTopBannerView : UIView
+@property(nonatomic, strong) NSNumber *ruin_talkAdNativeHidden;
+@property(nonatomic, strong) NSMapTable<NSLayoutConstraint *, NSNumber *> *ruin_talkAdHeightPriorities;
+@property(nonatomic, strong) NSNumber *ruin_talkAdUpdating;
+@end
+
+static void RUINRefreshTalkTopBanner(UIView *view);
 
 static atomic_int gStartupStatus = ATOMIC_VAR_INIT(0);
 static atomic_uint_fast64_t gTabReapplications = ATOMIC_VAR_INIT(0);
@@ -805,6 +819,121 @@ static BOOL RUINKeepNativeMenusForLaunch(void) {
 %end
 %end
 
+// SmartChannel shares a slot across ads, news and placeholders. The ad switch
+// controls this exact Talk-top region, independent of its current payload.
+static BOOL RUINTalkTopBannerShouldCollapse(UIView *view)
+{
+    return atomic_load_explicit(&gHideAdsEnabled, memory_order_relaxed) &&
+        gTalkTopBannerClass && object_getClass(view) == gTalkTopBannerClass &&
+        [view.superview isKindOfClass:UIStackView.class] &&
+        [((UIStackView *)view.superview).arrangedSubviews containsObject:view] &&
+        [RUINCopySwiftFieldTypeName(view, "bannerType") isEqual:@"LineChatTabUI.TopBannerBoxBannerType"] &&
+        [RUINCopySwiftEnumCaseName(view, "bannerType") isEqual:@"smartChannel"];
+}
+
+static void RUINRelaxTalkBannerHeights(RUINTalkSmartTopBannerView *view)
+{
+    for (NSLayoutConstraint *constraint in view.constraints) {
+        if (!constraint.active || constraint.firstItem != view || constraint.secondItem ||
+            constraint.firstAttribute != NSLayoutAttributeHeight ||
+            constraint.relation != NSLayoutRelationEqual || constraint.constant <= 0 ||
+            constraint.priority != UILayoutPriorityRequired) continue;
+        if (!view.ruin_talkAdHeightPriorities)
+            view.ruin_talkAdHeightPriorities = [NSMapTable weakToStrongObjectsMapTable];
+        [view.ruin_talkAdHeightPriorities setObject:@(constraint.priority) forKey:constraint];
+        // UIStackView supplies the zero-height constraint for a hidden arranged view.
+        constraint.active = NO;
+        constraint.priority = UILayoutPriorityRequired - 1;
+        constraint.active = YES;
+    }
+}
+
+static void RUINRestoreTalkBannerHeights(RUINTalkSmartTopBannerView *view)
+{
+    UIView *parent = view.superview;
+    BOOL deferActive = view.hidden && [parent isKindOfClass:UIStackView.class] &&
+        [((UIStackView *)parent).arrangedSubviews containsObject:view];
+    // A stack may remove its hiding constraint during a later layout pass.
+    // Check only this banner and its direct parent, without touching that constraint.
+    for (NSArray *constraints in @[view.constraints, parent.constraints ?: @[]]) {
+        for (NSLayoutConstraint *constraint in constraints) {
+            if (constraint.active && constraint.firstItem == view && !constraint.secondItem &&
+                constraint.firstAttribute == NSLayoutAttributeHeight &&
+                constraint.relation == NSLayoutRelationEqual && constraint.constant == 0 &&
+                constraint.priority == UILayoutPriorityRequired) deferActive = YES;
+        }
+    }
+    NSMutableArray *finished = nil;
+    for (NSLayoutConstraint *constraint in view.ruin_talkAdHeightPriorities) {
+        if (constraint.priority == UILayoutPriorityRequired - 1) {
+            BOOL active = constraint.active;
+            if (active && deferActive) continue;
+            if (active) constraint.active = NO;
+            constraint.priority = [[view.ruin_talkAdHeightPriorities objectForKey:constraint] floatValue];
+            if (active) constraint.active = YES;
+        }
+        if (!finished) finished = [NSMutableArray array];
+        [finished addObject:constraint];
+    }
+    for (NSLayoutConstraint *constraint in finished)
+        [view.ruin_talkAdHeightPriorities removeObjectForKey:constraint];
+    if (!view.ruin_talkAdHeightPriorities.count) view.ruin_talkAdHeightPriorities = nil;
+}
+
+static void RUINRefreshTalkTopBanner(UIView *view)
+{
+    if (!NSThread.isMainThread || !gTalkTopBannerClass || object_getClass(view) != gTalkTopBannerClass) return;
+    RUINTalkSmartTopBannerView *banner = (id)view;
+    if (banner.ruin_talkAdUpdating.boolValue) return;
+    BOOL nativeHidden = banner.ruin_talkAdNativeHidden ? banner.ruin_talkAdNativeHidden.boolValue : banner.hidden;
+    BOOL collapse = RUINTalkTopBannerShouldCollapse(view);
+    if (banner.hidden == (nativeHidden || collapse)) {
+        banner.ruin_talkAdUpdating = @YES;
+        @try {
+            if (collapse) RUINRelaxTalkBannerHeights(banner);
+            else if (banner.ruin_talkAdHeightPriorities) {
+                if (!banner.hidden) [banner.superview layoutIfNeeded];
+                RUINRestoreTalkBannerHeights(banner);
+            }
+        } @finally { banner.ruin_talkAdUpdating = nil; }
+        RUINRefreshTalkInsetsForBanner(view);
+        return;
+    }
+    banner.hidden = nativeHidden;
+    RUINRefreshTalkInsetsForBanner(view);
+}
+
+%group RUINTalkSmartTopBanner
+%hook RUINTalkSmartTopBannerView
+%property(nonatomic, strong) NSNumber *ruin_talkAdNativeHidden;
+%property(nonatomic, strong) NSMapTable *ruin_talkAdHeightPriorities;
+%property(nonatomic, strong) NSNumber *ruin_talkAdUpdating;
+- (void)setHidden:(BOOL)hidden
+{
+    RUINTalkSmartTopBannerView *view = (id)self;
+    if (view.ruin_talkAdUpdating.boolValue) { %orig(hidden); return; }
+    view.ruin_talkAdUpdating = @YES;
+    @try {
+        atomic_fetch_add(&gTalkTopBannerUpdates, 1);
+        view.ruin_talkAdNativeHidden = @(hidden);
+        BOOL collapse = RUINTalkTopBannerShouldCollapse(view);
+        if (collapse) {
+            atomic_fetch_add(&gTalkTopBannerCollapses, 1);
+            RUINRelaxTalkBannerHeights(view);
+        }
+        %orig(hidden || collapse);
+        if (!collapse && view.ruin_talkAdHeightPriorities) {
+            if (!view.hidden) [view.superview layoutIfNeeded];
+            RUINRestoreTalkBannerHeights(view);
+        }
+    } @finally { view.ruin_talkAdUpdating = nil; }
+    RUINRefreshTalkInsetsForBanner(view);
+}
+- (void)layoutSubviews { %orig; RUINRefreshTalkTopBanner(self); }
+- (void)didMoveToWindow { %orig; RUINRefreshTalkTopBanner(self); }
+%end
+%end
+
 static BOOL RUINPrepareMethodHook(Class cls, RUINMethodHook *hook)
 {
     if (atomic_load(&hook->status) == RUINHookInstalled) return NO;
@@ -855,6 +984,317 @@ static void RUINInstallMethodHook(Class cls, RUINMethodHook *hook)
     }
     atomic_store(&hook->status, RUINHookInstalled);
     if (hook == &gVoiceButtonLayoutHook) gViewHooksGeneration++;
+}
+
+// Native page layout computes list insets from the SmartChannel model's height,
+// independently of the arranged view's visibility. Reconcile only its stored
+// content scroll views after native layout; no UIKit scroll class is hooked.
+@interface RUINTalkInsetRecord : NSObject
+@property(nonatomic, weak) UIViewController *page;
+@property(nonatomic, weak) UIView *banner;
+@property(nonatomic, weak) UIScrollView *scroll;
+@property(nonatomic) BOOL hasContent, hasIndicator;
+@property(nonatomic) CGFloat nativeContentTop, appliedContentTop, nativeIndicatorTop, appliedIndicatorTop;
+@end
+@implementation RUINTalkInsetRecord @end
+static char gTalkInsetRecordKey;
+static Class gTalkPageClass;
+static NSHashTable<RUINTalkInsetRecord *> *gTalkInsetRecords;
+static atomic_int gTalkInsetStatus = ATOMIC_VAR_INIT(RUINHookPending);
+static atomic_uint_fast64_t gTalkInsetProjections;
+static _Thread_local unsigned gTalkInsetDepth;
+
+static CGFloat RUINTalkReservedHeight(RUINTalkInsetRecord *record)
+{
+    UIView *banner = record.banner;
+    UIViewController *page = record.page;
+    if (!page || object_getClass(page) != gTalkPageClass ||
+        ![record.scroll isDescendantOfView:page.viewIfLoaded] ||
+        ![banner isDescendantOfView:page.viewIfLoaded] ||
+        !RUINTalkTopBannerShouldCollapse(banner)) return 0;
+    CGFloat height = 0;
+    for (NSLayoutConstraint *constraint in banner.constraints) {
+        if (!constraint.active || constraint.firstItem != banner || constraint.secondItem ||
+            constraint.firstAttribute != NSLayoutAttributeHeight || constraint.relation != NSLayoutRelationEqual ||
+            constraint.priority < UILayoutPriorityRequired - 1 || !isfinite(constraint.constant) ||
+            constraint.constant <= 0) continue;
+        if (height && height != constraint.constant) return 0;
+        height = constraint.constant;
+    }
+    return height;
+}
+
+static BOOL RUINTalkHasSmartBanner(RUINTalkInsetRecord *record)
+{
+    return gTalkTopBannerClass && object_getClass(record.banner) == gTalkTopBannerClass &&
+        [RUINCopySwiftFieldTypeName(record.banner, "bannerType") isEqual:@"LineChatTabUI.TopBannerBoxBannerType"] &&
+        [RUINCopySwiftEnumCaseName(record.banner, "bannerType") isEqual:@"smartChannel"];
+}
+
+static UIEdgeInsets RUINProjectTalkInsets(RUINTalkInsetRecord *record, UIEdgeInsets requested, BOOL indicator)
+{
+    // Another native banner kind owns its own inset values. Never restore a
+    // cached SmartChannel baseline over that kind's native layout.
+    if (!RUINTalkHasSmartBanner(record)) return requested;
+    BOOL known = indicator ? record.hasIndicator : record.hasContent;
+    CGFloat native = indicator ? record.nativeIndicatorTop : record.nativeContentTop;
+    CGFloat applied = indicator ? record.appliedIndicatorTop : record.appliedContentTop;
+    // Native read/modify/write of another edge must not subtract the slot twice.
+    if (!known || requested.top != applied) native = requested.top;
+    CGFloat height = RUINTalkReservedHeight(record);
+    requested.top = isfinite(native) && height > 0 && native >= height ? native - height : native;
+    if (indicator) {
+        record.hasIndicator = YES; record.nativeIndicatorTop = native; record.appliedIndicatorTop = requested.top;
+    } else {
+        record.hasContent = YES; record.nativeContentTop = native; record.appliedContentTop = requested.top;
+    }
+    if (requested.top != native) atomic_fetch_add(&gTalkInsetProjections, 1);
+    return requested;
+}
+
+static RUINTalkInsetRecord *RUINCurrentTalkInsetRecord(UIScrollView *scroll)
+{
+    if (!NSThread.isMainThread || gTalkInsetDepth) return nil;
+    RUINTalkInsetRecord *record = objc_getAssociatedObject(scroll, &gTalkInsetRecordKey);
+    UIViewController *page = record.page;
+    if (!record || record.scroll != scroll || !page || object_getClass(page) != gTalkPageClass ||
+        ![scroll isDescendantOfView:page.viewIfLoaded] ||
+        ![record.banner isDescendantOfView:page.viewIfLoaded] ||
+        !RUINTalkTopBannerShouldCollapse(record.banner)) return nil;
+    return record;
+}
+
+static CGPoint RUINProjectTalkOffset(RUINTalkInsetRecord *record, CGPoint requested)
+{
+    UIScrollView *scroll = record.scroll;
+    if (!record.hasContent || scroll.dragging || scroll.decelerating || !RUINTalkReservedHeight(record)) return requested;
+    CGFloat removed = record.nativeContentTop - record.appliedContentTop;
+    CGFloat nativeTop = record.nativeContentTop + scroll.adjustedContentInset.top - scroll.contentInset.top;
+    if (removed > 0 && isfinite(nativeTop) && requested.y <= -nativeTop + 0.5) requested.y += removed;
+    return requested;
+}
+
+typedef struct { CGPoint offset; CGFloat adjustedTop; BOOL atTop; } RUINTalkInsetAnchor;
+static RUINTalkInsetAnchor RUINCaptureTalkInsetAnchor(RUINTalkInsetRecord *record)
+{
+    UIScrollView *scroll = record.scroll;
+    UIEdgeInsets content = scroll.contentInset;
+    CGFloat previousTop = scroll.adjustedContentInset.top;
+    CGPoint offset = scroll.contentOffset;
+    CGFloat previousAppliedTop = record.appliedContentTop + previousTop - content.top;
+    if (record.hasContent && content.top != record.appliedContentTop &&
+        fabs(offset.y + previousAppliedTop) <= 0.5) previousTop = previousAppliedTop;
+    return (RUINTalkInsetAnchor){offset, previousTop,
+        !scroll.dragging && !scroll.decelerating && offset.y <= -previousTop + 0.5};
+}
+
+static void RUINRestoreTalkInsetAnchor(RUINTalkInsetRecord *record, RUINTalkInsetAnchor anchor, BOOL nativeWrite)
+{
+    UIScrollView *scroll = record.scroll;
+    CGFloat change = anchor.adjustedTop - scroll.adjustedContentInset.top;
+    if (anchor.atTop && change && scroll.contentOffset.y == anchor.offset.y) {
+        anchor.offset.y += change;
+        [scroll setContentOffset:anchor.offset animated:NO];
+    }
+    if (nativeWrite) {
+        CGPoint actual = scroll.contentOffset;
+        CGPoint projected = RUINProjectTalkOffset(record, actual);
+        if (actual.y != projected.y) [scroll setContentOffset:projected animated:NO];
+    }
+}
+
+static void RUINApplyTalkInsetRecord(RUINTalkInsetRecord *record)
+{
+    UIScrollView *scroll = record.scroll;
+    if (!scroll || gTalkInsetDepth || !RUINTalkHasSmartBanner(record)) return;
+    gTalkInsetDepth++;
+    @try {
+        RUINTalkInsetAnchor anchor = RUINCaptureTalkInsetAnchor(record);
+        UIEdgeInsets content = scroll.contentInset;
+        UIEdgeInsets projected = RUINProjectTalkInsets(record, content, NO);
+        if (content.top != projected.top) scroll.contentInset = projected;
+        RUINRestoreTalkInsetAnchor(record, anchor, NO);
+        UIEdgeInsets indicator = scroll.verticalScrollIndicatorInsets;
+        projected = RUINProjectTalkInsets(record, indicator, YES);
+        if (indicator.top != projected.top) scroll.verticalScrollIndicatorInsets = projected;
+    } @finally { gTalkInsetDepth--; }
+}
+
+static void RUINRefreshTalkInsetsForBanner(UIView *banner)
+{
+    if (gTalkInsetDepth) return;
+    for (RUINTalkInsetRecord *record in gTalkInsetRecords)
+        if (record.banner == banner) RUINApplyTalkInsetRecord(record);
+}
+
+static void RUINBindTalkPageInsets(UIViewController *page)
+{
+    if (!NSThread.isMainThread || gTalkInsetDepth || object_getClass(page) != gTalkPageClass || !page.viewIfLoaded) return;
+    id banner = RUINCopySwiftField(page, "topBannerBoxView");
+    id stack = RUINCopySwiftField(page, "topBannerBoxBackgroundView");
+    id headerScroll = RUINCopySwiftField(page, "$__lazy_storage_$_topBannerBoxScrollView");
+    if (!gTalkTopBannerClass || object_getClass(banner) != gTalkTopBannerClass ||
+        ![stack isKindOfClass:UIStackView.class] || ![headerScroll isKindOfClass:UIScrollView.class] ||
+        [(UIView *)banner superview] != stack || [(UIView *)stack superview] != headerScroll) return;
+    const char *paths[] = {"chatSubTabViewController.$__lazy_storage_$_contentViewController",
+        "friendSubTabViewController.gcsViewController"};
+    const char *classes[] = {"_TtC13LineChatTabUI22ChatListViewController", "_TtC19LineGeneralContents17GCSViewController"};
+    const char *scrollFields[] = {"tableView", "$__lazy_storage_$_collectionView"};
+    for (NSUInteger i = 0; i < 2; i++) {
+        id content = RUINCopySwiftField(page, paths[i]);
+        Class cls = objc_getClass(classes[i]);
+        if (!cls || object_getClass(content) != cls) continue;
+        id scroll = RUINCopySwiftField(content, scrollFields[i]);
+        if (![scroll isKindOfClass:i == 0 ? UITableView.class : UICollectionView.class] || scroll == headerScroll ||
+            ![(UIView *)scroll isDescendantOfView:page.viewIfLoaded]) continue;
+        BOOL owned = NO;
+        NSUInteger depth = 0;
+        for (UIViewController *parent = content; parent && depth++ < 8; parent = parent.parentViewController)
+            if (parent == page) { owned = YES; break; }
+        if (!owned) continue;
+        RUINTalkInsetRecord *record = objc_getAssociatedObject(scroll, &gTalkInsetRecordKey);
+        if (!record) {
+            record = [RUINTalkInsetRecord new]; record.scroll = scroll;
+            objc_setAssociatedObject(scroll, &gTalkInsetRecordKey, record, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            [gTalkInsetRecords addObject:record];
+        }
+        record.page = page; record.banner = banner;
+        RUINApplyTalkInsetRecord(record);
+    }
+}
+
+%group RUINTalkPageInsets
+%hook RUINTalkPageInsetsController
+- (void)viewDidLayoutSubviews { %orig; RUINBindTalkPageInsets(self); }
+%end
+%end
+
+%group RUINTalkTableInsets
+%hook RUINTalkInsetTableView
+- (void)setContentInset:(UIEdgeInsets)insets
+{
+    RUINTalkInsetRecord *record = RUINCurrentTalkInsetRecord((id)self);
+    if (!record) { %orig(insets); return; }
+    gTalkInsetDepth++;
+    @try {
+        RUINTalkInsetAnchor anchor = RUINCaptureTalkInsetAnchor(record);
+        %orig(RUINProjectTalkInsets(record, insets, NO));
+        RUINRestoreTalkInsetAnchor(record, anchor, YES);
+    } @finally { gTalkInsetDepth--; }
+}
+- (void)setVerticalScrollIndicatorInsets:(UIEdgeInsets)insets
+{
+    RUINTalkInsetRecord *record = RUINCurrentTalkInsetRecord((id)self);
+    if (!record) { %orig(insets); return; }
+    gTalkInsetDepth++;
+    @try { %orig(RUINProjectTalkInsets(record, insets, YES)); } @finally { gTalkInsetDepth--; }
+}
+- (void)setContentOffset:(CGPoint)offset
+{
+    RUINTalkInsetRecord *record = RUINCurrentTalkInsetRecord((id)self);
+    if (!record) { %orig(offset); return; }
+    gTalkInsetDepth++;
+    @try { %orig(RUINProjectTalkOffset(record, offset)); } @finally { gTalkInsetDepth--; }
+}
+- (void)setContentOffset:(CGPoint)offset animated:(BOOL)animated
+{
+    RUINTalkInsetRecord *record = RUINCurrentTalkInsetRecord((id)self);
+    if (!record) { %orig(offset, animated); return; }
+    gTalkInsetDepth++;
+    @try { %orig(RUINProjectTalkOffset(record, offset), animated); } @finally { gTalkInsetDepth--; }
+}
+%end
+%end
+
+%group RUINTalkCollectionInsets
+%hook RUINTalkInsetCollectionView
+- (void)setContentInset:(UIEdgeInsets)insets
+{
+    RUINTalkInsetRecord *record = RUINCurrentTalkInsetRecord((id)self);
+    if (!record) { %orig(insets); return; }
+    gTalkInsetDepth++;
+    @try {
+        RUINTalkInsetAnchor anchor = RUINCaptureTalkInsetAnchor(record);
+        %orig(RUINProjectTalkInsets(record, insets, NO));
+        RUINRestoreTalkInsetAnchor(record, anchor, YES);
+    } @finally { gTalkInsetDepth--; }
+}
+- (void)setVerticalScrollIndicatorInsets:(UIEdgeInsets)insets
+{
+    RUINTalkInsetRecord *record = RUINCurrentTalkInsetRecord((id)self);
+    if (!record) { %orig(insets); return; }
+    gTalkInsetDepth++;
+    @try { %orig(RUINProjectTalkInsets(record, insets, YES)); } @finally { gTalkInsetDepth--; }
+}
+- (void)setContentOffset:(CGPoint)offset
+{
+    RUINTalkInsetRecord *record = RUINCurrentTalkInsetRecord((id)self);
+    if (!record) { %orig(offset); return; }
+    gTalkInsetDepth++;
+    @try { %orig(RUINProjectTalkOffset(record, offset)); } @finally { gTalkInsetDepth--; }
+}
+- (void)setContentOffset:(CGPoint)offset animated:(BOOL)animated
+{
+    RUINTalkInsetRecord *record = RUINCurrentTalkInsetRecord((id)self);
+    if (!record) { %orig(offset, animated); return; }
+    gTalkInsetDepth++;
+    @try { %orig(RUINProjectTalkOffset(record, offset), animated); } @finally { gTalkInsetDepth--; }
+}
+%end
+%end
+
+static void RUINInstallTalkInsetHooks(void)
+{
+    if (atomic_load(&gTalkInsetStatus) == RUINHookInstalled) return;
+    Class page = objc_getClass("_TtC13LineChatTabUI25ChatTabPageViewController");
+    if (!page) { atomic_store(&gTalkInsetStatus, RUINHookMissingClass); return; }
+    if (![page isSubclassOfClass:UIViewController.class]) {
+        atomic_store(&gTalkInsetStatus, RUINHookClassTypeMismatch); return;
+    }
+    Method method = class_getInstanceMethod(page, @selector(viewDidLayoutSubviews));
+    if (!method || strcmp(method_getTypeEncoding(method) ?: "", "v16@0:8") || !method_getImplementation(method)) {
+        atomic_store(&gTalkInsetStatus, RUINHookEncodingMismatch); return;
+    }
+    char pointEncoding[128], animatedPointEncoding[128];
+    snprintf(pointEncoding, sizeof(pointEncoding), "v32@0:8%s16", @encode(CGPoint));
+    snprintf(animatedPointEncoding, sizeof(animatedPointEncoding), "v36@0:8%s16B32", @encode(CGPoint));
+    SEL setters[] = {@selector(setContentInset:), @selector(setVerticalScrollIndicatorInsets:),
+        @selector(setContentOffset:), @selector(setContentOffset:animated:)};
+    const char *encodings[] = {"v48@0:8{UIEdgeInsets=dddd}16", "v48@0:8{UIEdgeInsets=dddd}16",
+        pointEncoding, animatedPointEncoding};
+    Class families[] = {UITableView.class, UICollectionView.class};
+    for (NSUInteger i = 0; i < 2; i++) {
+        for (NSUInteger j = 0; j < 4; j++) {
+            Method setter = class_getInstanceMethod(families[i], setters[j]);
+            if (!setter || strcmp(method_getTypeEncoding(setter) ?: "", encodings[j]) || !method_getImplementation(setter)) {
+                atomic_store(&gTalkInsetStatus, RUINHookEncodingMismatch); return;
+            }
+        }
+    }
+    gTalkPageClass = page;
+    gTalkInsetRecords = [NSHashTable weakObjectsHashTable];
+    %init(RUINTalkPageInsets, RUINTalkPageInsetsController = page);
+    %init(RUINTalkTableInsets, RUINTalkInsetTableView = UITableView.class);
+    %init(RUINTalkCollectionInsets, RUINTalkInsetCollectionView = UICollectionView.class);
+    atomic_store(&gTalkInsetStatus, RUINHookInstalled);
+    gViewHooksGeneration++;
+}
+
+static NSArray *RUINTalkInsetDiagnostics(void)
+{
+    const char *enabled = getenv("RUIN_ENABLE_RUNTIME_INSPECTOR");
+    if (!NSThread.isMainThread || !enabled || strcmp(enabled, "1")) return @[];
+    NSMutableArray *rows = [NSMutableArray array];
+    for (RUINTalkInsetRecord *record in gTalkInsetRecords) {
+        UIScrollView *scroll = record.scroll;
+        if (!scroll || rows.count >= 8) continue;
+        [rows addObject:@{@"class":NSStringFromClass(scroll.class),
+            @"nativeContentTop":@(record.nativeContentTop), @"contentTop":@(scroll.contentInset.top),
+            @"adjustedContentTop":@(scroll.adjustedContentInset.top),
+            @"indicatorTop":@(scroll.verticalScrollIndicatorInsets.top),
+            @"offsetY":@(scroll.contentOffset.y), @"removedHeight":@(RUINTalkReservedHeight(record))}];
+    }
+    return rows;
 }
 
 static void RUINInstallViewTargetHooks(RUINViewTargetIndex index, RUINViewTarget *target)
@@ -979,6 +1419,29 @@ static BOOL RUINIsUIViewSubclass(Class cls)
     return NO;
 }
 
+static void RUINInstallTalkTopBannerHooks(void)
+{
+    if (atomic_load(&gTalkTopBannerStatus) == RUINHookInstalled) return;
+    Class cls = objc_getClass("_TtC13LineChatTabUI16TopBannerBoxView");
+    if (!cls) { atomic_store(&gTalkTopBannerStatus, RUINHookMissingClass); return; }
+    if (!RUINIsUIViewSubclass(cls)) {
+        atomic_store(&gTalkTopBannerStatus, RUINHookClassTypeMismatch); return;
+    }
+    const char *selectors[] = {"setHidden:", "didMoveToWindow", "layoutSubviews"};
+    for (NSUInteger j = 0; j < 3; j++) {
+        Method method = class_getInstanceMethod(cls, sel_registerName(selectors[j]));
+        if (!method) { atomic_store(&gTalkTopBannerStatus, RUINHookMissingSelector); return; }
+        const char *expected = j ? "v16@0:8" : "v20@0:8B16";
+        if (strcmp(method_getTypeEncoding(method) ?: "", expected) || !method_getImplementation(method)) {
+            atomic_store(&gTalkTopBannerStatus, RUINHookEncodingMismatch); return;
+        }
+    }
+    gTalkTopBannerClass = cls;
+    %init(RUINTalkSmartTopBanner, RUINTalkSmartTopBannerView = cls);
+    atomic_store(&gTalkTopBannerStatus, RUINHookInstalled);
+    gViewHooksGeneration++;
+}
+
 static void RUINMarkHooksVersionGated(void)
 {
     RUINMethodHook *tabHooks[] = {
@@ -1000,6 +1463,8 @@ static void RUINMarkHooksVersionGated(void)
 
 static void RUINInstallHooks(void)
 {
+    RUINInstallTalkTopBannerHooks();
+    RUINInstallTalkInsetHooks();
     if (!gTabConfigurationHookInstalled) {
         Class delegate = objc_getClass("_TtC4LINE11AppDelegate");
         Method method = delegate ? class_getInstanceMethod(delegate,
@@ -1162,6 +1627,7 @@ static void RUINVoiceButtonLayout(id self, SEL selector)
 
 static void RUINRefreshViewTree(UIView *view)
 {
+    RUINRefreshTalkTopBanner(view);
     RUINViewTarget *target = RUINViewTargetForObject(view);
     if (target) {
         if (RUINShouldHideView(target, view)) RUINHideView(view);
@@ -1795,7 +2261,13 @@ NSDictionary *RUINInterfaceDiagnostics(void)
             @"status": RUINGroupStatus(RUINHideGroupAds, ads),
             @"installedViewClasses": @(RUINInstalledViewTargetCount(RUINHideGroupAds)),
             @"hookCalls": @(RUINViewHookCalls(RUINHideGroupAds)),
-            @"hookFailures": RUINViewHookFailures(RUINHideGroupAds)
+            @"hookFailures": RUINViewHookFailures(RUINHideGroupAds),
+            @"talkTopBannerHook": RUINTargetStatusName(atomic_load(&gTalkTopBannerStatus)),
+            @"talkTopBannerUpdates": @(atomic_load(&gTalkTopBannerUpdates)),
+            @"talkTopBannerCollapses": @(atomic_load(&gTalkTopBannerCollapses)),
+            @"talkInsetHook": RUINTargetStatusName(atomic_load(&gTalkInsetStatus)),
+            @"talkInsetProjections": @(atomic_load(&gTalkInsetProjections)),
+            @"talkInsetViews": RUINTalkInsetDiagnostics()
         },
         @"recommendations": @{
             @"status": RUINGroupStatus(RUINHideGroupRecommendations, recommendations),

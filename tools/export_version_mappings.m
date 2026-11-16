@@ -123,6 +123,21 @@ static NSDictionary *MappingJSON(const RUINVersionMapping *mapping)
             @"sourceSHA256": [NSString stringWithUTF8String:mapping->host.sourceSHA256],
             @"supportStatus": Status(mapping->host.supportStatus)
         },
+        @"legacyHome": @{
+            @"status": Status(mapping->legacyHome.status),
+            @"factoryClassVA": Address(mapping->legacyHome.status, mapping->legacyHome.factoryClassVA),
+            @"homeWitnessVA": Address(mapping->legacyHome.status, mapping->legacyHome.homeWitnessVA),
+            @"homeConformanceVA": Address(mapping->legacyHome.status, mapping->legacyHome.homeConformanceVA),
+            @"homeMetadataVA": Address(mapping->legacyHome.status, mapping->legacyHome.homeMetadataVA),
+            @"homeDecoderVA": Address(mapping->legacyHome.status, mapping->legacyHome.homeDecoderVA),
+            @"globalWitnessAccessorVA": Address(mapping->legacyHome.status, mapping->legacyHome.globalWitnessAccessorVA),
+            @"globalConformanceVA": Address(mapping->legacyHome.status, mapping->legacyHome.globalConformanceVA),
+            @"globalMetadataVA": Address(mapping->legacyHome.status, mapping->legacyHome.globalMetadataVA),
+            @"globalDecoderVA": Address(mapping->legacyHome.status, mapping->legacyHome.globalDecoderVA),
+            @"homeFlagStringVA": Address(mapping->legacyHome.status, mapping->legacyHome.homeFlagStringVA),
+            @"globalHomeFlagStringVA": Address(mapping->legacyHome.status, mapping->legacyHome.globalHomeFlagStringVA),
+            @"anchors": AnchorArray(mapping->legacyHome.anchors, mapping->legacyHome.anchorCount)
+        },
         @"themes": @{
             @"shopNavigation": @{
                 @"status": Status(navigation->status),

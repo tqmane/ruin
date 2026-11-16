@@ -29,6 +29,23 @@ class VersionMappingManifestTests(unittest.TestCase):
             self.assertIn(mapping["messaging"]["unsendOperation"]["lookupStatus"], VALID_STATUSES)
             self.assertIn(mapping["messaging"]["readUntilABIStatus"], VALID_STATUSES)
             self.assertIn(mapping["nativeTabs"]["status"], VALID_STATUSES)
+            self.assertIn(mapping["legacyHome"]["status"], VALID_STATUSES)
+
+    def test_legacy_home_has_no_26_16_fallback_or_host_status_promotion(self):
+        for mapping in self.mappings:
+            feature = mapping["legacyHome"]
+            if mapping["host"]["version"] == "26.17.0":
+                self.assertEqual(mapping["host"]["supportStatus"], "unverified")
+                self.assertEqual(feature["status"], "verified")
+                self.assertGreater(len(feature["anchors"]), 0)
+                for key in ("factoryClassVA", "homeWitnessVA", "homeConformanceVA", "homeMetadataVA", "homeDecoderVA",
+                            "globalWitnessAccessorVA", "globalConformanceVA", "globalMetadataVA", "globalDecoderVA",
+                            "homeFlagStringVA", "globalHomeFlagStringVA"):
+                    self.assertGreater(int(feature[key], 16), 0, key)
+            else:
+                self.assertEqual(feature["status"], "unsupported")
+                self.assertEqual(feature["anchors"], [])
+                self.assertTrue(all(value is None for key, value in feature.items() if key.endswith("VA")))
 
     def test_26_17_read_adapter_is_scoped_and_host_remains_unverified(self):
         mapping = next(row for row in self.mappings if row["host"]["version"] == "26.17.0")

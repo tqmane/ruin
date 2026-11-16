@@ -133,6 +133,13 @@ static BOOL RUINLoginCallerIsLINE(void *caller) {
     // cannot resolve this MH_DYLIB and must not run on every UIKit idiom query.
     const void *guest = atomic_load_explicit(&verifiedLoginGuestImage, memory_order_acquire);
     if (guest) return info.dli_fbase == guest;
+    // UIKit trait/layout queries vastly outnumber LINE's own queries. Reject
+    // other image owners before the strict resolver's uncached LC miss can
+    // canonicalize the process's entire dyld list on every query. This is only
+    // a negative filter; matching callers still require the existing proof.
+    Class welcome = objc_getClass("_TtC18LineRegistrationUI21WelcomeViewController");
+    const char *ownerPath = welcome ? class_getImageName(welcome) : NULL;
+    if (ownerPath && info.dli_fname && strcmp(ownerPath, info.dli_fname)) return NO;
     RUINMainExecutableImage image;
     if (RUINResolveMainExecutableImage(&image) && info.dli_fbase == (const void *)image.header) return YES;
     // LINE can cache its role before the queued guest pin is able to run.

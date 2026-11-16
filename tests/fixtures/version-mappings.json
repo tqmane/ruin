@@ -9,6 +9,23 @@
         "uuid" : "292883E8-E011-3583-ADF5-F02241E3277B",
         "version" : "26.16.0"
       },
+      "legacyHome" : {
+        "anchors" : [
+
+        ],
+        "factoryClassVA" : null,
+        "globalConformanceVA" : null,
+        "globalDecoderVA" : null,
+        "globalHomeFlagStringVA" : null,
+        "globalMetadataVA" : null,
+        "globalWitnessAccessorVA" : null,
+        "homeConformanceVA" : null,
+        "homeDecoderVA" : null,
+        "homeFlagStringVA" : null,
+        "homeMetadataVA" : null,
+        "homeWitnessVA" : null,
+        "status" : "unsupported"
+      },
       "messaging" : {
         "nativeMuteSend" : {
           "anchors" : [
@@ -595,6 +612,187 @@
         "supportStatus" : "unverified",
         "uuid" : "614CED59-07E5-372D-94B2-D4901870C7A0",
         "version" : "26.17.0"
+      },
+      "legacyHome" : {
+        "anchors" : [
+          {
+            "address" : "0x1002097d8",
+            "wordCount" : 4,
+            "words" : [
+              "0xd0069527",
+              "0x912d40e7",
+              "0xf0060fc6",
+              "0x9112e0c6"
+            ]
+          },
+          {
+            "address" : "0x10020ac24",
+            "wordCount" : 2,
+            "words" : [
+              "0x910080e5",
+              "0x17fffe9c"
+            ]
+          },
+          {
+            "address" : "0x10020a6e0",
+            "wordCount" : 4,
+            "words" : [
+              "0xf9400309",
+              "0x91007fe8",
+              "0x94000177",
+              "0xb40001f5"
+            ]
+          },
+          {
+            "address" : "0x10020acc4",
+            "wordCount" : 4,
+            "words" : [
+              "0xaa1a03e0",
+              "0xaa1903e1",
+              "0xaa1403e2",
+              "0xaa1703e3"
+            ]
+          },
+          {
+            "address" : "0x10020acd4",
+            "wordCount" : 1,
+            "words" : [
+              "0xd61f0120"
+            ]
+          },
+          {
+            "address" : "0x102cb3f44",
+            "wordCount" : 4,
+            "words" : [
+              "0xa9bf7bfd",
+              "0x910003fd",
+              "0x976ed862",
+              "0xa8c17bfd"
+            ]
+          },
+          {
+            "address" : "0x1034478dc",
+            "wordCount" : 4,
+            "words" : [
+              "0xf81e0ff3",
+              "0xa9017bfd",
+              "0x910043fd",
+              "0xaa0803f3"
+            ]
+          },
+          {
+            "address" : "0x1034478ec",
+            "wordCount" : 4,
+            "words" : [
+              "0x97ffffb6",
+              "0xb5000215",
+              "0x12000008",
+              "0x39000268"
+            ]
+          },
+          {
+            "address" : "0x10344792c",
+            "wordCount" : 4,
+            "words" : [
+              "0xbc001260",
+              "0xa9417bfd",
+              "0xf84207f3",
+              "0xd65f03c0"
+            ]
+          },
+          {
+            "address" : "0x103448a7c",
+            "wordCount" : 4,
+            "words" : [
+              "0xb0050188",
+              "0xf9422100",
+              "0xb4000040",
+              "0xd65f03c0"
+            ]
+          },
+          {
+            "address" : "0x103448a94",
+            "wordCount" : 4,
+            "words" : [
+              "0x90034260",
+              "0x9102c000",
+              "0xd0047aa1",
+              "0x9127c021"
+            ]
+          },
+          {
+            "address" : "0x103448aa8",
+            "wordCount" : 4,
+            "words" : [
+              "0xb0050188",
+              "0x91110108",
+              "0xc89ffd00",
+              "0xa8c17bfd"
+            ]
+          },
+          {
+            "address" : "0x1001dd088",
+            "wordCount" : 4,
+            "words" : [
+              "0x94c8fc5d",
+              "0x37000080",
+              "0xa9465268",
+              "0xd63f0100"
+            ]
+          },
+          {
+            "address" : "0x1001dd0bc",
+            "wordCount" : 4,
+            "words" : [
+              "0xf9402a61",
+              "0x9100e260",
+              "0x97f8c03d",
+              "0xf9400014"
+            ]
+          },
+          {
+            "address" : "0x1001dd3dc",
+            "wordCount" : 4,
+            "words" : [
+              "0x97ffff01",
+              "0x72001c08",
+              "0x54000120",
+              "0x7100051f"
+            ]
+          },
+          {
+            "address" : "0x1001dd3f0",
+            "wordCount" : 4,
+            "words" : [
+              "0xf94016a1",
+              "0x910042a0",
+              "0x97f8bf70",
+              "0xf9400014"
+            ]
+          },
+          {
+            "address" : "0x1001dd408",
+            "wordCount" : 4,
+            "words" : [
+              "0xf94016a1",
+              "0x910042a0",
+              "0x97f8bf6a",
+              "0xf9400014"
+            ]
+          }
+        ],
+        "factoryClassVA" : "0x10d300170",
+        "globalConformanceVA" : "0x109c940b0",
+        "globalDecoderVA" : "0x1034478dc",
+        "globalHomeFlagStringVA" : "0x10a86dfd0",
+        "globalMetadataVA" : "0x10c39e9f0",
+        "globalWitnessAccessorVA" : "0x103448a7c",
+        "homeConformanceVA" : "0x109cf32b4",
+        "homeDecoderVA" : "0x102cb3f44",
+        "homeFlagStringVA" : "0x10a8b4440",
+        "homeMetadataVA" : "0x10c4044b8",
+        "homeWitnessVA" : "0x10d4afb50",
+        "status" : "verified"
       },
       "messaging" : {
         "nativeMuteSend" : {

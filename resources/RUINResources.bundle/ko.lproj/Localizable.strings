@@ -136,6 +136,8 @@
 "settings.appearance_footer" = "변경 후에는 대화 화면을 다시 열어 주세요.";
 "settings.chat_names" = "대화방 표시 이름";
 "settings.chat_names_footer" = "이 기기에서의 표시 이름만 변경됩니다. 상대방에게는 반영되지 않습니다. 목록에 반영되지 않는 경우 LINE을 재실행해 주세요.";
+"settings.clear_viewed_unread_badges" = "열어본 채팅의 읽지 않음 배지 지우기";
+"settings.clear_viewed_unread_badges_footer" = "'읽음 확인 숨기기'가 켜져 있을 때 채팅을 열면 읽음 확인을 보내지 않고 이 기기에서 해당 채팅의 읽지 않음 배지를 지우며 하단 채팅 탭의 전체 개수에서도 차감합니다. 새 메시지가 오면 다시 집계되며 서버의 읽음 상태는 변경되지 않습니다.";
 "settings.confirm_call" = "통화 시작 확인";
 "settings.confirm_camera_on" = "카메라를 켜기 전에 확인";
 "settings.confirm_disconnect" = "통화 종료 확인";
@@ -155,6 +157,8 @@
 "settings.hide_voice_input" = "음성 입력 버튼 숨기기";
 "settings.history" = "기록·추가 기능 (개발 중)";
 "settings.keep_unsent_media" = "보내기 취소된 텍스트 및 미디어 보존";
+"settings.legacy_home" = "이전 홈 화면 사용";
+"settings.legacy_home_footer" = "이 기기의 홈 화면 레이아웃만 선택하며, 로그인이나 메인/보조 기기 모드는 변경되지 않습니다. 켜거나 끈 뒤에는 LINE을 완전히 재시작해야 반영됩니다.";
 "settings.legacy_messaging" = "24시간 보내기 취소 · 무음 메시지";
 "settings.line_features" = "LINE 기능 (개발 중)";
 "settings.line_features_footer" = "앱 아이콘 등은 '로컬 LYP', 24시간 보내기 취소 및 무음 메시지는 별도 스위치로 설정합니다(변경 후 LINE 재시작). 무음 메시지 전송은 텍스트 입력 확정 후 전송 버튼을 약 2초간 길게 누릅니다.";

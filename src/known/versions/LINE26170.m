@@ -1,5 +1,27 @@
 #import "../VersionMapping.h"
 
+// Post-decode caller-owned Bool results, plus their native dispatch and Home
+// constructor decisions. Raw config/cache, account role and regions stay native.
+static const RUINInstructionAnchor kLegacyHome[] = {
+    {0x1002097d8, 4, {0xd0069527, 0x912d40e7, 0xf0060fc6, 0x9112e0c6}},
+    {0x10020ac24, 2, {0x910080e5, 0x17fffe9c}},
+    {0x10020a6e0, 4, {0xf9400309, 0x91007fe8, 0x94000177, 0xb40001f5}},
+    {0x10020acc4, 4, {0xaa1a03e0, 0xaa1903e1, 0xaa1403e2, 0xaa1703e3}},
+    {0x10020acd4, 1, {0xd61f0120}},
+    {0x102cb3f44, 4, {0xa9bf7bfd, 0x910003fd, 0x976ed862, 0xa8c17bfd}},
+    {0x1034478dc, 4, {0xf81e0ff3, 0xa9017bfd, 0x910043fd, 0xaa0803f3}},
+    {0x1034478ec, 4, {0x97ffffb6, 0xb5000215, 0x12000008, 0x39000268}},
+    {0x10344792c, 4, {0xbc001260, 0xa9417bfd, 0xf84207f3, 0xd65f03c0}},
+    {0x103448a7c, 4, {0xb0050188, 0xf9422100, 0xb4000040, 0xd65f03c0}},
+    {0x103448a94, 4, {0x90034260, 0x9102c000, 0xd0047aa1, 0x9127c021}},
+    {0x103448aa8, 4, {0xb0050188, 0x91110108, 0xc89ffd00, 0xa8c17bfd}},
+    {0x1001dd088, 4, {0x94c8fc5d, 0x37000080, 0xa9465268, 0xd63f0100}},
+    {0x1001dd0bc, 4, {0xf9402a61, 0x9100e260, 0x97f8c03d, 0xf9400014}},
+    {0x1001dd3dc, 4, {0x97ffff01, 0x72001c08, 0x54000120, 0x7100051f}},
+    {0x1001dd3f0, 4, {0xf94016a1, 0x910042a0, 0x97f8bf70, 0xf9400014}},
+    {0x1001dd408, 4, {0xf94016a1, 0x910042a0, 0x97f8bf6a, 0xf9400014}}
+};
+
 static const RUINInstructionAnchor kShopNavigation[] = {
     {0x100043524, 4, {0xa9bd57f6, 0xa9014ff4, 0xa9027bfd, 0x910083fd}}
 };
@@ -194,5 +216,21 @@ const RUINVersionMapping RUINLINE26170 = {
             {0x70, 0x1007364a4, 0x1003dec40, {0xf9403ac8, 0xaa0003f4, 0xaa1303e0, 0xaa1603e1, 0xd63f0100}},
             {0x50, 0x100736368, 0x1003de408, {0x8b080260, 0xa941d815, 0x97f1e7c9, 0xf9402ac8, 0x97f1f79a}}
         }
+    },
+    .legacyHome = {
+        .status = RUINMappingStatusVerified,
+        .factoryClassVA = 0x10d300170,
+        .homeWitnessVA = 0x10d4afb50,
+        .homeConformanceVA = 0x109cf32b4,
+        .homeMetadataVA = 0x10c4044b8,
+        .homeDecoderVA = 0x102cb3f44,
+        .globalWitnessAccessorVA = 0x103448a7c,
+        .globalConformanceVA = 0x109c940b0,
+        .globalMetadataVA = 0x10c39e9f0,
+        .globalDecoderVA = 0x1034478dc,
+        .homeFlagStringVA = 0x10a8b4440,
+        .globalHomeFlagStringVA = 0x10a86dfd0,
+        .anchors = kLegacyHome,
+        .anchorCount = sizeof(kLegacyHome) / sizeof(*kLegacyHome)
     }
 };

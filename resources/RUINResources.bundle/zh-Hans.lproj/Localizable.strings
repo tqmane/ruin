@@ -136,6 +136,8 @@
 "settings.appearance_footer" = "更改后请重新打开聊天界面。";
 "settings.chat_names" = "聊天显示名称";
 "settings.chat_names_footer" = "仅更改此设备上的显示名称，不会同步给对方。若列表未更新，请重启LINE。";
+"settings.clear_viewed_unread_badges" = "清除已打开聊天的未读角标";
+"settings.clear_viewed_unread_badges_footer" = "开启“隐藏已读回执”时，打开聊天会在不发送已读回执的情况下清除本设备上该聊天的未读角标，并从底部“聊天”标签页的未读总数中扣除。有新消息时会重新计入，服务器上的已读状态保持不变。";
 "settings.confirm_call" = "发起通话确认";
 "settings.confirm_camera_on" = "开启相机前确认";
 "settings.confirm_disconnect" = "结束通话确认";
@@ -155,6 +157,8 @@
 "settings.hide_voice_input" = "隐藏语音输入按钮";
 "settings.history" = "历史记录与附加功能（开发中）";
 "settings.keep_unsent_media" = "保留已撤回文本与媒体";
+"settings.legacy_home" = "使用经典主页布局";
+"settings.legacy_home_footer" = "仅更改本设备的主页布局选择，不会改变登录状态或主/副设备模式。无论开启或关闭，均需完全重启 LINE 后生效。";
 "settings.legacy_messaging" = "24小时撤回与静音消息";
 "settings.line_features" = "LINE功能（开发中）";
 "settings.line_features_footer" = "应用图标等功能在“本地LYP”中设置，24小时撤回与静音消息由独立开关设置（更改后请重启LINE）。静音消息请在确认输入后长按发送按钮约2秒。";

@@ -213,14 +213,16 @@ static void RUINPrepareStorageBindings(NSDictionary *requestedMap) {
 %end
 
 void RUINInstallCompatibility(void) {
+    if (installed) return;
+    // Generic injectors need not supply RUIN's optional signing metadata.
+    // Identity may not resolve in this dylib's early constructor. Leave the
+    // install token available for a later constructor or login preflight.
+    RUINInstallBundleIdentity();
+    NSString *status = RUINBundleIdentityDiagnostics()[@"status"];
+    if (![@[@"installed", @"already_original"] containsObject:status]) return;
+    if (!RUINTargetMetadataMatchesInfo(NSBundle.mainBundle.infoDictionary)) return;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        // Generic injectors need not supply RUIN's optional signing metadata.
-        // The host UUID was verified by the identity adapter before this call.
-        RUINInstallBundleIdentity();
-        NSString *status = RUINBundleIdentityDiagnostics()[@"status"];
-        if (![@[@"installed", @"already_original"] containsObject:status]) return;
-        if (!RUINTargetMetadataMatchesInfo(NSBundle.mainBundle.infoDictionary)) return;
         NSDictionary *info = RUINActualMainBundleInfo();
         id mapping = info[@"RUINAppGroupMap"];
         if (![mapping isKindOfClass:NSDictionary.class]) mapping = @{};
