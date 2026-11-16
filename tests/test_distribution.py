@@ -139,11 +139,13 @@ class DistributionTests(unittest.TestCase):
         arguments = ["distribute.py", "--dylib", str(self.dylib), "--resources", str(self.resources),
                      "--output", str(self.output), "--version", "0.5.3-rc.1+build.2"]
         with patch("sys.argv", arguments), patch.dict("sys.modules", {verifier.__name__: verifier}), \
-                patch.object(distribute, "verify_dylib", side_effect=lambda path: events.append("dylib") or []), \
+                patch.object(distribute, "verify_dylib", side_effect=lambda path, **kwargs:
+                             events.append("dylib") or []) as verify, \
                 patch.object(distribute, "build_distribution", wraps=distribute.build_distribution) as build, \
                 patch("builtins.print"):
             distribute.main()
         self.assertEqual(events, ["dylib", "resources"])
+        verify.assert_called_once_with(self.dylib, for_livecontainer=True)
         build.assert_called_once_with(self.dylib, self.resources, self.output, "0.5.3-rc.1+build.2")
         verifier.verify_embedded_resources.assert_called_once_with(self.dylib, self.resources)
         names = {path.name for path in self.output.iterdir()}
@@ -204,7 +206,7 @@ class DistributionTests(unittest.TestCase):
         )
 
     def verify_dylib_with_tools(self, archs="arm64 arm64e", signature_status=0,
-                                otool_output=None, calls=None):
+                                otool_output=None, calls=None, rpaths=None):
         calls = calls if calls is not None else []
 
         def run(args, check=False, capture_output=False, text=False):
@@ -224,6 +226,12 @@ class DistributionTests(unittest.TestCase):
                 host_output = self.otool_slices().split("/tmp/RUIN.dylib (architecture arm64e):")[0]
                 result = subprocess.CompletedProcess(args, 0,
                     stdout=host_output.replace(" (architecture arm64)", ""), stderr="")
+            elif args[:2] == ["otool", "-arch"] and args[3] == "-l":
+                paths = (rpaths or {}).get(args[2], ["/usr/lib/swift"])
+                output = "/tmp/RUIN.dylib:\n" + "".join(
+                    f"Load command {index}\n          cmd LC_RPATH\n      cmdsize 48\n"
+                    f"         path {path} (offset 12)\n" for index, path in enumerate(paths))
+                result = subprocess.CompletedProcess(args, 0, stdout=output, stderr="")
             else:
                 raise AssertionError(f"Unexpected command: {args}")
             if check and result.returncode:
@@ -277,6 +285,51 @@ class DistributionTests(unittest.TestCase):
         output = self.otool_slices()
         self.assertEqual(distribute.dependencies_from_otool(output), [
             "/System/Library/Frameworks/Foundation.framework/Foundation"])
+
+    def test_rpath_parser_ignores_other_load_commands_and_preserves_spaces(self):
+        output = """/tmp/RUIN.dylib:
+Load command 0
+          cmd LC_LOAD_DYLIB
+      cmdsize 64
+         name /usr/lib/swift/libswiftCore.dylib (offset 24)
+Load command 1
+          cmd LC_RPATH
+      cmdsize 32
+         path /usr/lib/swift (offset 12)
+Load command 2
+          cmd LC_RPATH
+      cmdsize 56
+         path @loader_path/Folder With Spaces (offset 12)
+"""
+        self.assertEqual(distribute.rpaths_from_otool(output),
+                         ["/usr/lib/swift", "@loader_path/Folder With Spaces"])
+        for invalid in ("cmd LC_RPATH\n", "cmd LC_RPATH\ncmd LC_CODE_SIGNATURE\n",
+                        "cmd LC_RPATH\npath @loader_path\n"):
+            with self.subTest(output=invalid), self.assertRaises(ValueError):
+                distribute.rpaths_from_otool(invalid)
+
+    def test_fat_dylib_checks_duplicate_rpaths_independently_in_both_slices(self):
+        # One occurrence in each slice is valid; duplicate entries in either
+        # individual slice are not, including paths unrelated to LiveContainer.
+        patcher, _ = self.verify_dylib_with_tools()
+        with patcher:
+            distribute.verify_dylib(self.dylib, for_livecontainer=True)
+        for arch in distribute.DYLIB_ARCHITECTURES:
+            for path in (*distribute.LIVECONTAINER_RPATHS, "/usr/lib/swift"):
+                patcher, _ = self.verify_dylib_with_tools(rpaths={arch: [path, path]})
+                with self.subTest(architecture=arch, path=path), patcher, \
+                        self.assertRaisesRegex(ValueError, f"{arch}: duplicate LC_RPATH"):
+                    distribute.verify_dylib(self.dylib)
+
+    def test_livecontainer_artifact_rejects_even_one_preimported_path(self):
+        for arch in distribute.DYLIB_ARCHITECTURES:
+            for path in distribute.LIVECONTAINER_RPATHS:
+                patcher, _ = self.verify_dylib_with_tools(rpaths={arch: ["/usr/lib/swift", path]})
+                with self.subTest(architecture=arch, path=path), patcher:
+                    # These unique paths remain legal for ordinary dylib users.
+                    distribute.verify_dylib(self.dylib)
+                    with self.assertRaisesRegex(ValueError, "already added by LiveContainer"):
+                        distribute.verify_dylib(self.dylib, for_livecontainer=True)
 
 
 if __name__ == "__main__":

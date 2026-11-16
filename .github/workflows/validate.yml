@@ -38,3 +38,5 @@ jobs:
           fi
       - name: Verify packaging tools with real build and synthetic fat fixture
         run: make check-packaging
+      - name: Verify all release packages and fresh LiveContainer import metadata
+        run: make dist

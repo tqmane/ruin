@@ -21,6 +21,9 @@ VARIANTS = {
 }
 DYLIB_INSTALL_NAME = "@rpath/RUIN.dylib"
 DYLIB_ARCHITECTURES = ("arm64", "arm64e")
+# LiveContainer's importer appends these unconditionally. A distributable
+# dylib must not already contain them, even once, before its first import.
+LIVECONTAINER_RPATHS = ("@executable_path/../../Tweaks", "@loader_path")
 OTOOL_ARCHITECTURE_RE = re.compile(r"\(architecture ([^)]+)\):$")
 # Direct links reviewed for this build; new SDK dependencies require review.
 APPLE_DEPENDENCIES = {
@@ -104,7 +107,46 @@ def validate_dependencies(dependencies):
             raise ValueError(f"Dependency is not an Apple system or Swift runtime library: {name}")
 
 
-def verify_dylib(path):
+def rpaths_from_otool(output):
+    paths = []
+    pending = False
+    for line in output.splitlines():
+        line = line.strip()
+        if line.startswith("cmd "):
+            if pending:
+                raise ValueError("otool reported an LC_RPATH without a path")
+            pending = line == "cmd LC_RPATH"
+        elif pending and line.startswith("path "):
+            match = re.fullmatch(r"path (.+) \(offset [0-9]+\)", line)
+            if not match:
+                raise ValueError(f"Invalid otool LC_RPATH entry: {line}")
+            paths.append(match.group(1))
+            pending = False
+    if pending:
+        raise ValueError("otool reported an LC_RPATH without a path")
+    return paths
+
+
+def dylib_rpaths(path, architecture):
+    result = subprocess.run(["otool", "-arch", architecture, "-l", str(path)],
+                            check=True, capture_output=True, text=True)
+    return rpaths_from_otool(result.stdout)
+
+
+def validate_rpaths(paths, architecture, *, for_livecontainer=False):
+    seen = set()
+    for path in paths:
+        if path in seen:
+            advice = ("prepare a fresh copy with tools/prepare_livecontainer.py"
+                      if path in LIVECONTAINER_RPATHS else "correct the dylib's build metadata")
+            raise ValueError(f"{architecture}: duplicate LC_RPATH {path!r}; {advice}")
+        if for_livecontainer and path in LIVECONTAINER_RPATHS:
+            raise ValueError(f"{architecture}: LC_RPATH {path!r} was already added by LiveContainer; "
+                             "prepare a fresh copy with tools/prepare_livecontainer.py before importing")
+        seen.add(path)
+
+
+def verify_dylib(path, *, for_livecontainer=False):
     path = Path(path)
     if not path.is_file():
         raise ValueError(f"Dylib not found: {path}")
@@ -126,6 +168,9 @@ def verify_dylib(path):
         raise ValueError(f"otool must report one dependency list for each arm64/arm64e slice; found: {found}")
     dependencies = dependencies_from_otool(result.stdout)
     validate_dependencies(dependencies)
+    for architecture in DYLIB_ARCHITECTURES:
+        validate_rpaths(dylib_rpaths(path, architecture), architecture,
+                        for_livecontainer=for_livecontainer)
     return dependencies
 
 
@@ -289,7 +334,7 @@ def main():
     args = parser.parse_args()
 
     version = validate_version(args.version)
-    dependencies = verify_dylib(args.dylib)
+    dependencies = verify_dylib(args.dylib, for_livecontainer=True)
     from verify_embedded_resources import verify_embedded_resources
     verify_embedded_resources(args.dylib, args.resources)
     artifacts = build_distribution(args.dylib, args.resources, args.output, version)
