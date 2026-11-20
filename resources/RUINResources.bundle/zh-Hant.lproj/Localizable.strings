@@ -48,13 +48,13 @@
 "confirm.send_title" = "傳送確認";
 "confirm.unknown_member_count" = "無法確認群組人數。是否傳送？";
 "confirm.unknown_recipient" = "無法確認傳送對象類型。是否傳送？";
-"developer.show_extract_button" = "顯示右上角按鈕";
-"developer.ui_extract" = "擷取 UI 結構";
-"developer.ui_extract_button" = "擷取";
 "diagnostics.export_description" = "RUIN執行環境、相容性及功能診斷JSON";
 "diagnostics.feature_matrix" = "所有功能相容表";
 "diagnostics.json_failed" = "無法將診斷轉換為JSON: %@";
 "diagnostics.runtime_title" = "執行階段與功能診斷";
+"diagnostics.show_extract_button" = "顯示 UI 擷取按鈕";
+"diagnostics.ui_extract" = "擷取 UI 結構";
+"diagnostics.ui_extract_button" = "擷取";
 "errors.cancelled" = "通訊已中止。";
 "errors.connection_lost" = "通訊中途斷線。請檢查連線後重試。";
 "errors.offline" = "未連線至網際網路。請檢查網路連線後重試。";
@@ -161,7 +161,6 @@
 "settings.confirmations" = "確認操作";
 "settings.confirmations_footer" = "執行傳送確認的最少人數為包含自己在內的群組人數。設為 0 表示不設最低人數限制，對所有群組皆進行確認。部分通話與傳送入口仍在驗證中。";
 "settings.copy_sticker_gif" = "複製貼圖為GIF";
-"settings.developer" = "開發者";
 "settings.diagnostics" = "診斷";
 "settings.diagnostics_footer" = "主題、貼圖GIF、MID搜尋等均在全功能支援範圍內。未完成的項目不會顯示為已支援。";
 "settings.entry_subtitle" = "本機設定與診斷";
@@ -214,6 +213,7 @@
 "setup.done" = "開始使用";
 "setup.message" = "開始前先設定幾個選項，之後也可以在設定中更改。";
 "setup.open" = "開始設定";
+"setup.secondary_locked" = "登入後無法變更";
 "setup.title" = "Welcome to RUIN";
 "shops.open_rejected" = "已請求LINE顯示商店，但未被接受。";
 "shops.open_unavailable" = "此LINE版本不支援前往該商店。";

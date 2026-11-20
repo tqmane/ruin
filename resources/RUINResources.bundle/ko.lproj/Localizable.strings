@@ -48,13 +48,13 @@
 "confirm.send_title" = "전송 확인";
 "confirm.unknown_member_count" = "그룹 인원수를 확인할 수 없습니다. 전송하시겠습니까?";
 "confirm.unknown_recipient" = "전송 대상 유형을 확인할 수 없습니다. 전송하시겠습니까?";
-"developer.show_extract_button" = "오른쪽 위 버튼 표시";
-"developer.ui_extract" = "UI 구조 추출";
-"developer.ui_extract_button" = "UI 추출";
 "diagnostics.export_description" = "RUIN 런타임, 호환성 및 기능 진단 JSON";
 "diagnostics.feature_matrix" = "전체 기능 호환표";
 "diagnostics.json_failed" = "진단을 JSON으로 변환하지 못했습니다: %@";
 "diagnostics.runtime_title" = "런타임·기능 진단";
+"diagnostics.show_extract_button" = "UI 추출 버튼 표시";
+"diagnostics.ui_extract" = "UI 구조 추출";
+"diagnostics.ui_extract_button" = "UI 추출";
 "errors.cancelled" = "통신이 중단되었습니다.";
 "errors.connection_lost" = "통신 연결이 끊어졌습니다. 네트워크 연결을 확인하고 다시 시도해 주세요.";
 "errors.offline" = "인터넷에 연결되어 있지 않습니다. 연결 상태를 확인하고 다시 시도해 주세요.";
@@ -161,7 +161,6 @@
 "settings.confirmations" = "작업 확인";
 "settings.confirmations_footer" = "전송 확인을 진행할 최소 인원수는 자신을 포함한 그룹 인원수입니다. 0을 입력하면 최소 인원 제한 없이 모든 그룹에서 확인합니다. 통화 및 전송의 일부 진입 경로는 아직 검증 중입니다.";
 "settings.copy_sticker_gif" = "스티커를 GIF로 복사";
-"settings.developer" = "개발자";
 "settings.diagnostics" = "진단";
 "settings.diagnostics_footer" = "테마, 스티커 GIF, MID 검색 등도 전체 기능 지원 대상입니다. 미완성된 항목은 지원됨으로 표시하지 않습니다.";
 "settings.entry_subtitle" = "로컬 설정·진단";
@@ -214,6 +213,7 @@
 "setup.done" = "시작하기";
 "setup.message" = "시작하기 전에 몇 가지를 설정해 두세요. 나중에 설정에서 변경할 수 있습니다.";
 "setup.open" = "설정 시작";
+"setup.secondary_locked" = "로그인 후에는 변경할 수 없습니다";
 "setup.title" = "Welcome to RUIN";
 "shops.open_rejected" = "LINE에 숍 표시를 요청했으나 처리되지 않았습니다.";
 "shops.open_unavailable" = "이 LINE 버전에서는 해당 숍으로 이동할 수 없습니다.";

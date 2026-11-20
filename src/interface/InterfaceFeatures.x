@@ -2,6 +2,7 @@
 
 #import "TargetMetadata.h"
 #import "InterfaceFeatures.h"
+#import "../platform/SecondaryLogin.h"
 #import "ChatCatalog.h"
 #import "BinaryVerifier.h"
 
@@ -976,6 +977,18 @@ static char RUINChatPanelTraitOverrideParentKey;
 
 %group RUINChatPanelTraits
 %hook RUINChatPanelTraitsController
+- (void)viewDidAppear:(BOOL)animated
+{
+    %orig(animated);
+    if (!atomic_load_explicit(&gTargetMatches, memory_order_relaxed)) return;
+    RUINSetChatInterfaceVisible(YES);
+}
+- (void)viewDidDisappear:(BOOL)animated
+{
+    %orig(animated);
+    if (!atomic_load_explicit(&gTargetMatches, memory_order_relaxed)) return;
+    RUINSetChatInterfaceVisible(NO);
+}
 - (void)viewWillAppear:(BOOL)animated
 {
     %orig(animated);
@@ -1015,8 +1028,17 @@ static void RUINInstallChatPanelTraitHooks(void) {
     Class cls = objc_getClass("LineMessagingUI.ChatViewController");
     if (!cls || ![cls isSubclassOfClass:UIViewController.class]) { gPanelTraitHookStatus = @"missing_class"; return; }
     Method appear = class_getInstanceMethod(cls, @selector(viewWillAppear:));
+    Method didAppear = class_getInstanceMethod(cls, @selector(viewDidAppear:));
+    Method didDisappear = class_getInstanceMethod(cls, @selector(viewDidDisappear:));
     const char *types = appear ? method_getTypeEncoding(appear) : NULL;
-    if (!types || strcmp(types, "v20@0:8B16")) { gPanelTraitHookStatus = @"abi_mismatch"; return; }
+    const char *didAppearTypes = didAppear ? method_getTypeEncoding(didAppear) : NULL;
+    const char *didDisappearTypes = didDisappear ? method_getTypeEncoding(didDisappear) : NULL;
+    if (!types || strcmp(types, "v20@0:8B16") ||
+        !didAppearTypes || strcmp(didAppearTypes, "v20@0:8B16") ||
+        !didDisappearTypes || strcmp(didDisappearTypes, "v20@0:8B16")) {
+        gPanelTraitHookStatus = @"abi_mismatch";
+        return;
+    }
     %init(RUINChatPanelTraits, RUINChatPanelTraitsController = cls);
     atomic_store(&gPanelTraitHookInstalled, true);
     gPanelTraitHookStatus = @"installed";

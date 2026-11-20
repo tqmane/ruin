@@ -48,13 +48,13 @@
 "confirm.send_title" = "Confirm send";
 "confirm.unknown_member_count" = "Unable to verify group member count. Send anyway?";
 "confirm.unknown_recipient" = "Cannot verify recipient type. Send anyway?";
-"developer.show_extract_button" = "Show Top-Right Button";
-"developer.ui_extract" = "Extract UI Structure";
-"developer.ui_extract_button" = "Extract";
 "diagnostics.export_description" = "JSON for RUIN runtime, compatibility, and feature diagnostics";
 "diagnostics.feature_matrix" = "Feature Compatibility Chart";
 "diagnostics.json_failed" = "Failed to convert diagnostics to JSON: %@";
 "diagnostics.runtime_title" = "Runtime & Feature Diagnostics";
+"diagnostics.show_extract_button" = "Show UI Extract Button";
+"diagnostics.ui_extract" = "Extract UI Structure";
+"diagnostics.ui_extract_button" = "Extract";
 "errors.cancelled" = "Connection was aborted.";
 "errors.connection_lost" = "Connection was interrupted. Please check your connection and try again.";
 "errors.offline" = "No internet connection. Please check your connection and try again.";
@@ -161,7 +161,6 @@
 "settings.confirmations" = "Confirm Action";
 "settings.confirmations_footer" = "The minimum member count for send confirmation is the group size including yourself. Entering 0 sets no minimum threshold and confirms for all groups. Some entry points for calls and sending are still under verification.";
 "settings.copy_sticker_gif" = "Copy Sticker as GIF";
-"settings.developer" = "Developer";
 "settings.diagnostics" = "Diagnostics";
 "settings.diagnostics_footer" = "Themes, sticker GIFs, and MID search are also covered by full feature support. Incomplete items are not displayed as supported.";
 "settings.entry_subtitle" = "Local Settings & Diagnostics";
@@ -214,6 +213,7 @@
 "setup.done" = "Get Started";
 "setup.message" = "Set a few things up first. You can change them anytime in Settings.";
 "setup.open" = "Start Setup";
+"setup.secondary_locked" = "Cannot be changed after login";
 "setup.title" = "Welcome to RUIN";
 "shops.open_rejected" = "Requested LINE to open the shop, but the request was not accepted.";
 "shops.open_unavailable" = "Opening this shop is not available on this LINE version.";

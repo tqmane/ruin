@@ -4,6 +4,7 @@
 #import "Sideload.h"
 #import "Keychain.h"
 #import "../core/Localization.h"
+#import "../interface/InterfaceFeatures.h"
 #import "Features.h"
 #import "../core/TargetMetadata.h"
 #import "LINEPrivateCalls.h"
@@ -47,6 +48,17 @@ static __weak UIViewController *loginProjectionOwner;
 static _Thread_local NSUInteger loginProjectionDepth;
 static atomic_ulong swiftUILoginBindings;
 static atomic_bool welcomeHooksReady = ATOMIC_VAR_INIT(false);
+static atomic_int chatInterfaceVisibleCount = ATOMIC_VAR_INIT(0);
+static atomic_uint phoneIdiomRequests = ATOMIC_VAR_INIT(0);
+
+void RUINSetChatInterfaceVisible(BOOL visible) {
+    if (visible) {
+        atomic_fetch_add(&chatInterfaceVisibleCount, 1);
+        return;
+    }
+    int current = atomic_load(&chatInterfaceVisibleCount);
+    while (current > 0 && !atomic_compare_exchange_weak(&chatInterfaceVisibleCount, &current, current - 1)) {}
+}
 static atomic_bool secondaryHooksReady = ATOMIC_VAR_INIT(false);
 static atomic_bool welcomeCatchUpScheduled = ATOMIC_VAR_INIT(false);
 static atomic_bool secondaryLoginRetryScheduled = ATOMIC_VAR_INIT(false);
@@ -170,6 +182,17 @@ static BOOL RUINLoginCallerIsLINE(void *caller) {
     atomic_fetch_add(&LINEIdiomQueries, 1);
     if (!RUINHasLoginProjectionScope()) atomic_fetch_add(&unscopedLINEQueries, 1);
     if (!NSThread.isMainThread) atomic_fetch_add(&backgroundLINEQueries, 1);
+    // Return the physical phone idiom to main-thread LINE callers only while a
+    // chat view controller is visibly on screen so sticker/emoji pickers use
+    // phone metrics instead of oversized iPad metrics, without leaking into
+    // launch, login, or background device-role checks.
+    if (NSThread.isMainThread && atomic_load(&chatInterfaceVisibleCount) > 0) {
+        id fixPref = [NSUserDefaults.standardUserDefaults objectForKey:RUINFixPanelHeightDefaultsKey];
+        if (!fixPref || [fixPref boolValue]) {
+            atomic_fetch_add(&phoneIdiomRequests, 1);
+            return nativeIdiom;
+        }
+    }
     // LINE caches its device role before Welcome and queries it again from
     // async login tasks. UIKit/SwiftUI callers still receive the physical idiom.
     atomic_fetch_add(&appIdiomRequests, 1);
@@ -708,6 +731,8 @@ NSDictionary *RUINSecondaryLoginDiagnostics(void) {
         @"secondaryRegistrationReturnHookInstalled": @(secondaryRegistrationReturnHookInstalled),
         @"hookRetryCount": @(atomic_load(&secondaryLoginRetryCount)),
         @"tabletQueriesFromLINE": @(atomic_load(&appIdiomRequests)),
+        @"phoneIdiomRequests": @(atomic_load(&phoneIdiomRequests)),
+        @"chatInterfaceVisible": @(atomic_load(&chatInterfaceVisibleCount) > 0),
         @"enabledIdiomQueries":@(atomic_load(&enabledIdiomQueries)),
         @"queriesFromLINE":@(atomic_load(&LINEIdiomQueries)),
         @"queriesFromLINEOutsideVisibleLogin":@(atomic_load(&unscopedLINEQueries)),

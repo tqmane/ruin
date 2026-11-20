@@ -6,7 +6,6 @@ HOST_CC = xcrun --sdk macosx clang -DRUIN_HOST_CHECK=1 -fblocks $(HOST_COMMON)
 export RUIN_TEST_RESOURCE_BUNDLE := $(CURDIR)/resources/RUINResources.bundle
 HOST_WARNINGS := -Wall -Wextra -Werror
 RUIN_BUILD_VERSION ?= $(shell cat VERSION)
-RUIN_DEBUG ?= 0
 HEADER_DIRS := $(sort $(dir $(wildcard src/*/*.h))) vendor/fishhook
 CPPFLAGS := $(addprefix -I,$(HEADER_DIRS)) $(addprefix -Ibuild/logos/,$(filter src/%,$(HEADER_DIRS))) -Ibuild/generated
 RESOURCE_BUNDLE := resources/RUINResources.bundle
@@ -26,11 +25,6 @@ LOGOS_DEPS := $(wildcard \
 source = $(if $(filter $(1:.m=.x),$(LOGOS_SOURCES)),build/logos/$(1),$(1))
 CFLAGS = -isysroot $(SDK) -miphoneos-version-min=18.0 -fobjc-arc -fblocks -Wall -Wextra -O2 \
 	-DRUIN_BUILD_VERSION='@"$(RUIN_BUILD_VERSION)"'
-ifeq ($(RUIN_DEBUG),1)
-CFLAGS += -DRUIN_DEBUG=1
-else
-CFLAGS += -DRUIN_DEBUG=0
-endif
 SOURCES := $(sort $(wildcard src/*/*.m) $(VERSION_MAPPING_SOURCES))
 SWIFT_SOURCES := $(sort $(wildcard src/*/*.swift))
 RUIN_ARCHS := arm64 arm64e
