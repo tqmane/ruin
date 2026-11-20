@@ -48,13 +48,13 @@
 "confirm.send_title" = "送信の確認";
 "confirm.unknown_member_count" = "グループ人数を確認できません。送信しますか？";
 "confirm.unknown_recipient" = "送信先の種類を確認できません。送信しますか？";
-"developer.show_extract_button" = "右上ボタンを表示";
-"developer.ui_extract" = "UI構造の抽出";
-"developer.ui_extract_button" = "UI抽出";
 "diagnostics.export_description" = "RUINのランタイム、互換性、機能診断のJSON";
 "diagnostics.feature_matrix" = "全機能の対応表";
 "diagnostics.json_failed" = "診断をJSONに変換できませんでした: %@";
 "diagnostics.runtime_title" = "ランタイム・機能診断";
+"diagnostics.show_extract_button" = "UI抽出ボタンを表示";
+"diagnostics.ui_extract" = "UI構造の抽出";
+"diagnostics.ui_extract_button" = "UI抽出";
 "errors.cancelled" = "通信が中止されました。";
 "errors.connection_lost" = "通信が途中で切断されました。接続を確認して、もう一度お試しください。";
 "errors.offline" = "インターネットに接続されていません。接続を確認して、もう一度お試しください。";
@@ -161,7 +161,6 @@
 "settings.confirmations" = "操作確認";
 "settings.confirmations_footer" = "送信確認を行う最低人数は、自分を含むグループ人数です。0の場合は最小人数を指定せず、すべてのグループで確認します。通話・送信の一部の入口はまだ検証中です。";
 "settings.copy_sticker_gif" = "スタンプをGIFでコピー";
-"settings.developer" = "開発者";
 "settings.diagnostics" = "診断";
 "settings.diagnostics_footer" = "着せかえ・スタンプGIF・MID検索なども全機能対応の対象です。未完成の項目を対応済みとは表示しません。";
 "settings.entry_subtitle" = "ローカル設定・診断";
@@ -214,6 +213,7 @@
 "setup.done" = "はじめる";
 "setup.message" = "はじめに、いくつか設定しておきましょう。あとから設定画面でも変更できます。";
 "setup.open" = "セットアップを開始";
+"setup.secondary_locked" = "ログイン後は変更できません";
 "setup.title" = "Welcome to RUIN";
 "shops.open_rejected" = "LINEにショップの表示を要求しましたが、受け付けられませんでした。";
 "shops.open_unavailable" = "このLINEバージョンではショップへの移動を利用できません。";

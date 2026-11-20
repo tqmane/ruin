@@ -20,6 +20,7 @@
 #import "TargetMetadata.h"
 #import "StartupProfiler.h"
 #import "RuntimeInspector.h"
+#import "ChatCatalog.h"
 
 extern NSDictionary *RUINNativeEntryDiagnostics(void);
 
@@ -68,7 +69,6 @@ typedef NS_ENUM(NSInteger, RUINSettingsSection) {
     RUINSettingsSectionSecondaryLogin,
     RUINSettingsSectionDiagnostics,
     RUINSettingsSectionLinks,
-    RUINSettingsSectionDeveloper,
     RUINSettingsSectionCount,
 };
 
@@ -152,26 +152,16 @@ static NSArray<NSDictionary *> *ToggleRows(NSInteger section) {
         case RUINSettingsSectionTabs: return RUINNativeTabRows();
         case RUINSettingsSectionMedia: return @[Toggle(RUINLocalizedString(@"settings.keep_unsent_media"), RUINKeepUnsentMessagesKey, @"tabler-history"), Toggle(RUINLocalizedString(@"settings.copy_sticker_gif"), RUINCopyStickerGIFEnabledDefaultsKey, @"tabler-gif")];
         case RUINSettingsSectionNotifications: return @[Toggle(RUINLocalizedString(@"settings.local_notifications"), RUINLocalNotificationsEnabledDefaultsKey, @"tabler-bell")];
-#if RUIN_DEBUG
-        case RUINSettingsSectionDeveloper: return @[Toggle(RUINLocalizedString(@"developer.show_extract_button"), RUINUIExtractButtonEnabledDefaultsKey, @"tabler-eye")];
-#endif
         case RUINSettingsSectionLineFeatures: return @[Toggle(RUINLocalizedString(@"settings.local_lyp"), RUINLocalLYPEnabledDefaultsKey, @"tabler-sparkles"), Toggle(RUINLocalizedString(@"settings.legacy_messaging"), RUINLegacyMessagingEnabledDefaultsKey, @"tabler-messages"), Toggle(RUINLocalizedString(@"settings.skip_age_verification"), RUINBypassAgeVerificationDefaultsKey, @"tabler-shield-check")];
         default: return @[];
     }
 }
 static NSArray<NSNumber *> *RUINSettingsRootCategories(BOOL compatible) {
     if (!compatible) return @[@(RUINSettingsSectionDiagnostics)];
-#if RUIN_DEBUG
-    return @[@(RUINSettingsSectionReadControls), @(RUINSettingsSectionConfirmations), @(RUINSettingsSectionAppearance),
-        @(RUINSettingsSectionTabs), @(RUINSettingsSectionMedia), @(RUINSettingsSectionNotifications),
-        @(RUINSettingsSectionShops), @(RUINSettingsSectionLineFeatures), @(RUINSettingsSectionSecondaryLogin),
-        @(RUINSettingsSectionDiagnostics), @(RUINSettingsSectionDeveloper), @(RUINSettingsSectionLinks)];
-#else
     return @[@(RUINSettingsSectionReadControls), @(RUINSettingsSectionConfirmations), @(RUINSettingsSectionAppearance),
         @(RUINSettingsSectionTabs), @(RUINSettingsSectionMedia), @(RUINSettingsSectionNotifications),
         @(RUINSettingsSectionShops), @(RUINSettingsSectionLineFeatures), @(RUINSettingsSectionSecondaryLogin),
         @(RUINSettingsSectionDiagnostics), @(RUINSettingsSectionLinks)];
-#endif
 }
 static NSString *RUINSettingsCategoryTitle(NSInteger category) {
     switch (category) {
@@ -187,9 +177,6 @@ static NSString *RUINSettingsCategoryTitle(NSInteger category) {
         case RUINSettingsSectionSecondaryLogin: return RUINLocalizedString(@"settings.secondary_login");
         case RUINSettingsSectionDiagnostics: return RUINLocalizedString(@"settings.diagnostics");
         case RUINSettingsSectionLinks: return RUINLocalizedString(@"settings.links");
-#if RUIN_DEBUG
-        case RUINSettingsSectionDeveloper: return RUINLocalizedString(@"settings.developer");
-#endif
         default: return RUINLocalizedString(@"settings.title");
     }
 }
@@ -206,9 +193,6 @@ static NSString *RUINSettingsCategoryIcon(NSInteger category) {
         case RUINSettingsSectionSecondaryLogin: return @"tabler-device-tablet";
         case RUINSettingsSectionDiagnostics: return @"tabler-activity";
         case RUINSettingsSectionLinks: return @"tabler-link";
-#if RUIN_DEBUG
-        case RUINSettingsSectionDeveloper: return @"tabler-settings";
-#endif
         default: return @"tabler-settings";
     }
 }
@@ -325,10 +309,7 @@ static void RUINApplySystemNavigationBarAppearance(UIViewController *controller)
     if (category == RUINSettingsSectionReadControls) return ToggleRows(category).count + 2;
     if (category == RUINSettingsSectionConfirmations || category == RUINSettingsSectionTabs) return ToggleRows(category).count + 1;
     if (category == RUINSettingsSectionShops) return 2;
-    if (category == RUINSettingsSectionDiagnostics) return 7;
-#if RUIN_DEBUG
-    if (category == RUINSettingsSectionDeveloper) return 2;
-#endif
+    if (category == RUINSettingsSectionDiagnostics) return 9;
     if (category == RUINSettingsSectionLineFeatures) return ToggleRows(RUINSettingsSectionLineFeatures).count + 2;
     return MAX((NSInteger)1, (NSInteger)ToggleRows(category).count);
 }
@@ -370,12 +351,6 @@ static void RUINApplySystemNavigationBarAppearance(UIViewController *controller)
         cell.detailTextLabel.text = link[@"detail"];
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         settingsIcon = link[@"icon"];
-#if RUIN_DEBUG
-    } else if (section == RUINSettingsSectionDeveloper && path.row == 1) {
-        cell.textLabel.text = RUINLocalizedString(@"developer.ui_extract");
-        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
-        settingsIcon = @"tabler-file-text";
-#endif
     } else if (!self.compatible || (section == RUINSettingsSectionDiagnostics && path.row < 2)) {
         cell.textLabel.text = path.row == 0 ? RUINLocalizedString(@"diagnostics.runtime_title") : RUINLocalizedString(@"diagnostics.feature_matrix");
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
@@ -418,11 +393,24 @@ static void RUINApplySystemNavigationBarAppearance(UIViewController *controller)
             cell.textLabel.text = RUINLocalizedString(@"profiler.export_json");
             cell.textLabel.textColor = hasLog ? UIColor.labelColor : UIColor.secondaryLabelColor;
             settingsIcon = @"tabler-share";
-        } else {
+        } else if (profilerRow == 4) {
             cell.textLabel.text = RUINLocalizedString(@"profiler.delete_log");
             cell.textLabel.textColor = hasLog ? UIColor.systemRedColor : UIColor.secondaryLabelColor;
             settingsIcon = @"tabler-trash";
             settingsIconTint = UIColor.systemRedColor;
+        } else if (profilerRow == 5) {
+            cell.textLabel.text = RUINLocalizedString(@"diagnostics.show_extract_button");
+            RUINPreferenceSwitch *toggle = [RUINPreferenceSwitch new];
+            toggle.preferenceKey = RUINUIExtractButtonEnabledDefaultsKey;
+            toggle.on = [NSUserDefaults.standardUserDefaults boolForKey:RUINUIExtractButtonEnabledDefaultsKey];
+            toggle.accessibilityLabel = cell.textLabel.text;
+            [toggle addTarget:self action:@selector(preferenceChanged:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = toggle; cell.selectionStyle = UITableViewCellSelectionStyleNone;
+            settingsIcon = @"tabler-eye";
+        } else {
+            cell.textLabel.text = RUINLocalizedString(@"diagnostics.ui_extract");
+            cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+            settingsIcon = @"tabler-file-text";
         }
     } else if (section == RUINSettingsSectionLineFeatures && (NSUInteger)path.row == ToggleRows(RUINSettingsSectionLineFeatures).count) {
         cell.textLabel.text = RUINLocalizedString(@"font.title");
@@ -551,7 +539,6 @@ static void RUINApplySystemNavigationBarAppearance(UIViewController *controller)
     [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"common.confirm") style:UIAlertActionStyleDefault handler:nil]];
     [self presentViewController:alert animated:YES completion:nil];
 }
-#if RUIN_DEBUG
 - (void)runUIExtractionAndShare {
     RUINRunUIExtraction();
     NSDictionary *result = RUINComposerInspectionResult();
@@ -562,7 +549,7 @@ static void RUINApplySystemNavigationBarAppearance(UIViewController *controller)
     if (!url || ![json writeToURL:url options:NSDataWritingAtomic error:NULL]) {
         RUINDiagnosticsViewController *viewer = [RUINDiagnosticsViewController new];
         viewer.document = result;
-        viewer.navigationTitle = RUINLocalizedString(@"developer.ui_extract");
+        viewer.navigationTitle = RUINLocalizedString(@"diagnostics.ui_extract");
         [self.navigationController pushViewController:viewer animated:YES];
         return;
     }
@@ -572,13 +559,12 @@ static void RUINApplySystemNavigationBarAppearance(UIViewController *controller)
         [NSFileManager.defaultManager removeItemAtURL:url error:NULL];
     };
     if (share.popoverPresentationController) {
-        UITableViewCell *cell = [self.tableView cellForRowAtIndexPath:[NSIndexPath indexPathForRow:0 inSection:0]];
+        UITableViewCell *cell = [self.tableView cellForRowAtIndexPath:[NSIndexPath indexPathForRow:8 inSection:0]];
         share.popoverPresentationController.sourceView = cell ?: self.view;
         share.popoverPresentationController.sourceRect = cell ? cell.bounds : self.view.bounds;
     }
     [self presentViewController:share animated:YES completion:nil];
 }
-#endif
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)path {
     [tableView deselectRowAtIndexPath:path animated:YES];
     NSInteger section = self.category >= 0 ? self.category : (self.compatible && path.section == 0 ? RUINSettingsSectionVersion : -1);
@@ -593,10 +579,6 @@ static void RUINApplySystemNavigationBarAppearance(UIViewController *controller)
     if (self.compatible && section == RUINSettingsSectionLinks) {
         NSURL *URL = [NSURL URLWithString:RUINCommunityLinks()[path.row][@"url"]];
         [UIApplication.sharedApplication openURL:URL options:@{} completionHandler:nil];
-#if RUIN_DEBUG
-    } else if (section == RUINSettingsSectionDeveloper && path.row == 1) {
-        [self runUIExtractionAndShare];
-#endif
     } else if (!self.compatible || (section == RUINSettingsSectionDiagnostics && path.row < 2)) {
         RUINDiagnosticsViewController *viewer = [RUINDiagnosticsViewController new];
         if (path.row == 1) {
@@ -610,6 +592,7 @@ static void RUINApplySystemNavigationBarAppearance(UIViewController *controller)
         if (path.row == 4) [self showStartupProfileLog];
         else if (path.row == 5) [self exportStartupProfileLog];
         else if (path.row == 6) [self confirmDeleteStartupProfileLog];
+        else if (path.row == 8) [self runUIExtractionAndShare];
     } else if (section == RUINSettingsSectionLineFeatures && (NSUInteger)path.row == ToggleRows(RUINSettingsSectionLineFeatures).count) {
         RUINOpenLocalFontSettings(self);
     } else if (section == RUINSettingsSectionLineFeatures && (NSUInteger)path.row == ToggleRows(RUINSettingsSectionLineFeatures).count + 1) {
@@ -896,18 +879,27 @@ static BOOL sSetupPresentationInFlight;
 
 @interface RUINSetupViewController : UIViewController
 @property(nonatomic, copy) NSArray<NSDictionary *> *setupRows;
+@property(nonatomic) BOOL allowsSecondaryLoginToggle;
+- (instancetype)initWithSecondaryLoginAllowed:(BOOL)allowed;
 @end
 
 @implementation RUINSetupViewController
 - (instancetype)init {
+    return [self initWithSecondaryLoginAllowed:YES];
+}
+- (instancetype)initWithSecondaryLoginAllowed:(BOOL)allowed {
     self = [super init];
     if (self) {
+        _allowsSecondaryLoginToggle = allowed;
+        NSString *secondaryDesc = allowed
+            ? RUINLocalizedString(@"setup.desc_secondary")
+            : [NSString stringWithFormat:@"%@\n%@", RUINLocalizedString(@"setup.desc_secondary"), RUINLocalizedString(@"setup.secondary_locked")];
         _setupRows = @[
-            @{@"title": RUINLocalizedString(@"login.secondary_action"), @"key": RUINSecondaryLoginEnabledKey, @"icon": @"tabler-device-tablet", @"desc": RUINLocalizedString(@"setup.desc_secondary")},
-            @{@"title": RUINLocalizedString(@"settings.hide_read"), @"key": RUINReadControlEnabledDefaultsKey, @"icon": @"tabler-eye-off", @"desc": RUINLocalizedString(@"setup.desc_read")},
-            @{@"title": RUINLocalizedString(@"settings.confirm_group_send"), @"key": RUINConfirmSendEnabledDefaultsKey, @"icon": @"tabler-send", @"desc": RUINLocalizedString(@"setup.desc_confirm")},
-            @{@"title": RUINLocalizedString(@"settings.hide_ads"), @"key": RUINHideAdsDefaultsKey, @"icon": @"tabler-ad-off", @"desc": RUINLocalizedString(@"setup.desc_ads")},
-            @{@"title": RUINLocalizedString(@"settings.fix_panel_height"), @"key": RUINFixPanelHeightDefaultsKey, @"icon": @"tabler-sticker", @"desc": RUINLocalizedString(@"setup.desc_panel")},
+            @{@"title": RUINLocalizedString(@"login.secondary_action"), @"key": RUINSecondaryLoginEnabledKey, @"icon": @"tabler-device-tablet", @"desc": secondaryDesc, @"enabled": @(allowed)},
+            @{@"title": RUINLocalizedString(@"settings.hide_read"), @"key": RUINReadControlEnabledDefaultsKey, @"icon": @"tabler-eye-off", @"desc": RUINLocalizedString(@"setup.desc_read"), @"enabled": @YES},
+            @{@"title": RUINLocalizedString(@"settings.confirm_group_send"), @"key": RUINConfirmSendEnabledDefaultsKey, @"icon": @"tabler-send", @"desc": RUINLocalizedString(@"setup.desc_confirm"), @"enabled": @YES},
+            @{@"title": RUINLocalizedString(@"settings.hide_ads"), @"key": RUINHideAdsDefaultsKey, @"icon": @"tabler-ad-off", @"desc": RUINLocalizedString(@"setup.desc_ads"), @"enabled": @YES},
+            @{@"title": RUINLocalizedString(@"settings.fix_panel_height"), @"key": RUINFixPanelHeightDefaultsKey, @"icon": @"tabler-sticker", @"desc": RUINLocalizedString(@"setup.desc_panel"), @"enabled": @YES},
         ];
     }
     return self;
@@ -995,6 +987,13 @@ static BOOL sSetupPresentationInFlight;
     toggle.preferenceKey = row[@"key"];
     toggle.on = [NSUserDefaults.standardUserDefaults boolForKey:row[@"key"]];
     toggle.accessibilityLabel = row[@"title"];
+    BOOL enabled = row[@"enabled"] ? [row[@"enabled"] boolValue] : YES;
+    toggle.enabled = enabled;
+    if (!enabled) {
+        title.textColor = UIColor.secondaryLabelColor;
+        tile.tintColor = UIColor.tertiaryLabelColor;
+        card.alpha = 0.72;
+    }
     [toggle addTarget:self action:@selector(setupPreferenceChanged:) forControlEvents:UIControlEventValueChanged];
     toggle.translatesAutoresizingMaskIntoConstraints = NO;
 
@@ -1022,6 +1021,10 @@ static BOOL sSetupPresentationInFlight;
 }
 - (void)setupPreferenceChanged:(RUINPreferenceSwitch *)toggle {
     if (!toggle.preferenceKey) return;
+    if ([toggle.preferenceKey isEqual:RUINSecondaryLoginEnabledKey] && !self.allowsSecondaryLoginToggle) {
+        toggle.on = [NSUserDefaults.standardUserDefaults boolForKey:RUINSecondaryLoginEnabledKey];
+        return;
+    }
     [NSUserDefaults.standardUserDefaults setBool:toggle.isOn forKey:toggle.preferenceKey];
     RUINRefreshSettingsFeature(toggle.preferenceKey);
 }
@@ -1031,7 +1034,8 @@ void RUINPresentSetup(UIViewController *presenter) {
     if (!presenter || sSetupPresentationInFlight) return;
     if (presenter.presentedViewController) return;
     sSetupPresentationInFlight = YES;
-    RUINSetupViewController *setup = [RUINSetupViewController new];
+    BOOL allowSecondary = ![presenter isKindOfClass:RUINSettingsViewController.class] && RUINChatCatalogAccount().length == 0;
+    RUINSetupViewController *setup = [[RUINSetupViewController alloc] initWithSecondaryLoginAllowed:allowSecondary];
     UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:setup];
     nav.modalInPresentation = YES;
     [presenter presentViewController:nav animated:YES completion:^{ sSetupPresentationInFlight = NO; }];

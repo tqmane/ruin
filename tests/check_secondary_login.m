@@ -225,16 +225,21 @@ static UIUserInterfaceIdiom physicalIdiom, lifecycleIdiom, actionIdiom;
 @interface RUINSecondaryFixtureDefaults : NSObject
 @property(nonatomic, strong) NSMutableDictionary *values;
 + (instancetype)standardUserDefaults;
+- (id)objectForKey:(NSString *)key;
 - (BOOL)boolForKey:(NSString *)key;
 - (void)setBool:(BOOL)value forKey:(NSString *)key;
+- (void)removeObjectForKey:(NSString *)key;
 - (BOOL)synchronize;
 @end
 @implementation RUINSecondaryFixtureDefaults
 + (instancetype)standardUserDefaults { static RUINSecondaryFixtureDefaults *value; if (!value) { value = [self new]; value.values = [NSMutableDictionary dictionary]; } return value; }
+- (id)objectForKey:(NSString *)key { return self.values[key]; }
 - (BOOL)boolForKey:(NSString *)key { return [self.values[key] boolValue]; }
 - (void)setBool:(BOOL)value forKey:(NSString *)key { self.values[key] = @(value); }
+- (void)removeObjectForKey:(NSString *)key { [self.values removeObjectForKey:key]; }
 - (BOOL)synchronize { fixtureSynchronizeCount++; return YES; }
 @end
+NSString * const RUINFixPanelHeightDefaultsKey = @"RUINInterfaceFixPanelHeight";
 @interface RUINSecondaryFixtureBundle : NSObject
 + (instancetype)mainBundle;
 @property(nonatomic, readonly) NSDictionary *infoDictionary;
@@ -748,6 +753,24 @@ int main(int argc, const char **argv) { @autoreleasepool {
     }
     [secondary viewDidDisappear:NO];
     assert(UIDevice.currentDevice.userInterfaceIdiom == (enabled ? UIUserInterfaceIdiomPad : physicalIdiom));
+    if (enabled) {
+        NSUInteger phoneBefore = [RUINSecondaryLoginDiagnostics()[@"phoneIdiomRequests"] unsignedIntegerValue];
+        [defaults removeObjectForKey:RUINFixPanelHeightDefaultsKey];
+        RUINSetChatInterfaceVisible(YES);
+        assert([RUINSecondaryLoginDiagnostics()[@"chatInterfaceVisible"] boolValue]);
+        assert(UIDevice.currentDevice.userInterfaceIdiom == physicalIdiom);
+        assert([RUINSecondaryLoginDiagnostics()[@"phoneIdiomRequests"] unsignedIntegerValue] == phoneBefore + 1);
+        [defaults setBool:NO forKey:RUINFixPanelHeightDefaultsKey];
+        assert(UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad);
+        [defaults setBool:YES forKey:RUINFixPanelHeightDefaultsKey];
+        assert(UIDevice.currentDevice.userInterfaceIdiom == physicalIdiom);
+        RUINSetChatInterfaceVisible(NO);
+        assert(![RUINSecondaryLoginDiagnostics()[@"chatInterfaceVisible"] boolValue]);
+        assert(UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad);
+        RUINSetChatInterfaceVisible(NO);
+        assert(![RUINSecondaryLoginDiagnostics()[@"chatInterfaceVisible"] boolValue]);
+        [defaults removeObjectForKey:RUINFixPanelHeightDefaultsKey];
+    }
     physicalIdiom = UIUserInterfaceIdiomPad;
     assert(UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad);
     physicalIdiom = UIUserInterfaceIdiomPhone;

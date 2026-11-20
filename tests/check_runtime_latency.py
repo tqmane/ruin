@@ -57,7 +57,6 @@ static NSArray *FixtureDirectories(NSSearchPathDirectory d, NSSearchPathDomainMa
 static NSDictionary *RUINReplyDiagnostics(void) { assert(NSThread.isMainThread); captures++; return @{@"value":@(current)}; }
 static NSDictionary *RUINRuntimeDiagnostics(void) { assert(NSThread.isMainThread); full++; return @{@"scope":@"full"}; }
 static void RUINRefreshPushDiagnostics(void) { pushes++; }
-static BOOL RUINHandleDebugSettingsFeature(NSString *key) { (void)key; return NO; }
 void RUINRefreshRuntimeReport(void);
 void RUINRefreshSettingsFeature(NSString *key);
 #define NSSearchPathForDirectoriesInDomains FixtureDirectories

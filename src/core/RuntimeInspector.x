@@ -15,11 +15,9 @@
 #import <CoreData/CoreData.h>
 
 #import "Features.h"
-#if RUIN_DEBUG
 #import "Localization.h"
 #import "SecondaryLogin.h"
 #import "InterfaceFeatures.h"
-#endif
 #import "TargetMetadata.h"
 #import "LINEPrivateCalls.h"
 #import "SwiftFields.h"
@@ -909,7 +907,6 @@ void RUINRequestRuntimeSnapshot(void) {
     RUINInspectionNotification(NULL, NULL, NULL, NULL, NULL);
 }
 
-#if RUIN_DEBUG
 // User-triggered composer inspection: unlike the env-gated snapshot path this
 // runs on an explicit tap in RUIN Settings > Diagnostics, and captures the
 // views the snapshot walk skips (hidden and zero-alpha views included), so a
@@ -1254,14 +1251,14 @@ static void RUINAttachUIExtractButton(void) {
     if (!window) return;
     if (!gUIExtractButton) {
         UIButton *button = [UIButton buttonWithType:UIButtonTypeCustom];
-        [button setTitle:RUINLocalizedString(@"developer.ui_extract_button") forState:UIControlStateNormal];
+        [button setTitle:RUINLocalizedString(@"diagnostics.ui_extract_button") forState:UIControlStateNormal];
         [button setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
         button.titleLabel.font = [UIFont systemFontOfSize:11 weight:UIFontWeightSemibold];
         button.backgroundColor = [UIColor colorWithWhite:0 alpha:0.55];
         button.layer.cornerRadius = 12;
         button.layer.borderWidth = 0.5;
         button.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.35].CGColor;
-        button.accessibilityLabel = RUINLocalizedString(@"developer.ui_extract");
+        button.accessibilityLabel = RUINLocalizedString(@"diagnostics.ui_extract");
         [button addAction:[UIAction actionWithHandler:^(__unused __kindof UIAction *action) {
             RUINRunUIExtraction();
             RUINPresentUIExtractionShare();
@@ -1300,7 +1297,6 @@ void RUINInstallUIExtractionButton(void) {
     });
     RUINAttachUIExtractButton();
 }
-#endif
 
 NSDictionary<NSString *, id> *RuntimeInspectorDiagnostics(void) {
     static NSArray *names;
@@ -1315,10 +1311,8 @@ NSDictionary<NSString *, id> *RuntimeInspectorDiagnostics(void) {
         @"muteLastGestureState":@(atomic_load(&gMuteLastGestureState)),
         @"muteLastSenderClass":gMuteLastSenderClass ?: NSNull.null,
         @"presentationMethodEncoding":gPresentationEncoding ?: NSNull.null,
-#if RUIN_DEBUG
         @"composerInspection": gComposerInspection ?: @{@"status": @"not_captured"},
         @"composerInspections": @(gComposerInspectionCount),
-#endif
         @"snapshots": @(atomic_load(&gSnapshots)), @"controllers": @(atomic_load(&gControllerCount)),
         @"swiftFieldNames": @(atomic_load(&gFieldNameCount)), @"foregroundWindowFound": @(atomic_load(&gForegroundWindowFound)),
         @"views": @(atomic_load(&gViewCount)), @"controls": @(atomic_load(&gControlCount)),

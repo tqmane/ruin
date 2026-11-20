@@ -291,18 +291,6 @@ void RUINRefreshSettingsFeatures(void) {
     RUINRefreshRuntimeReport();
 }
 
-static BOOL RUINHandleDebugSettingsFeature(NSString *key) {
-#if RUIN_DEBUG
-    if ([key isEqual:RUINUIExtractButtonEnabledDefaultsKey]) {
-        RUINRefreshUIExtractButton();
-        return YES;
-    }
-#else
-    (void)key;
-#endif
-    return NO;
-}
-
 void RUINRefreshSettingsFeature(NSString *key) {
     if (!key.length) return;
     if (!NSThread.isMainThread) {
@@ -310,7 +298,10 @@ void RUINRefreshSettingsFeature(NSString *key) {
         dispatch_async(dispatch_get_main_queue(), ^{ RUINRefreshSettingsFeature(copiedKey); });
         return;
     }
-    if (RUINHandleDebugSettingsFeature(key)) return;
+    if ([key isEqual:RUINUIExtractButtonEnabledDefaultsKey]) {
+        RUINRefreshUIExtractButton();
+        return;
+    }
     if ([key isEqual:RUINClearViewedUnreadBadgesDefaultsKey]) {
         RUINInstallLocalUnreadBadges();
     } else if ([key isEqual:RUINLegacyHomeEnabledDefaultsKey]) {
@@ -420,9 +411,7 @@ static void RUINApplicationDidBecomeActive(void) {
         RUIN_PROFILE_CALL("activate.native_chat_controls", RUINInstallNativeChatControls());
         RUIN_PROFILE_CALL("activate.local_unread_badges", RUINInstallLocalUnreadBadges());
         RUIN_PROFILE_CALL("activate.runtime_inspector", InstallRuntimeInspector());
-#if RUIN_DEBUG
         RUIN_PROFILE_CALL("activate.ui_extract_button", RUINInstallUIExtractionButton());
-#endif
     }
     RUINMaybeScheduleEnvironmentSettings();
     RUINRefreshRuntimeReport();
@@ -468,9 +457,7 @@ __attribute__((constructor)) static void RUINConstructor(void) {
             RUIN_PROFILE_CALL("install.message_history", RUINInstallMessageHistory());
             RUIN_PROFILE_CALL("install.read_users_events", RUINInstallReadUsersEvents());
             RUIN_PROFILE_CALL("install.runtime_inspector", InstallRuntimeInspector());
-#if RUIN_DEBUG
             RUIN_PROFILE_CALL("install.ui_extract_button", RUINInstallUIExtractionButton());
-#endif
             RUIN_PROFILE_CALL("install.automatic_read_gate", RUINInstallAutomaticReadGate());
             RUIN_PROFILE_CALL("install.native_entry", RUINInstallNativeEntry());
         } else {

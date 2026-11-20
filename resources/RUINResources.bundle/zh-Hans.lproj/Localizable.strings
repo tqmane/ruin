@@ -48,13 +48,13 @@
 "confirm.send_title" = "发送确认";
 "confirm.unknown_member_count" = "无法确认群组人数。是否发送？";
 "confirm.unknown_recipient" = "无法确认发送对象类型。是否发送？";
-"developer.show_extract_button" = "显示右上角按钮";
-"developer.ui_extract" = "提取 UI 结构";
-"developer.ui_extract_button" = "提取";
 "diagnostics.export_description" = "RUIN运行环境、兼容性及功能诊断JSON";
 "diagnostics.feature_matrix" = "全部功能兼容表";
 "diagnostics.json_failed" = "无法将诊断转换为JSON: %@";
 "diagnostics.runtime_title" = "运行时与功能诊断";
+"diagnostics.show_extract_button" = "显示 UI 提取按钮";
+"diagnostics.ui_extract" = "提取 UI 结构";
+"diagnostics.ui_extract_button" = "提取";
 "errors.cancelled" = "通信已中止。";
 "errors.connection_lost" = "通信意外中断。请检查连接后重试。";
 "errors.offline" = "未连接到互联网。请检查网络连接后重试。";
@@ -161,7 +161,6 @@
 "settings.confirmations" = "确认操作";
 "settings.confirmations_footer" = "进行发送确认的最少人数为包含自己在内的群组人数。设为 0 表示不设最低人数限制，对所有群组都进行确认。部分通话与发送入口仍在验证中。";
 "settings.copy_sticker_gif" = "复制贴图为GIF";
-"settings.developer" = "开发者";
 "settings.diagnostics" = "诊断";
 "settings.diagnostics_footer" = "主题、贴图GIF、MID搜索等均在全功能支持范围内。未完成的项目不会显示为已支持。";
 "settings.entry_subtitle" = "本地设置与诊断";
@@ -214,6 +213,7 @@
 "setup.done" = "开始使用";
 "setup.message" = "开始前先设置几个选项，之后也可以在设置中更改。";
 "setup.open" = "开始设置";
+"setup.secondary_locked" = "登录后无法更改";
 "setup.title" = "Welcome to RUIN";
 "shops.open_rejected" = "已请求LINE显示商店，但未被接受。";
 "shops.open_unavailable" = "此LINE版本不支持前往该商店。";
