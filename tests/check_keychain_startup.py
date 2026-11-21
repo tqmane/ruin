@@ -107,7 +107,12 @@ int main(int argc,const char **argv) { @autoreleasepool {
     NSDictionary *diag = RUINKeychainDiagnostics();
     assert(diag[@"lastDefaultProbeStatus"] && diag[@"lastAppGroupProbeStatus"] &&
            diag[@"lastSharedGroupProbeStatus"] && diag[@"lastBindingLoadStatus"] &&
-           diag[@"lastBindingSaveStatus"]);
+           diag[@"lastBindingSaveStatus"] && diag[@"lastBindingResetStatus"] &&
+           diag[@"lastBindingRejectReason"] && diag[@"canResetBinding"]);
+    if ([mode isEqual:@"foreign-binding"]) {
+        assert([diag[@"lastBindingRejectReason"] isEqual:@"foreign_prefix:OTHER.account"]);
+        assert([diag[@"canResetBinding"] boolValue]);
+    }
     assert(deletes<=adds);printf("PASS production keychain startup: %s\n",argv[1]);
 }return 0;}
 '''

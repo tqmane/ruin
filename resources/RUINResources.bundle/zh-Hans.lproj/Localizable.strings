@@ -74,6 +74,9 @@
 "login.copy_diagnostics" = "复制诊断信息";
 "login.data_protection_message" = "为保护现有的聊天记录与密钥，无法开始此操作。请检查签名及存储位置的诊断状态。";
 "login.data_protection_title" = "为保护数据无法开始";
+"login.reset_keychain_action" = "重置钥匙串绑定";
+"login.reset_keychain_done_message" = "已重置钥匙串命名空间绑定，请再次点击登录。";
+"login.reset_keychain_done_title" = "钥匙串绑定已重置";
 "login.method_changed" = "已切换登录方式";
 "login.method_title" = "登录方式";
 "login.primary_action" = "标准iPhone登录";

@@ -253,12 +253,18 @@ NSString * const RUINFixPanelHeightDefaultsKey = @"RUINInterfaceFixPanelHeight";
 - (NSDictionary *)infoDictionary { return fixtureBundleInfo ?: @{@"CFBundleIdentifier":@"jp.naver.line", @"CFBundleShortVersionString":@"26.17.0", @"CFBundleVersion":@"2026.1103.1841"}; }
 - (NSString *)executablePath { return fixtureImageEnabled ? @(fixtureLinePath) : NSBundle.mainBundle.executablePath; }
 @end
-static BOOL storageReady = YES, keychainReady = YES, throwOnLogin;
-static NSUInteger storageInstalls, keychainInstalls, loginCalls, qrCalls, primaryDeviceLoginCalls, registrationFlowCalls;
+static BOOL storageReady = YES, keychainReady = YES, canResetKeychainBinding = NO, throwOnLogin;
+static NSUInteger storageInstalls, keychainInstalls, keychainResetCalls, loginCalls, qrCalls, primaryDeviceLoginCalls, registrationFlowCalls;
 void RUINInstallCompatibility(void) { storageInstalls++; }
 void RUINInstallKeychainCompatibility(void) { keychainInstalls++; }
 BOOL RUINStorageMigrationReady(void) { return storageReady; }
 BOOL RUINKeychainCompatibilityReady(void) { return keychainReady; }
+BOOL RUINResetKeychainNamespaceBinding(void) {
+    keychainResetCalls++;
+    keychainReady = YES;
+    canResetKeychainBinding = NO;
+    return YES;
+}
 NSDictionary *RUINBundleIdentityDiagnostics(void) { return @{@"status": @"installed"}; }
 NSDictionary *RUINCompatibilityDiagnostics(void) {
     return @{@"storageMigrationReady": @(storageReady), @"appGroupMappingInstalled": @YES,
@@ -269,7 +275,10 @@ NSDictionary *RUINKeychainDiagnostics(void) {
     return @{@"ready": @(keychainReady), @"bindingStatus": keychainReady ? @"RebindReady" : @"NamespaceBindingUnavailable",
         @"namespaceBindingPersisted": @(keychainReady), @"lastDefaultProbeStatus": @0,
         @"lastAppGroupProbeStatus": @(-34018), @"lastSharedGroupProbeStatus": @(-34018),
-        @"lastBindingLoadStatus": @(-25300), @"lastBindingSaveStatus": @(keychainReady ? 0 : -25299)};
+        @"lastBindingLoadStatus": @0, @"lastBindingSaveStatus": @(keychainReady ? 0 : -25291),
+        @"lastBindingResetStatus": @(-25291),
+        @"lastBindingRejectReason": keychainReady ? @"none" : @"denied:TEAM.old.bundle",
+        @"canResetBinding": @(canResetKeychainBinding)};
 }
 
 #define NSUserDefaults RUINSecondaryFixtureDefaults
@@ -727,15 +736,27 @@ int main(int argc, const char **argv) { @autoreleasepool {
 
     for (NSUInteger failure = 0; failure < 2; failure++) {
         storageReady = failure != 0; keychainReady = failure == 0;
+        canResetKeychainBinding = !keychainReady;
         UIPasteboard.generalPasteboard.string = nil;
         Tap((id)welcome, tap); assert(loginCalls == 1 && welcome.presentedViewController);
         UIAlertController *preflightAlert = (id)welcome.presentedViewController;
         assert([preflightAlert.message containsString:@"bundle=installed signSrc=embedded_mobileprovision"]);
         assert([preflightAlert.message containsString:@"keychain="] && [preflightAlert.message containsString:@"storageReady="]);
-        assert(preflightAlert.actions.count == 2 && preflightAlert.actions[0].handler);
-        preflightAlert.actions[0].handler(preflightAlert.actions[0]);
-        assert([UIPasteboard.generalPasteboard.string containsString:@"signSrc=embedded_mobileprovision"]);
-        welcome.presentedViewController = nil;
+        if (canResetKeychainBinding) {
+            assert(preflightAlert.actions.count == 3 && preflightAlert.actions[0].handler && preflightAlert.actions[1].handler);
+            preflightAlert.actions[1].handler(preflightAlert.actions[1]);
+            assert([UIPasteboard.generalPasteboard.string containsString:@"reject=denied:TEAM.old.bundle"]);
+            welcome.presentedViewController = nil;
+            preflightAlert.actions[0].handler(preflightAlert.actions[0]);
+            assert(keychainResetCalls == 1 && keychainReady && !canResetKeychainBinding);
+            assert(welcome.presentedViewController && welcome.presentedViewController != preflightAlert);
+            welcome.presentedViewController = nil;
+        } else {
+            assert(preflightAlert.actions.count == 2 && preflightAlert.actions[0].handler);
+            preflightAlert.actions[0].handler(preflightAlert.actions[0]);
+            assert([UIPasteboard.generalPasteboard.string containsString:@"signSrc=embedded_mobileprovision"]);
+            welcome.presentedViewController = nil;
+        }
     }
     const RUINVersionMapping *mapping17 = RUINMappingForInfo(@{
         @"CFBundleIdentifier": @"jp.naver.line",

@@ -353,6 +353,25 @@ int main(void) {
         assert(!RUINFakeDefaultGroup(nil, errSecNotAvailable, errSecSuccess));
         assert(gFakeDeleteCalls == 0);
 
+        NSDictionary *partialSaved = @{@"version": @1, @"groups": @{RUINOldAppAccessGroup: @"HOSTPREFIX.previous.signed.app"}};
+        gFakePermissions = RUINPermissions(@[@"HOSTPREFIX.previous.signed.app", defaultGroup], @[]);
+        NSDictionary *filledPartial = RUINReuseAccessGroupBinding(deniedSharedCandidate, partialSaved, defaultGroup,
+            ^RUINGroupPermission(NSString *group) { return RUINFakePermission(group); });
+        assert([filledPartial[RUINOldAppAccessGroup] isEqual:@"HOSTPREFIX.previous.signed.app"]);
+        assert([filledPartial[RUINOldSharedAccessGroup] isEqual:defaultGroup]);
+        assert([lastBindingRejectReason isEqual:@"none"]);
+
+        NSDictionary *deniedPrevious = RUINPermissions(@[defaultShared], @[@"HOSTPREFIX.previous.signed.app"]);
+        gFakePermissions = deniedPrevious;
+        assert(!RUINReuseAccessGroupBinding(genericMissingMetadata, savedBinding, defaultGroup,
+            ^RUINGroupPermission(NSString *group) { return RUINFakePermission(group); }));
+        assert([lastBindingRejectReason isEqual:@"denied:HOSTPREFIX.previous.signed.app"]);
+        assert(!RUINReuseAccessGroupBinding(genericMissingMetadata, @{@"version": @2}, defaultGroup,
+            ^RUINGroupPermission(NSString *group) { return RUINFakePermission(group); }));
+        assert([lastBindingRejectReason isEqual:@"malformed:2"]);
+        NSDictionary *diag = RUINKeychainDiagnostics();
+        assert(diag[@"lastBindingRejectReason"] && diag[@"lastBindingResetStatus"] && diag[@"canResetBinding"]);
+
         puts("PASS keychain identity gates, scoped group mapping and probe cleanup");
     }
     return 0;

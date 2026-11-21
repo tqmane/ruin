@@ -74,6 +74,9 @@
 "login.copy_diagnostics" = "診断情報をコピー";
 "login.data_protection_message" = "既存のトーク履歴と鍵を保護するため、操作を開始できません。署名および保存先の診断状態を確認してください。";
 "login.data_protection_title" = "データ保護のため処理を開始できません";
+"login.reset_keychain_action" = "キーチェーン設定をリセット";
+"login.reset_keychain_done_message" = "キーチェーンの保存先バインディングをリセットしました。もう一度ログインをタップしてください。";
+"login.reset_keychain_done_title" = "キーチェーン設定をリセットしました";
 "login.method_changed" = "ログイン方法を切り替えました";
 "login.method_title" = "ログイン方法";
 "login.primary_action" = "通常のiPhoneログイン";
