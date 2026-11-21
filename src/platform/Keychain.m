@@ -135,10 +135,14 @@ static BOOL RUINIsIdentifierPrefix(NSString *prefix) {
 }
 
 static NSString *RUINIdentifierPrefix(NSString *identifier) {
-    if (![identifier isKindOfClass:NSString.class] || [identifier containsString:@"*"]) return nil;
+    if (![identifier isKindOfClass:NSString.class]) return nil;
     NSRange separator = [identifier rangeOfString:@"."];
     if (separator.location == NSNotFound || !separator.location || separator.location + 1 >= identifier.length)
         return nil;
+    NSString *suffix = [identifier substringFromIndex:separator.location + 1];
+    // Wildcard keychain-access-groups entitlements take the form "<TEAMID>.*".
+    // Reject wildcards anywhere else (for example "BADPREFIX*.bundle" or "TEAM.app*").
+    if ([suffix containsString:@"*"] && ![suffix isEqualToString:@"*"]) return nil;
     NSString *prefix = [identifier substringToIndex:separator.location];
     return RUINIsIdentifierPrefix(prefix) ? prefix : nil;
 }

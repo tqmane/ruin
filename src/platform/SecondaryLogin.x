@@ -179,17 +179,19 @@ static BOOL RUINMigrationPreflight(UIViewController *controller) {
             [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"login.reset_keychain_action")
                 style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
                     BOOL resetReady = RUINResetKeychainNamespaceBinding();
-                    UIViewController *presenter = weakController;
-                    if (!presenter || presenter.presentedViewController) return;
-                    if (resetReady && RUINStorageMigrationReady()) {
-                        UIAlertController *done = [UIAlertController alertControllerWithTitle:RUINLocalizedString(@"login.reset_keychain_done_title")
-                            message:RUINLocalizedString(@"login.reset_keychain_done_message")
-                            preferredStyle:UIAlertControllerStyleAlert];
-                        [done addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"common.confirm") style:UIAlertActionStyleDefault handler:nil]];
-                        [presenter presentViewController:done animated:YES completion:nil];
-                    } else {
-                        RUINMigrationPreflight(presenter);
-                    }
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        UIViewController *presenter = weakController;
+                        if (!presenter || presenter.presentedViewController) return;
+                        if (resetReady && RUINStorageMigrationReady()) {
+                            UIAlertController *done = [UIAlertController alertControllerWithTitle:RUINLocalizedString(@"login.reset_keychain_done_title")
+                                message:RUINLocalizedString(@"login.reset_keychain_done_message")
+                                preferredStyle:UIAlertControllerStyleAlert];
+                            [done addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"common.confirm") style:UIAlertActionStyleDefault handler:nil]];
+                            [presenter presentViewController:done animated:YES completion:nil];
+                        } else {
+                            RUINMigrationPreflight(presenter);
+                        }
+                    });
                 }]];
         }
         [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"login.copy_diagnostics")

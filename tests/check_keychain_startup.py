@@ -17,13 +17,15 @@ fixture = r'''
 #include <stdio.h>
 static NSString *const appGroup = @"FIXTURE.jp.naver.line";
 static NSString *const sharedGroup = @"FIXTURE.com.linecorp.trident.shared";
-static BOOL locked, persistFails, nativeAllowed, sharedAllowed, identityReady = YES, corruptBinding;
+static NSString *const wildcardGroup = @"J36T6YMF29.*";
+static BOOL locked, persistFails, nativeAllowed, sharedAllowed, wildcardAllowed, identityReady = YES, corruptBinding;
 static NSUInteger adds, deletes, saves, rebinds;
 static NSDictionary *binding;
 static OSStatus Add(CFDictionaryRef attrs, CFTypeRef *result) {
     (void)attrs; adds++;
     if (locked) return errSecInteractionNotAllowed;
-    if (result) *result=CFRetain((__bridge CFTypeRef)@{(__bridge id)kSecAttrAccessGroup:appGroup});
+    NSString *defaultResultGroup = wildcardAllowed ? wildcardGroup : appGroup;
+    if (result) *result=CFRetain((__bridge CFTypeRef)@{(__bridge id)kSecAttrAccessGroup:defaultResultGroup});
     return errSecSuccess;
 }
 static OSStatus Delete(CFDictionaryRef query) { (void)query; deletes++; return errSecSuccess; }
@@ -45,17 +47,18 @@ NSDictionary *RUINActualMainBundleInfo(void) { return @{}; }
 static BOOL Eligible(NSString *status, NSDictionary *info) { (void)info;return [status isEqual:@"already_original"]; }
 static RUINGroupPermission RUINProbeAccessGroupPermission(NSString *group) {
     if (locked) return RUINGroupPermissionUnknown;
+    if (wildcardAllowed) return [group isEqual:wildcardGroup] ? RUINGroupPermissionAllowed : RUINGroupPermissionDenied;
     if ([group isEqual:appGroup] || (sharedAllowed && [group isEqual:sharedGroup]) ||
         (nativeAllowed && ([group isEqual:RUINOldAppAccessGroup] || [group isEqual:RUINOldSharedAccessGroup]))) return RUINGroupPermissionAllowed;
     return RUINGroupPermissionDenied;
 }
 static NSDictionary *RUINLoadNamespaceBinding(NSString *group, OSStatus *status) {
-    assert([group isEqual:appGroup] || [group isEqual:sharedGroup]);
+    assert([group isEqual:appGroup] || [group isEqual:sharedGroup] || [group isEqual:wildcardGroup]);
     if (corruptBinding) { corruptBinding = NO; *status = errSecDecode; return nil; }
     *status=binding ? errSecSuccess : errSecItemNotFound;return binding;
 }
 static BOOL RUINSaveNamespaceBinding(NSString *group, NSDictionary *mapping) {
-    assert([group isEqual:appGroup] || [group isEqual:sharedGroup]);saves++;
+    assert([group isEqual:appGroup] || [group isEqual:sharedGroup] || [group isEqual:wildcardGroup]);saves++;
     if (persistFails) return NO;
     binding=@{@"version":@1,@"groups":[mapping copy]};return YES;
 }
@@ -80,10 +83,12 @@ int main(int argc,const char **argv) { @autoreleasepool {
     assert(argc==2);NSString *mode=@(argv[1]);
     nativeAllowed=[mode isEqual:@"native"] || [mode isEqual:@"lc-owned"];
     sharedAllowed=[mode isEqual:@"shared"];
+    wildcardAllowed=[mode isEqual:@"wildcard-group"];
     locked=[mode isEqual:@"locked"];
     persistFails=[mode isEqual:@"persist-failed"];
     identityReady=![mode isEqual:@"early-identity"];
     corruptBinding=[mode isEqual:@"decode-recovery"];
+    if (wildcardAllowed) binding=@{@"version":@1,@"groups":@{RUINOldAppAccessGroup:wildcardGroup,RUINOldSharedAccessGroup:wildcardGroup}};
     if ([mode isEqual:@"foreign-binding"]) binding=@{@"version":@1,@"groups":@{RUINOldAppAccessGroup:@"OTHER.account",RUINOldSharedAccessGroup:@"OTHER.shared"}};
     RUINInstallKeychainCompatibility();
     if (locked || persistFails || !identityReady) {
@@ -97,8 +102,10 @@ int main(int argc,const char **argv) { @autoreleasepool {
         assert(RUINKeychainCompatibilityReady());
         assert(nativeAllowed ? !rebinds && !saves : rebinds==1 && namespaceBindingPersisted);
         if (!nativeAllowed) {
-            assert([binding[@"groups"][RUINOldSharedAccessGroup] isEqual:sharedAllowed ? sharedGroup : appGroup]);
-            assert([binding[@"groups"][RUINOldAppAccessGroup] isEqual:appGroup]);
+            NSString *expectedShared = wildcardAllowed ? wildcardGroup : (sharedAllowed ? sharedGroup : appGroup);
+            NSString *expectedApp = wildcardAllowed ? wildcardGroup : appGroup;
+            assert([binding[@"groups"][RUINOldSharedAccessGroup] isEqual:expectedShared]);
+            assert([binding[@"groups"][RUINOldAppAccessGroup] isEqual:expectedApp]);
         }
         NSUInteger priorAdds=adds,priorRebinds=rebinds;
         RUINInstallKeychainCompatibility();
@@ -122,5 +129,5 @@ with tempfile.TemporaryDirectory(prefix='ruin-keychain-startup-') as tmp:
     includes=[arg for folder in [*sorted((ROOT/'src').iterdir()),ROOT/'vendor/fishhook'] if folder.is_dir() for arg in ['-I',str(folder)]]
     subprocess.run(['xcrun','--sdk','macosx','clang','-DRUIN_HOST_CHECK=1','-fobjc-arc','-fblocks','-Wall','-Wextra','-Werror','-Wno-unused-function',*includes,str(m),*map(str,common),'-framework','Foundation','-framework','Security','-o',str(tmp/'check')],check=True)
     subprocess.run(['codesign','--force','--sign','-',str(tmp/'check')],check=True)
-    for scenario in ['default-only','shared','native','lc-owned','locked','persist-failed','early-identity','decode-recovery','foreign-binding']:
+    for scenario in ['default-only','shared','wildcard-group','native','lc-owned','locked','persist-failed','early-identity','decode-recovery','foreign-binding']:
         subprocess.run([str(tmp/'check'),scenario],check=True,timeout=10)
