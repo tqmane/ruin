@@ -748,6 +748,7 @@ int main(int argc, const char **argv) { @autoreleasepool {
             assert([UIPasteboard.generalPasteboard.string containsString:@"reject=denied:TEAM.old.bundle"]);
             welcome.presentedViewController = nil;
             preflightAlert.actions[0].handler(preflightAlert.actions[0]);
+            DrainMainQueue();
             assert(keychainResetCalls == 1 && keychainReady && !canResetKeychainBinding);
             assert(welcome.presentedViewController && welcome.presentedViewController != preflightAlert);
             welcome.presentedViewController = nil;

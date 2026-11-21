@@ -370,7 +370,26 @@ int main(void) {
             ^RUINGroupPermission(NSString *group) { return RUINFakePermission(group); }));
         assert([lastBindingRejectReason isEqual:@"malformed:2"]);
         NSDictionary *diag = RUINKeychainDiagnostics();
-        assert(diag[@"lastBindingRejectReason"] && diag[@"lastBindingResetStatus"] && diag[@"canResetBinding"]);
+        assert([diag[@"lastBindingRejectReason"] length] && diag[@"lastBindingResetStatus"] && diag[@"canResetBinding"]);
+
+        // Wildcard keychain-access-groups ("<TEAMID>.*") must resolve its Team prefix and reuse cleanly.
+        assert([RUINIdentifierPrefix(@"J36T6YMF29.*") isEqualToString:@"J36T6YMF29"]);
+        assert(!RUINIdentifierPrefix(@"BADPREFIX*.bundle"));
+        assert(!RUINIdentifierPrefix(@"J36T6YMF29.app*"));
+        assert(!RUINIdentifierPrefix(@"*.bundle"));
+        NSString *wildcardGroup = @"J36T6YMF29.*";
+        gFakePermissions = RUINPermissions(@[wildcardGroup], @[RUINOldAppAccessGroup, RUINOldSharedAccessGroup, @"J36T6YMF29.com.linecorp.trident.shared"]);
+        NSDictionary *wildcardMap = RUINMapWithPermissions(wildcardGroup, @{}, RUINPermissions(
+            @[wildcardGroup], @[RUINOldAppAccessGroup, RUINOldSharedAccessGroup, @"J36T6YMF29.com.linecorp.trident.shared"]));
+        assert([wildcardMap[RUINOldAppAccessGroup] isEqualToString:wildcardGroup]);
+        assert([wildcardMap[RUINOldSharedAccessGroup] isEqualToString:wildcardGroup]);
+        assert([wildcardMap[@"J36T6YMF29.jp.naver.line"] isEqualToString:wildcardGroup]);
+        NSDictionary *wildcardSaved = @{@"version": @1, @"groups": @{
+            RUINOldAppAccessGroup: wildcardGroup,
+            RUINOldSharedAccessGroup: wildcardGroup}};
+        NSDictionary *wildcardReused = RUINReuseAccessGroupBinding(wildcardMap, wildcardSaved, wildcardGroup,
+            ^RUINGroupPermission(NSString *group) { return RUINFakePermission(group); });
+        assert([wildcardReused isEqual:wildcardMap] && [lastBindingRejectReason isEqualToString:@"none"]);
 
         puts("PASS keychain identity gates, scoped group mapping and probe cleanup");
     }
