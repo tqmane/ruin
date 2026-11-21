@@ -71,6 +71,7 @@
 "font.select" = "選取字型";
 "font.title" = "自訂字型";
 "login.back_to_primary_action" = "返回普通登入";
+"login.copy_diagnostics" = "複製診斷資訊";
 "login.data_protection_message" = "為保護現有的聊天紀錄與金鑰，無法開始此操作。請檢查簽名及儲存位置的診斷狀態。";
 "login.data_protection_title" = "為保護資料無法開始";
 "login.method_changed" = "已切換登入方式";

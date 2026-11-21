@@ -3,6 +3,8 @@
 #import "SecondaryLogin.h"
 #import "Sideload.h"
 #import "Keychain.h"
+#import "BundleIdentity.h"
+#import "ThemeMappings.h"
 #import "../core/Localization.h"
 #import "../interface/InterfaceFeatures.h"
 #import "Features.h"
@@ -22,10 +24,14 @@ FOUNDATION_EXPORT void RUINPresentFirstRunSetupIfNeeded(UIViewController *presen
 #import <objc/message.h>
 #import <mach-o/dyld.h>
 #import <dlfcn.h>
+#import <os/lock.h>
 #import <stdatomic.h>
 #import <mach-o/loader.h>
 #import <mach/machine.h>
 #import <string.h>
+#if defined(__has_include) && __has_include(<ptrauth.h>)
+#import <ptrauth.h>
+#endif
 
 NSString *const RUINSecondaryLoginEnabledKey = @"RUINSecondaryLoginEnabled";
 @protocol RUINAccessibilityElementsProviding <NSObject>
@@ -50,6 +56,57 @@ static atomic_ulong swiftUILoginBindings;
 static atomic_bool welcomeHooksReady = ATOMIC_VAR_INIT(false);
 static atomic_int chatInterfaceVisibleCount = ATOMIC_VAR_INIT(0);
 static atomic_uint phoneIdiomRequests = ATOMIC_VAR_INIT(0);
+static atomic_uint chatBackgroundPhoneIdiomRequests = ATOMIC_VAR_INIT(0);
+static os_unfair_lock chatBackgroundIdiomLock = OS_UNFAIR_LOCK_INIT;
+static atomic_int chatBackgroundIdiomState = ATOMIC_VAR_INIT(0);
+static const RUINThemeChatBackgroundIdiomMapping *chatBackgroundIdiomMapping;
+static intptr_t chatBackgroundIdiomSlide;
+
+static inline uintptr_t RUINStripReturnAddress(uintptr_t address) {
+#if defined(__has_feature)
+#if __has_feature(ptrauth_calls)
+    return (uintptr_t)ptrauth_strip((void *)address, ptrauth_key_return_address);
+#endif
+#endif
+    return address;
+}
+
+static BOOL RUINShouldPreserveChatBackgroundTheme(void *caller, void *frameAddress) {
+    if (!caller || !frameAddress) return NO;
+    int state = atomic_load_explicit(&chatBackgroundIdiomState, memory_order_acquire);
+    if (state == 0) {
+        os_unfair_lock_lock(&chatBackgroundIdiomLock);
+        state = atomic_load_explicit(&chatBackgroundIdiomState, memory_order_relaxed);
+        if (state == 0) {
+            RUINMainExecutableImage image;
+            if (RUINResolveMainExecutableImage(&image)) {
+                const RUINVersionMapping *mapping = RUINCurrentMapping();
+                const RUINThemeChatBackgroundIdiomMapping *idiom = mapping ? &mapping->themes.chatBackgroundIdiom : NULL;
+                if (idiom && idiom->status == RUINMappingStatusVerified &&
+                    RUINVerifyInstructions(image.header, image.slide, idiom->anchors, idiom->anchorCount)) {
+                    chatBackgroundIdiomMapping = idiom;
+                    chatBackgroundIdiomSlide = image.slide;
+                    state = 1;
+                } else {
+                    state = -1;
+                }
+                atomic_store_explicit(&chatBackgroundIdiomState, state, memory_order_release);
+            }
+        }
+        os_unfair_lock_unlock(&chatBackgroundIdiomLock);
+    }
+    if (state != 1 || !chatBackgroundIdiomMapping) return NO;
+    uintptr_t helperPC = RUINStripReturnAddress((uintptr_t)caller);
+    uintptr_t unslidHelper = (uintptr_t)((intptr_t)helperPC - chatBackgroundIdiomSlide);
+    if (unslidHelper != chatBackgroundIdiomMapping->idiomHelperReturnPC) return NO;
+    uintptr_t fp = (uintptr_t)frameAddress;
+    if (fp & (sizeof(uintptr_t) - 1)) return NO;
+    uintptr_t callerFP = *(const uintptr_t *)fp;
+    if (callerFP <= fp || (callerFP & (sizeof(uintptr_t) - 1)) || (callerFP - fp) > 0x10000) return NO;
+    uintptr_t callerLR = RUINStripReturnAddress(*(const uintptr_t *)(callerFP + sizeof(uintptr_t)));
+    return RUINThemeChatBackgroundIdiomWipeMatches(
+        chatBackgroundIdiomMapping, chatBackgroundIdiomSlide, helperPC, callerLR);
+}
 
 void RUINSetChatInterfaceVisible(BOOL visible) {
     if (visible) {
@@ -72,14 +129,52 @@ static BOOL RUINHasLoginProjectionScope(void) {
     return loginProjectionDepth || loginProjectionOwner.viewIfLoaded.window != nil;
 }
 
+static NSString *RUINMigrationPreflightDiagnosticsText(void) {
+    NSDictionary *bundle = RUINBundleIdentityDiagnostics() ?: @{};
+    NSDictionary *storage = RUINCompatibilityDiagnostics() ?: @{};
+    NSDictionary *keychain = RUINKeychainDiagnostics() ?: @{};
+    NSArray *errors = [storage[@"storageBindingErrors"] isKindOfClass:NSArray.class]
+        ? storage[@"storageBindingErrors"] : @[];
+    NSMutableArray *errorParts = [NSMutableArray arrayWithCapacity:errors.count];
+    for (id item in errors) {
+        if (![item isKindOfClass:NSDictionary.class]) continue;
+        [errorParts addObject:[NSString stringWithFormat:@"%@(%@/%@)",
+            item[@"namespace"] ?: @"?", item[@"disposition"] ?: @"?", item[@"errorCode"] ?: @"?"]];
+    }
+    return [NSString stringWithFormat:
+        @"bundle=%@ signSrc=%@\nkeychain=%@ ready=%@ persist=%@ def=%@ app=%@ shared=%@ load=%@ save=%@\nstorageReady=%@ hooks=%@ unsafe=%@ resolved=%@ errs=%@",
+        bundle[@"status"] ?: @"?",
+        storage[@"signingIdentifierSource"] ?: @"?",
+        keychain[@"bindingStatus"] ?: @"?",
+        keychain[@"ready"] ?: @NO,
+        keychain[@"namespaceBindingPersisted"] ?: @NO,
+        keychain[@"lastDefaultProbeStatus"] ?: @"?",
+        keychain[@"lastAppGroupProbeStatus"] ?: @"?",
+        keychain[@"lastSharedGroupProbeStatus"] ?: @"?",
+        keychain[@"lastBindingLoadStatus"] ?: @"?",
+        keychain[@"lastBindingSaveStatus"] ?: @"?",
+        storage[@"storageMigrationReady"] ?: @NO,
+        storage[@"appGroupMappingInstalled"] ?: @NO,
+        storage[@"unsafeStorageBindings"] ?: @0,
+        storage[@"resolvedStorageNamespaces"] ?: @0,
+        errorParts.count ? [errorParts componentsJoinedByString:@", "] : @"none"];
+}
+
 static BOOL RUINMigrationPreflight(UIViewController *controller) {
     RUINInstallCompatibility();
     RUINInstallKeychainCompatibility();
     if (RUINStorageMigrationReady() && RUINKeychainCompatibilityReady()) return YES;
     if (!controller.presentedViewController) {
+        NSString *diagnostics = RUINMigrationPreflightDiagnosticsText();
+        NSString *message = [NSString stringWithFormat:@"%@\n\n%@",
+            RUINLocalizedString(@"login.data_protection_message"), diagnostics];
         UIAlertController *alert = [UIAlertController alertControllerWithTitle:RUINLocalizedString(@"login.data_protection_title")
-            message:RUINLocalizedString(@"login.data_protection_message")
+            message:message
             preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"login.copy_diagnostics")
+            style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+                UIPasteboard.generalPasteboard.string = diagnostics;
+            }]];
         [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"common.confirm") style:UIAlertActionStyleDefault handler:nil]];
         [controller presentViewController:alert animated:YES completion:nil];
     }
@@ -182,6 +277,12 @@ static BOOL RUINLoginCallerIsLINE(void *caller) {
     atomic_fetch_add(&LINEIdiomQueries, 1);
     if (!RUINHasLoginProjectionScope()) atomic_fetch_add(&unscopedLINEQueries, 1);
     if (!NSThread.isMainThread) atomic_fetch_add(&backgroundLINEQueries, 1);
+    // Preserve custom/shop theme chat wallpapers where LINE's iPad idiom check
+    // would clear ChatBackgroundView image views during init or theme switching.
+    if (RUINShouldPreserveChatBackgroundTheme(caller, __builtin_frame_address(0))) {
+        atomic_fetch_add(&chatBackgroundPhoneIdiomRequests, 1);
+        return UIUserInterfaceIdiomPhone;
+    }
     // Return the physical phone idiom to main-thread LINE callers only while a
     // chat view controller is visibly on screen so sticker/emoji pickers use
     // phone metrics instead of oversized iPad metrics, without leaking into
@@ -732,6 +833,7 @@ NSDictionary *RUINSecondaryLoginDiagnostics(void) {
         @"hookRetryCount": @(atomic_load(&secondaryLoginRetryCount)),
         @"tabletQueriesFromLINE": @(atomic_load(&appIdiomRequests)),
         @"phoneIdiomRequests": @(atomic_load(&phoneIdiomRequests)),
+        @"chatBackgroundPhoneIdiomRequests": @(atomic_load(&chatBackgroundPhoneIdiomRequests)),
         @"chatInterfaceVisible": @(atomic_load(&chatInterfaceVisibleCount) > 0),
         @"enabledIdiomQueries":@(atomic_load(&enabledIdiomQueries)),
         @"queriesFromLINE":@(atomic_load(&LINEIdiomQueries)),

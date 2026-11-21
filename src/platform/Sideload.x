@@ -20,6 +20,7 @@ static NSDictionary<NSString *, NSURL *> *resolvedGroupURLs;
 static BOOL migrationReady;
 static NSUInteger unsafeStorageCount;
 static NSArray *storageBindingErrors;
+static NSString *signingIdentifierSource = @"not_queried";
 
 static BOOL RUINLineGroupIdentifier(id identifier) {
     return [identifier isKindOfClass:NSString.class] && [@[
@@ -66,13 +67,51 @@ typedef struct __SecTask *RUINSecTaskRef;
 extern RUINSecTaskRef SecTaskCreateFromSelf(CFAllocatorRef allocator) __attribute__((weak_import));
 extern CFTypeRef SecTaskCopyValueForEntitlement(RUINSecTaskRef task, CFStringRef entitlement,
     CFErrorRef *error) __attribute__((weak_import));
+static NSString *const RUINSigningIdentifierSourceUnavailable = @"unavailable";
+static NSString *const RUINSigningIdentifierSourceSecTask = @"sec_task_entitlement";
+static NSString *const RUINSigningIdentifierSourceBundleInfo = @"bundle_info";
+static NSString *const RUINSigningIdentifierSourceProvision = @"embedded_mobileprovision";
+
+static NSDictionary *RUINProvisioningEntitlements(void) {
+    NSURL *url = [NSBundle.mainBundle.bundleURL URLByAppendingPathComponent:@"embedded.mobileprovision"];
+    NSData *data = [NSData dataWithContentsOfURL:url];
+    if (!data.length || data.length > 1024*1024) return nil;
+    NSData *start = [@"<plist" dataUsingEncoding:NSUTF8StringEncoding];
+    NSData *end = [@"</plist>" dataUsingEncoding:NSUTF8StringEncoding];
+    NSRange left = [data rangeOfData:start options:0 range:NSMakeRange(0,data.length)];
+    if (left.location == NSNotFound) return nil;
+    NSRange right = [data rangeOfData:end options:0 range:NSMakeRange(left.location,data.length-left.location)];
+    if (right.location == NSNotFound) return nil;
+    NSData *plist = [data subdataWithRange:NSMakeRange(left.location,NSMaxRange(right)-left.location)];
+    id profile = [NSPropertyListSerialization propertyListWithData:plist options:NSPropertyListImmutable format:NULL error:NULL];
+    id entitlements = [profile isKindOfClass:NSDictionary.class] ? profile[@"Entitlements"] : nil;
+    return [entitlements isKindOfClass:NSDictionary.class] ? entitlements : nil;
+}
+
 static NSString *RUINSandboxSigningIdentifier(void) {
-    if (!SecTaskCreateFromSelf || !SecTaskCopyValueForEntitlement) return nil;
-    RUINSecTaskRef task = SecTaskCreateFromSelf(NULL);
-    if (!task) return nil;
-    id identifier = CFBridgingRelease(SecTaskCopyValueForEntitlement(task, CFSTR("application-identifier"), NULL));
-    CFRelease(task);
-    return [identifier isKindOfClass:NSString.class] ? identifier : nil;
+    if (SecTaskCreateFromSelf && SecTaskCopyValueForEntitlement) {
+        RUINSecTaskRef task = SecTaskCreateFromSelf(NULL);
+        if (task) {
+            id identifier = CFBridgingRelease(SecTaskCopyValueForEntitlement(task, CFSTR("application-identifier"), NULL));
+            CFRelease(task);
+            if ([identifier isKindOfClass:NSString.class] && [identifier length]) {
+                signingIdentifierSource = RUINSigningIdentifierSourceSecTask;
+                return identifier;
+            }
+        }
+    }
+    id infoIdentifier = RUINActualMainBundleInfo()[@"RUINSigningApplicationIdentifier"];
+    if ([infoIdentifier isKindOfClass:NSString.class] && [infoIdentifier length]) {
+        signingIdentifierSource = RUINSigningIdentifierSourceBundleInfo;
+        return infoIdentifier;
+    }
+    id provisioned = RUINProvisioningEntitlements()[@"application-identifier"];
+    if ([provisioned isKindOfClass:NSString.class] && [provisioned length]) {
+        signingIdentifierSource = RUINSigningIdentifierSourceProvision;
+        return provisioned;
+    }
+    signingIdentifierSource = RUINSigningIdentifierSourceUnavailable;
+    return nil;
 }
 
 static NSArray<NSString *> *RUINOriginalGroups(void) {
@@ -81,24 +120,14 @@ static NSArray<NSString *> *RUINOriginalGroups(void) {
 }
 
 static NSArray *RUINProfileGroups(void) {
-    NSURL *url = [NSBundle.mainBundle.bundleURL URLByAppendingPathComponent:@"embedded.mobileprovision"];
-    NSData *data = [NSData dataWithContentsOfURL:url];
-    if (!data.length || data.length > 1024*1024) return @[];
-    NSData *start = [@"<plist" dataUsingEncoding:NSUTF8StringEncoding];
-    NSData *end = [@"</plist>" dataUsingEncoding:NSUTF8StringEncoding];
-    NSRange left = [data rangeOfData:start options:0 range:NSMakeRange(0,data.length)];
-    if (left.location == NSNotFound) return @[];
-    NSRange right = [data rangeOfData:end options:0 range:NSMakeRange(left.location,data.length-left.location)];
-    if (right.location == NSNotFound) return @[];
-    NSData *plist = [data subdataWithRange:NSMakeRange(left.location,NSMaxRange(right)-left.location)];
-    id profile = [NSPropertyListSerialization propertyListWithData:plist options:NSPropertyListImmutable format:NULL error:NULL];
-    id entitlements = [profile isKindOfClass:NSDictionary.class] ? profile[@"Entitlements"] : nil;
-    id groups = [entitlements isKindOfClass:NSDictionary.class] ? entitlements[@"com.apple.security.application-groups"] : nil;
+    id groups = RUINProvisioningEntitlements()[@"com.apple.security.application-groups"];
     return [groups isKindOfClass:NSArray.class] ? groups : @[];
 }
 
 static void RUINPrepareStorageBindings(NSDictionary *requestedMap) {
     RUIN_PROFILE_BEGIN("sideload.prepare_storage");
+    unsafeStorageCount = 0;
+    storageBindingErrors = nil;
     NSFileManager *manager = NSFileManager.defaultManager;
     NSURL *support = [manager URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask].firstObject;
     if (!support) { unsafeStorageCount++; RUIN_PROFILE_END(RUINProfileStatusFailed); return; }
@@ -223,16 +252,17 @@ static void RUINPrepareStorageBindings(NSDictionary *requestedMap) {
 %end
 
 void RUINInstallCompatibility(void) {
-    if (installed) return;
+    if (installed && migrationReady) return;
     // Generic injectors need not supply RUIN's optional signing metadata.
-    // Identity may not resolve in this dylib's early constructor. Leave the
-    // install token available for a later constructor or login preflight.
-    RUINInstallBundleIdentity();
-    NSString *status = RUINBundleIdentityDiagnostics()[@"status"];
-    if (![@[@"installed", @"already_original"] containsObject:status]) return;
-    if (!RUINTargetMetadataMatchesInfo(NSBundle.mainBundle.infoDictionary)) return;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
+    // Identity may not resolve in this dylib's early constructor. Keep hook
+    // installation one-time while allowing storage preparation to retry.
+    @synchronized (NSProcessInfo.processInfo) {
+        if (installed && migrationReady) return;
+        RUINInstallBundleIdentity();
+        NSString *status = RUINBundleIdentityDiagnostics()[@"status"];
+        if (![@[@"installed", @"already_original"] containsObject:status]) return;
+        if (!RUINTargetMetadataMatchesInfo(NSBundle.mainBundle.infoDictionary)) return;
+
         NSDictionary *info = RUINActualMainBundleInfo();
         id mapping = info[@"RUINAppGroupMap"];
         if (![mapping isKindOfClass:NSDictionary.class]) mapping = @{};
@@ -241,24 +271,32 @@ void RUINInstallCompatibility(void) {
             if ([key isKindOfClass:NSString.class] && [mapping[key] isKindOfClass:NSString.class] && [mapping[key] length])
                 validated[key] = mapping[key];
         }
-        RUINPrepareStorageBindings(validated);
-        Method method = class_getInstanceMethod(NSFileManager.class,
-            @selector(containerURLForSecurityApplicationGroupIdentifier:));
-        if (!method || strcmp(method_getTypeEncoding(method), "@24@0:8@16")) return;
-        %init(RUINAppGroupMapping);
-        installed = YES;
-        migrationReady = !unsafeStorageCount && resolvedGroupURLs.count == RUINOriginalGroups().count;
-        Method suite = class_getInstanceMethod(NSUserDefaults.class, @selector(initWithSuiteName:));
-        if (groupMap.count && suite && !strcmp(method_getTypeEncoding(suite), "@24@0:8@16")) {
-            %init(RUINPreferencesSuiteMapping);
-            suitesInstalled = YES;
+        if (!migrationReady) {
+            RUINPrepareStorageBindings(validated);
+            migrationReady = !unsafeStorageCount && resolvedGroupURLs.count == RUINOriginalGroups().count;
+        }
+        static BOOL hooksInstalled = NO;
+        if (!hooksInstalled) {
+            Method method = class_getInstanceMethod(NSFileManager.class,
+                @selector(containerURLForSecurityApplicationGroupIdentifier:));
+            if (!method || strcmp(method_getTypeEncoding(method), "@24@0:8@16")) return;
+            %init(RUINAppGroupMapping);
+            hooksInstalled = YES;
+            installed = YES;
+        }
+        if (!suitesInstalled) {
+            Method suite = class_getInstanceMethod(NSUserDefaults.class, @selector(initWithSuiteName:));
+            if (groupMap.count && suite && !strcmp(method_getTypeEncoding(suite), "@24@0:8@16")) {
+                %init(RUINPreferencesSuiteMapping);
+                suitesInstalled = YES;
+            }
         }
         // A missing domain API must not disable the existing suite-init mapping.
-        if (suitesInstalled && RUINPreferencesDomainMethodsMatch(NSUserDefaults.class)) {
+        if (suitesInstalled && !preferenceDomainsInstalled && RUINPreferencesDomainMethodsMatch(NSUserDefaults.class)) {
             %init(RUINPreferencesDomainMapping);
             preferenceDomainsInstalled = YES;
         }
-    });
+    }
 }
 #endif
 
@@ -271,7 +309,8 @@ NSDictionary *RUINCompatibilityDiagnostics(void) {
              @"appGroupPreferencesDomainMappingInstalled": @(preferenceDomainsInstalled),
              @"mappedPreferencesRequests": @(atomic_load(&mappedSuiteRequests)),
              @"storageMigrationReady":@(migrationReady), @"unsafeStorageBindings":@(unsafeStorageCount),
-             @"resolvedStorageNamespaces":@(resolvedGroupURLs.count), @"storageBindingErrors":storageBindingErrors ?: @[]};
+             @"resolvedStorageNamespaces":@(resolvedGroupURLs.count), @"storageBindingErrors":storageBindingErrors ?: @[],
+             @"signingIdentifierSource":signingIdentifierSource ?: @"not_queried"};
 }
 
 BOOL RUINStorageMigrationReady(void) { return migrationReady; }

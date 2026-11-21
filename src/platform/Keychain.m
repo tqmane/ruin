@@ -33,6 +33,11 @@ static atomic_uint_fast64_t mappedQueries;
 static BOOL compatibilityReady;
 static BOOL namespaceBindingPersisted;
 static NSString *keychainBindingStatus = @"NotAttempted";
+static OSStatus lastDefaultProbeStatus = errSecNotAvailable;
+static OSStatus lastAppGroupProbeStatus = errSecNotAvailable;
+static OSStatus lastSharedGroupProbeStatus = errSecNotAvailable;
+static OSStatus lastBindingLoadStatus = errSecNotAvailable;
+static OSStatus lastBindingSaveStatus = errSecNotAvailable;
 
 typedef NS_ENUM(NSInteger, RUINGroupPermission) {
     RUINGroupPermissionUnknown = 0,
@@ -297,6 +302,7 @@ static NSString *RUINDefaultAccessGroupWithOperations(RUINKeychainAddOperation a
 
     CFTypeRef result = NULL;
     OSStatus addStatus = add((__bridge CFDictionaryRef)probe, &result);
+    lastDefaultProbeStatus = addStatus;
     OSStatus deleteStatus = errSecNotAvailable;
     NSString *group = nil;
     @try {
@@ -346,15 +352,23 @@ static NSDictionary *RUINLoadNamespaceBinding(NSString *group, OSStatus *status)
 static BOOL RUINSaveNamespaceBinding(NSString *group, NSDictionary *mapping) {
     NSData *data = [NSPropertyListSerialization dataWithPropertyList:@{@"version":@1,@"groups":mapping}
         format:NSPropertyListBinaryFormat_v1_0 options:0 error:NULL];
-    if (!data) return NO;
-    NSDictionary *item = @{(__bridge id)kSecClass:(__bridge id)kSecClassGenericPassword,
+    if (!data) { lastBindingSaveStatus = errSecParam; return NO; }
+    NSDictionary *query = @{(__bridge id)kSecClass:(__bridge id)kSecClassGenericPassword,
         (__bridge id)kSecAttrService:@"com.tqmane.ruin.keychain-namespace",
-        (__bridge id)kSecAttrAccount:@"line-api-groups-v1",(__bridge id)kSecAttrAccessGroup:group,
-        (__bridge id)kSecValueData:data,
-        (__bridge id)kSecAttrAccessible:(__bridge id)kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly};
-    // Only RUIN's non-secret namespace metadata is created; existing bindings
-    // and all LINE credentials/keys are left untouched.
-    return SecItemAdd((__bridge CFDictionaryRef)item,NULL) == errSecSuccess;
+        (__bridge id)kSecAttrAccount:@"line-api-groups-v1",(__bridge id)kSecAttrAccessGroup:group};
+    NSMutableDictionary *item = [query mutableCopy];
+    item[(__bridge id)kSecValueData] = data;
+    item[(__bridge id)kSecAttrAccessible] = (__bridge id)kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly;
+    // Only RUIN's non-secret namespace metadata is created/updated; all LINE
+    // credentials and keys are left untouched.
+    OSStatus status = SecItemAdd((__bridge CFDictionaryRef)item, NULL);
+    if (status == errSecDuplicateItem) {
+        NSDictionary *update = @{(__bridge id)kSecValueData:data,
+            (__bridge id)kSecAttrAccessible:(__bridge id)kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly};
+        status = SecItemUpdate((__bridge CFDictionaryRef)query, (__bridge CFDictionaryRef)update);
+    }
+    lastBindingSaveStatus = status;
+    return status == errSecSuccess;
 }
 
 static RUINGroupPermission RUINProbeAccessGroupPermission(NSString *group) {
@@ -372,6 +386,8 @@ static RUINGroupPermission RUINProbeAccessGroupPermission(NSString *group) {
     // A failed lookup cannot distinguish an empty group from an inaccessible
     // one on every OS. An isolated add/delete proves the actual permission.
     OSStatus status = SecItemAdd((__bridge CFDictionaryRef)attributes, NULL);
+    if ([group isEqualToString:RUINOldAppAccessGroup]) lastAppGroupProbeStatus = status;
+    else if ([group isEqualToString:RUINOldSharedAccessGroup]) lastSharedGroupProbeStatus = status;
     if (status == errSecSuccess) {
         OSStatus cleanup = SecItemDelete((__bridge CFDictionaryRef)query);
         return cleanup == errSecSuccess || cleanup == errSecItemNotFound ? RUINGroupPermissionAllowed : RUINGroupPermissionUnknown;
@@ -487,6 +503,11 @@ void RUINInstallKeychainCompatibility(void) {
             NSString *bindingGroup = mapping[RUINOldSharedAccessGroup] ?: RUINOldSharedAccessGroup;
             OSStatus bindingStatus = errSecNotAvailable;
             NSDictionary *saved = RUINLoadNamespaceBinding(bindingGroup,&bindingStatus);
+            lastBindingLoadStatus = bindingStatus;
+            if (bindingStatus == errSecDecode) {
+                saved = nil;
+                bindingStatus = errSecItemNotFound;
+            }
             if (bindingStatus != errSecSuccess && bindingStatus != errSecItemNotFound) {
                 keychainBindingStatus = @"NamespaceBindingUnavailable";
                 RUIN_PROFILE_END(RUINProfileStatusFailed);
@@ -531,7 +552,12 @@ NSDictionary *RUINKeychainDiagnostics(void) {
     return @{@"mappedKeychainQueries": @(atomic_load_explicit(&mappedQueries, memory_order_relaxed)),
         @"accessGroupMappingCount":@(accessGroupMap.count), @"ready":@(compatibilityReady),
         @"namespaceBindingPersisted":@(namespaceBindingPersisted),
-        @"bindingStatus":keychainBindingStatus};
+        @"bindingStatus":keychainBindingStatus,
+        @"lastDefaultProbeStatus":@(lastDefaultProbeStatus),
+        @"lastAppGroupProbeStatus":@(lastAppGroupProbeStatus),
+        @"lastSharedGroupProbeStatus":@(lastSharedGroupProbeStatus),
+        @"lastBindingLoadStatus":@(lastBindingLoadStatus),
+        @"lastBindingSaveStatus":@(lastBindingSaveStatus)};
 }
 
 BOOL RUINKeychainCompatibilityReady(void) { return compatibilityReady; }

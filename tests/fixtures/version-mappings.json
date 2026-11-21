@@ -286,6 +286,16 @@
         "witnessTableVA" : "0x10bee1590"
       },
       "themes" : {
+        "chatBackgroundIdiom" : {
+          "anchors" : [
+
+          ],
+          "idiomHelperReturnPC" : null,
+          "status" : "unsupported",
+          "wipeReturnPCs" : [
+
+          ]
+        },
         "featureAddresses" : {
           "applyObserverMethodVA" : "0x105733ce8",
           "defaultsFreezeReplacementVA" : "0x128c18",
@@ -1397,6 +1407,46 @@
         "witnessTableVA" : "0x10c123698"
       },
       "themes" : {
+        "chatBackgroundIdiom" : {
+          "anchors" : [
+            {
+              "address" : "0x106fc4b64",
+              "wordCount" : 4,
+              "words" : [
+                "0xaa0003f3",
+                "0x949b625e",
+                "0x97ffcb5e",
+                "0xf100069f"
+              ]
+            },
+            {
+              "address" : "0x104349d38",
+              "wordCount" : 4,
+              "words" : [
+                "0x96f3046c",
+                "0xaa0003f4",
+                "0x94b1eb82",
+                "0x36000480"
+              ]
+            },
+            {
+              "address" : "0x10026860c",
+              "wordCount" : 4,
+              "words" : [
+                "0x97f68a37",
+                "0xaa0003f4",
+                "0x95b5714d",
+                "0x36000260"
+              ]
+            }
+          ],
+          "idiomHelperReturnPC" : "0x106fc4b6c",
+          "status" : "verified",
+          "wipeReturnPCs" : [
+            "0x104349d44",
+            "0x100268618"
+          ]
+        },
         "featureAddresses" : {
           "applyObserverMethodVA" : null,
           "defaultsFreezeReplacementVA" : null,

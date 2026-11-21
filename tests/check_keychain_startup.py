@@ -17,7 +17,7 @@ fixture = r'''
 #include <stdio.h>
 static NSString *const appGroup = @"FIXTURE.jp.naver.line";
 static NSString *const sharedGroup = @"FIXTURE.com.linecorp.trident.shared";
-static BOOL locked, persistFails, nativeAllowed, sharedAllowed, identityReady = YES;
+static BOOL locked, persistFails, nativeAllowed, sharedAllowed, identityReady = YES, corruptBinding;
 static NSUInteger adds, deletes, saves, rebinds;
 static NSDictionary *binding;
 static OSStatus Add(CFDictionaryRef attrs, CFTypeRef *result) {
@@ -51,6 +51,7 @@ static RUINGroupPermission RUINProbeAccessGroupPermission(NSString *group) {
 }
 static NSDictionary *RUINLoadNamespaceBinding(NSString *group, OSStatus *status) {
     assert([group isEqual:appGroup] || [group isEqual:sharedGroup]);
+    if (corruptBinding) { corruptBinding = NO; *status = errSecDecode; return nil; }
     *status=binding ? errSecSuccess : errSecItemNotFound;return binding;
 }
 static BOOL RUINSaveNamespaceBinding(NSString *group, NSDictionary *mapping) {
@@ -82,6 +83,7 @@ int main(int argc,const char **argv) { @autoreleasepool {
     locked=[mode isEqual:@"locked"];
     persistFails=[mode isEqual:@"persist-failed"];
     identityReady=![mode isEqual:@"early-identity"];
+    corruptBinding=[mode isEqual:@"decode-recovery"];
     if ([mode isEqual:@"foreign-binding"]) binding=@{@"version":@1,@"groups":@{RUINOldAppAccessGroup:@"OTHER.account",RUINOldSharedAccessGroup:@"OTHER.shared"}};
     RUINInstallKeychainCompatibility();
     if (locked || persistFails || !identityReady) {
@@ -102,6 +104,10 @@ int main(int argc,const char **argv) { @autoreleasepool {
         RUINInstallKeychainCompatibility();
         assert(adds==priorAdds && rebinds==priorRebinds);
     }
+    NSDictionary *diag = RUINKeychainDiagnostics();
+    assert(diag[@"lastDefaultProbeStatus"] && diag[@"lastAppGroupProbeStatus"] &&
+           diag[@"lastSharedGroupProbeStatus"] && diag[@"lastBindingLoadStatus"] &&
+           diag[@"lastBindingSaveStatus"]);
     assert(deletes<=adds);printf("PASS production keychain startup: %s\n",argv[1]);
 }return 0;}
 '''
@@ -111,5 +117,5 @@ with tempfile.TemporaryDirectory(prefix='ruin-keychain-startup-') as tmp:
     includes=[arg for folder in [*sorted((ROOT/'src').iterdir()),ROOT/'vendor/fishhook'] if folder.is_dir() for arg in ['-I',str(folder)]]
     subprocess.run(['xcrun','--sdk','macosx','clang','-DRUIN_HOST_CHECK=1','-fobjc-arc','-fblocks','-Wall','-Wextra','-Werror','-Wno-unused-function',*includes,str(m),*map(str,common),'-framework','Foundation','-framework','Security','-o',str(tmp/'check')],check=True)
     subprocess.run(['codesign','--force','--sign','-',str(tmp/'check')],check=True)
-    for scenario in ['default-only','shared','native','lc-owned','locked','persist-failed','early-identity','foreign-binding']:
+    for scenario in ['default-only','shared','native','lc-owned','locked','persist-failed','early-identity','decode-recovery','foreign-binding']:
         subprocess.run([str(tmp/'check'),scenario],check=True,timeout=10)

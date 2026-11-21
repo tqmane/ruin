@@ -64,8 +64,10 @@ static NSDictionary *RUINBundleIdentityDiagnostics(void) {
 static NSDictionary *RUINActualMainBundleInfo(void) { return @{@"RUINAppGroupMap":requested}; }
 // Only the storage-resolution and Logos-install boundaries are counted doubles.
 // Real ownership/UUID/ABI policies remain covered by the existing host checks.
+static BOOL failPrepare;
 static void RUINPrepareStorageBindings(NSDictionary *map) {
     preparations++; assert([map isEqual:requested]); groupMap = map;
+    unsafeStorageCount = failPrepare ? 1 : 0;
     NSMutableDictionary *urls = [NSMutableDictionary dictionary];
     for (NSString *name in RUINOriginalGroups()) urls[name] = NSNull.null;
     resolvedGroupURLs = urls;
@@ -85,14 +87,18 @@ int main(int argc, const char **argv) { @autoreleasepool {
     RUINInstallCompatibility(); // Identity is ready; logical metadata is not.
     assert(identityCalls == 2 && !installed && !preparations && !migrationReady);
     metadataReady = YES;
-    RUINInstallCompatibility(); // A later constructor/login preflight may now install.
-    assert(identityCalls == 3 && installed && migrationReady && preparations == 1 && groupHooks == 1);
+    failPrepare = YES;
+    RUINInstallCompatibility(); // First storage attempt fails; hooks install once, storage remains retryable.
+    assert(identityCalls == 3 && installed && !migrationReady && preparations == 1 && groupHooks == 1);
+    failPrepare = NO;
+    RUINInstallCompatibility(); // Retry prepares storage without re-running group hooks.
+    assert(identityCalls == 4 && installed && migrationReady && preparations == 2 && groupHooks == 1);
     assert(suitesInstalled == (requested.count != 0));
     assert(preferenceDomainsInstalled == suitesInstalled);
     assert(suiteHooks == (requested.count ? 1 : 0) && domainHooks == suiteHooks);
     for (NSUInteger i = 0; i < 100; i++) RUINInstallCompatibility();
-    assert(identityCalls == 3 && preparations == 1 && groupHooks == 1);
-    puts("PASS storage installer retries identity/metadata misses; installs once; empty maps keep native preference domains");
+    assert(identityCalls == 4 && preparations == 2 && groupHooks == 1);
+    puts("PASS storage installer retries identity/metadata and storage misses; installs hooks once; empty maps keep native preference domains");
 } return 0; }
 '''
 

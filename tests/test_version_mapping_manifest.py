@@ -69,6 +69,11 @@ class VersionMappingManifestTests(unittest.TestCase):
         self.assertEqual(eligibility["shopSchemeHandlerReturnPCs"], ["0x1003acd98", "0x1003acf20"])
         self.assertEqual(eligibility["nvSchemeReturnPC"], "0x1003e9a8c")
         self.assertGreater(len(eligibility["anchors"]), 0)
+        chat_bg_idiom = mapping["themes"]["chatBackgroundIdiom"]
+        self.assertEqual(chat_bg_idiom["status"], "verified")
+        self.assertEqual(chat_bg_idiom["idiomHelperReturnPC"], "0x106fc4b6c")
+        self.assertEqual(chat_bg_idiom["wipeReturnPCs"], ["0x104349d44", "0x100268618"])
+        self.assertGreater(len(chat_bg_idiom["anchors"]), 0)
         self.assertEqual(mapping["messaging"]["unsendOperation"]["lookupStatus"], "verified")
         self.assertEqual(len(mapping["messaging"]["unsendOperation"]["orderedLookupReturnAddresses"]), 6)
         self.assertEqual(mapping["messaging"]["readUntilABIStatus"], "verified")
@@ -81,6 +86,11 @@ class VersionMappingManifestTests(unittest.TestCase):
         self.assertEqual(eligibility["nativeReadAdapterStatus"], "verified")
         self.assertEqual(eligibility["shopSchemeScopeStatus"], "verified")
         self.assertIsNone(eligibility["nvSchemeReturnPC"])
+        chat_bg_idiom = mapping["themes"]["chatBackgroundIdiom"]
+        self.assertEqual(chat_bg_idiom["status"], "unsupported")
+        self.assertIsNone(chat_bg_idiom["idiomHelperReturnPC"])
+        self.assertEqual(chat_bg_idiom["wipeReturnPCs"], [])
+        self.assertEqual(chat_bg_idiom["anchors"], [])
 
 
 if __name__ == "__main__":
