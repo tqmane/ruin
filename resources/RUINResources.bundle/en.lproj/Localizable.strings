@@ -74,6 +74,9 @@
 "login.copy_diagnostics" = "Copy Diagnostics";
 "login.data_protection_message" = "To protect existing chat history and keys, this operation cannot be started. Please check the signing and storage diagnostics.";
 "login.data_protection_title" = "Unable to Proceed to Protect Data";
+"login.reset_keychain_action" = "Reset Keychain Binding";
+"login.reset_keychain_done_message" = "Keychain namespace binding was reset. Please tap Login again.";
+"login.reset_keychain_done_title" = "Keychain Binding Reset";
 "login.method_changed" = "Switched login method";
 "login.method_title" = "Login Method";
 "login.primary_action" = "Standard iPhone login";

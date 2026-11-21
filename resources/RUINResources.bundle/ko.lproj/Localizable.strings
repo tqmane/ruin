@@ -74,6 +74,9 @@
 "login.copy_diagnostics" = "진단 정보 복사";
 "login.data_protection_message" = "기존 대화 기록과 키를 보호하기 위해 작업을 시작할 수 없습니다. 서명 및 저장소 진단 상태를 확인해 주세요.";
 "login.data_protection_title" = "데이터 보호를 위해 시작할 수 없습니다";
+"login.reset_keychain_action" = "키체인 바인딩 재설정";
+"login.reset_keychain_done_message" = "키체인 네임스페이스 바인딩이 재설정되었습니다. 로그인을 다시 눌러 주세요.";
+"login.reset_keychain_done_title" = "키체인 바인딩 재설정 완료";
 "login.method_changed" = "로그인 방법을 전환했습니다";
 "login.method_title" = "로그인 방법";
 "login.primary_action" = "일반 iPhone 로그인";

@@ -74,6 +74,9 @@
 "login.copy_diagnostics" = "複製診斷資訊";
 "login.data_protection_message" = "為保護現有的聊天紀錄與金鑰，無法開始此操作。請檢查簽名及儲存位置的診斷狀態。";
 "login.data_protection_title" = "為保護資料無法開始";
+"login.reset_keychain_action" = "重設鑰匙圈繫結";
+"login.reset_keychain_done_message" = "已重設鑰匙圈命名空間繫結，請再次點擊登入。";
+"login.reset_keychain_done_title" = "鑰匙圈繫結已重設";
 "login.method_changed" = "已切換登入方式";
 "login.method_title" = "登入方式";
 "login.primary_action" = "一般iPhone登入";

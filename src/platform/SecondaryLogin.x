@@ -142,7 +142,7 @@ static NSString *RUINMigrationPreflightDiagnosticsText(void) {
             item[@"namespace"] ?: @"?", item[@"disposition"] ?: @"?", item[@"errorCode"] ?: @"?"]];
     }
     return [NSString stringWithFormat:
-        @"bundle=%@ signSrc=%@\nkeychain=%@ ready=%@ persist=%@ def=%@ app=%@ shared=%@ load=%@ save=%@\nstorageReady=%@ hooks=%@ unsafe=%@ resolved=%@ errs=%@",
+        @"bundle=%@ signSrc=%@\nkeychain=%@ ready=%@ persist=%@ def=%@ app=%@ shared=%@ load=%@ save=%@ reset=%@ reject=%@\nstorageReady=%@ hooks=%@ unsafe=%@ resolved=%@ errs=%@",
         bundle[@"status"] ?: @"?",
         storage[@"signingIdentifierSource"] ?: @"?",
         keychain[@"bindingStatus"] ?: @"?",
@@ -153,6 +153,8 @@ static NSString *RUINMigrationPreflightDiagnosticsText(void) {
         keychain[@"lastSharedGroupProbeStatus"] ?: @"?",
         keychain[@"lastBindingLoadStatus"] ?: @"?",
         keychain[@"lastBindingSaveStatus"] ?: @"?",
+        keychain[@"lastBindingResetStatus"] ?: @"?",
+        keychain[@"lastBindingRejectReason"] ?: @"none",
         storage[@"storageMigrationReady"] ?: @NO,
         storage[@"appGroupMappingInstalled"] ?: @NO,
         storage[@"unsafeStorageBindings"] ?: @0,
@@ -165,12 +167,31 @@ static BOOL RUINMigrationPreflight(UIViewController *controller) {
     RUINInstallKeychainCompatibility();
     if (RUINStorageMigrationReady() && RUINKeychainCompatibilityReady()) return YES;
     if (!controller.presentedViewController) {
+        NSDictionary *keychain = RUINKeychainDiagnostics() ?: @{};
         NSString *diagnostics = RUINMigrationPreflightDiagnosticsText();
         NSString *message = [NSString stringWithFormat:@"%@\n\n%@",
             RUINLocalizedString(@"login.data_protection_message"), diagnostics];
         UIAlertController *alert = [UIAlertController alertControllerWithTitle:RUINLocalizedString(@"login.data_protection_title")
             message:message
             preferredStyle:UIAlertControllerStyleAlert];
+        if (!RUINKeychainCompatibilityReady() && [keychain[@"canResetBinding"] boolValue]) {
+            __weak UIViewController *weakController = controller;
+            [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"login.reset_keychain_action")
+                style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
+                    BOOL resetReady = RUINResetKeychainNamespaceBinding();
+                    UIViewController *presenter = weakController;
+                    if (!presenter || presenter.presentedViewController) return;
+                    if (resetReady && RUINStorageMigrationReady()) {
+                        UIAlertController *done = [UIAlertController alertControllerWithTitle:RUINLocalizedString(@"login.reset_keychain_done_title")
+                            message:RUINLocalizedString(@"login.reset_keychain_done_message")
+                            preferredStyle:UIAlertControllerStyleAlert];
+                        [done addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"common.confirm") style:UIAlertActionStyleDefault handler:nil]];
+                        [presenter presentViewController:done animated:YES completion:nil];
+                    } else {
+                        RUINMigrationPreflight(presenter);
+                    }
+                }]];
+        }
         [alert addAction:[UIAlertAction actionWithTitle:RUINLocalizedString(@"login.copy_diagnostics")
             style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
                 UIPasteboard.generalPasteboard.string = diagnostics;

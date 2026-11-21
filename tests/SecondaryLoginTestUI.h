@@ -17,7 +17,7 @@ typedef NS_ENUM(NSInteger, UIGestureRecognizerState) {
     UIGestureRecognizerStateRecognized = UIGestureRecognizerStateEnded
 };
 typedef NS_ENUM(NSInteger, UIAlertControllerStyle) { UIAlertControllerStyleActionSheet, UIAlertControllerStyleAlert };
-typedef NS_ENUM(NSInteger, UIAlertActionStyle) { UIAlertActionStyleDefault, UIAlertActionStyleCancel };
+typedef NS_ENUM(NSInteger, UIAlertActionStyle) { UIAlertActionStyleDefault, UIAlertActionStyleCancel, UIAlertActionStyleDestructive };
 typedef NS_ENUM(NSInteger, UISceneActivationState) {
     UISceneActivationStateUnattached, UISceneActivationStateForegroundActive,
     UISceneActivationStateForegroundInactive, UISceneActivationStateBackground
