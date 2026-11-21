@@ -141,6 +141,15 @@ static const RUINInstructionAnchor kNativeMuteSend[] = {
     {0x10a8689c0, 3, {0x5f746e65, 0x7373656d, 0x00656761}}
 };
 
+static const RUINInstructionAnchor kChatBackgroundIdiom[] = {
+    // UIDevice.isPad calls -[UIDevice userInterfaceIdiom] (return PC 0x106fc4b6c).
+    {0x106fc4b64, 4, {0xaa0003f3, 0x949b625e, 0x97ffcb5e, 0xf100069f}},
+    // ChatControllersContainer+ChatTheme clears background image views when isPad && !isDefaultTheme.
+    {0x104349d38, 4, {0x96f3046c, 0xaa0003f4, 0x94b1eb82, 0x36000480}},
+    // ChatBackgroundView builder clears background image views when isPad && !isDefaultTheme.
+    {0x10026860c, 4, {0x97f68a37, 0xaa0003f4, 0x95b5714d, 0x36000260}}
+};
+
 const RUINVersionMapping RUINLINE26170 = {
     .host = {"26.17.0", "2026.1103.1841", "614CED59-07E5-372D-94B2-D4901870C7A0",
         "a3de1677f3140ed076554f642933209db2d41b838d2a28b98ab4a2bdcacf1bd8", RUINMappingStatusUnverified},
@@ -171,7 +180,9 @@ const RUINVersionMapping RUINLINE26170 = {
             kThemeValidation, sizeof(kThemeValidation) / sizeof(*kThemeValidation)},
         .localPolicy = {RUINMappingStatusVerified, 0x10595116c, {0x105955ea8, 0x1059556dc},
             0x1059582a4, kThemeLocalPolicy, sizeof(kThemeLocalPolicy) / sizeof(*kThemeLocalPolicy)},
-        .featureAddresses = {.status = RUINMappingStatusUnsupported}
+        .featureAddresses = {.status = RUINMappingStatusUnsupported},
+        .chatBackgroundIdiom = {RUINMappingStatusVerified, 0x106fc4b6c, {0x104349d44, 0x100268618},
+            kChatBackgroundIdiom, sizeof(kChatBackgroundIdiom) / sizeof(*kChatBackgroundIdiom)}
     },
     .messaging = {
         // This version's cursor comparison runs after server success.

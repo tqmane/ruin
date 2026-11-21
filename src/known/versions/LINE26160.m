@@ -89,7 +89,8 @@ const RUINVersionMapping RUINLINE26160 = {
         .localPolicy = {RUINMappingStatusVerified, 0x1057f9058, {0x1057fdda0, 0x1057fd5d4},
             0x10580019c, kThemeLocalPolicy, sizeof(kThemeLocalPolicy) / sizeof(*kThemeLocalPolicy)},
         .featureAddresses = {RUINMappingStatusVerified, 0xfd0c8, 0x105733ce8,
-            0x128c18, 0xfd688, 0x10579271c}
+            0x128c18, 0xfd688, 0x10579271c},
+        .chatBackgroundIdiom = {.status = RUINMappingStatusUnsupported}
     },
     .messaging = {
         .readBoundary = {RUINMappingStatusVerified, kReadBoundary,

@@ -189,10 +189,15 @@ enum { UIAccessibilityTraitButton = 1, UIAccessibilityTraitNotEnabled = 1 << 8 }
 @end
 @interface UIAlertController : UIViewController
 @property(nonatomic, copy) NSString *title;
+@property(nonatomic, copy) NSString *message;
 @property(nonatomic, strong) NSMutableArray<UIAlertAction *> *actions;
 @property(nonatomic, strong) UIPopoverPresentationController *popoverPresentationController;
 + (instancetype)alertControllerWithTitle:(NSString *)title message:(NSString *)message preferredStyle:(UIAlertControllerStyle)style;
 - (void)addAction:(UIAlertAction *)action;
+@end
+@interface UIPasteboard : NSObject
+@property(nonatomic, copy) NSString *string;
++ (instancetype)generalPasteboard;
 @end
 @interface UIDevice : NSObject
 @property(nonatomic, readonly) UIUserInterfaceIdiom userInterfaceIdiom;

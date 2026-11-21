@@ -216,8 +216,11 @@ static UIUserInterfaceIdiom physicalIdiom, lifecycleIdiom, actionIdiom;
 + (instancetype)actionWithTitle:(NSString *)title style:(UIAlertActionStyle)style handler:(void (^)(UIAlertAction *))handler { UIAlertAction *action = [self new]; action.title = title; action.style = style; action.handler = handler; return action; }
 @end
 @implementation UIAlertController
-+ (instancetype)alertControllerWithTitle:(NSString *)title message:(__unused NSString *)message preferredStyle:(__unused UIAlertControllerStyle)style { UIAlertController *controller = [self new]; controller.title = title; controller.actions = [NSMutableArray array]; controller.popoverPresentationController = [UIPopoverPresentationController new]; return controller; }
++ (instancetype)alertControllerWithTitle:(NSString *)title message:(NSString *)message preferredStyle:(__unused UIAlertControllerStyle)style { UIAlertController *controller = [self new]; controller.title = title; controller.message = message; controller.actions = [NSMutableArray array]; controller.popoverPresentationController = [UIPopoverPresentationController new]; return controller; }
 - (void)addAction:(UIAlertAction *)action { [self.actions addObject:action]; }
+@end
+@implementation UIPasteboard
++ (instancetype)generalPasteboard { static UIPasteboard *pb; if (!pb) pb = [self new]; return pb; }
 @end
 
 // Replace only external Foundation dependencies in this translation unit.
@@ -256,6 +259,18 @@ void RUINInstallCompatibility(void) { storageInstalls++; }
 void RUINInstallKeychainCompatibility(void) { keychainInstalls++; }
 BOOL RUINStorageMigrationReady(void) { return storageReady; }
 BOOL RUINKeychainCompatibilityReady(void) { return keychainReady; }
+NSDictionary *RUINBundleIdentityDiagnostics(void) { return @{@"status": @"installed"}; }
+NSDictionary *RUINCompatibilityDiagnostics(void) {
+    return @{@"storageMigrationReady": @(storageReady), @"appGroupMappingInstalled": @YES,
+        @"unsafeStorageBindings": @(storageReady ? 0 : 1), @"resolvedStorageNamespaces": @5,
+        @"signingIdentifierSource": @"embedded_mobileprovision", @"storageBindingErrors": @[]};
+}
+NSDictionary *RUINKeychainDiagnostics(void) {
+    return @{@"ready": @(keychainReady), @"bindingStatus": keychainReady ? @"RebindReady" : @"NamespaceBindingUnavailable",
+        @"namespaceBindingPersisted": @(keychainReady), @"lastDefaultProbeStatus": @0,
+        @"lastAppGroupProbeStatus": @(-34018), @"lastSharedGroupProbeStatus": @(-34018),
+        @"lastBindingLoadStatus": @(-25300), @"lastBindingSaveStatus": @(keychainReady ? 0 : -25299)};
+}
 
 #define NSUserDefaults RUINSecondaryFixtureDefaults
 #define NSBundle RUINSecondaryFixtureBundle
@@ -712,9 +727,61 @@ int main(int argc, const char **argv) { @autoreleasepool {
 
     for (NSUInteger failure = 0; failure < 2; failure++) {
         storageReady = failure != 0; keychainReady = failure == 0;
+        UIPasteboard.generalPasteboard.string = nil;
         Tap((id)welcome, tap); assert(loginCalls == 1 && welcome.presentedViewController);
+        UIAlertController *preflightAlert = (id)welcome.presentedViewController;
+        assert([preflightAlert.message containsString:@"bundle=installed signSrc=embedded_mobileprovision"]);
+        assert([preflightAlert.message containsString:@"keychain="] && [preflightAlert.message containsString:@"storageReady="]);
+        assert(preflightAlert.actions.count == 2 && preflightAlert.actions[0].handler);
+        preflightAlert.actions[0].handler(preflightAlert.actions[0]);
+        assert([UIPasteboard.generalPasteboard.string containsString:@"signSrc=embedded_mobileprovision"]);
         welcome.presentedViewController = nil;
     }
+    const RUINVersionMapping *mapping17 = RUINMappingForInfo(@{
+        @"CFBundleIdentifier": @"jp.naver.line",
+        @"CFBundleShortVersionString": @"26.17.0",
+        @"CFBundleVersion": @"2026.1103.1841"
+    });
+    const RUINVersionMapping *mapping16 = RUINMappingForInfo(@{
+        @"CFBundleIdentifier": @"jp.naver.line",
+        @"CFBundleShortVersionString": @"26.16.0",
+        @"CFBundleVersion": @"2026.1006.1718"
+    });
+    assert(mapping17 && mapping17->themes.chatBackgroundIdiom.status == RUINMappingStatusVerified);
+    assert(RUINThemeChatBackgroundIdiomWipeMatches(&mapping17->themes.chatBackgroundIdiom, 0x4000, 0x106fc8b6c, 0x10434dd44));
+    assert(RUINThemeChatBackgroundIdiomWipeMatches(&mapping17->themes.chatBackgroundIdiom, 0x4000, 0x106fc8b6c, 0x10026c618));
+    assert(!RUINThemeChatBackgroundIdiomWipeMatches(&mapping17->themes.chatBackgroundIdiom, 0x4000, 0x106fc8b6c, 0x10434dd48));
+    assert(!RUINThemeChatBackgroundIdiomWipeMatches(&mapping17->themes.chatBackgroundIdiom, 0x4000, 0x106fc8b70, 0x10434dd44));
+    assert(mapping16 && mapping16->themes.chatBackgroundIdiom.status == RUINMappingStatusUnsupported);
+    assert(!RUINThemeChatBackgroundIdiomWipeMatches(&mapping16->themes.chatBackgroundIdiom, 0, 0x106fc4b6c, 0x104349d44));
+
+    struct { uintptr_t helperFrame[2]; uintptr_t parentFrame[2]; } stackFixture = {
+        {(uintptr_t)stackFixture.parentFrame, 0},
+        {0, (uintptr_t)(mapping17->themes.chatBackgroundIdiom.wipeReturnPCs[0] + 0x4000)}
+    };
+    const RUINThemeChatBackgroundIdiomMapping *savedBgMapping = chatBackgroundIdiomMapping;
+    intptr_t savedBgSlide = chatBackgroundIdiomSlide;
+    int savedBgState = atomic_load(&chatBackgroundIdiomState);
+    chatBackgroundIdiomMapping = &mapping17->themes.chatBackgroundIdiom;
+    chatBackgroundIdiomSlide = 0x4000;
+    atomic_store(&chatBackgroundIdiomState, 1);
+    assert(RUINShouldPreserveChatBackgroundTheme(
+        (void *)(mapping17->themes.chatBackgroundIdiom.idiomHelperReturnPC + 0x4000),
+        stackFixture.helperFrame));
+    stackFixture.parentFrame[1] = (uintptr_t)(mapping17->themes.chatBackgroundIdiom.wipeReturnPCs[1] + 0x4000);
+    assert(RUINShouldPreserveChatBackgroundTheme(
+        (void *)(mapping17->themes.chatBackgroundIdiom.idiomHelperReturnPC + 0x4000),
+        stackFixture.helperFrame));
+    stackFixture.parentFrame[1] = (uintptr_t)(mapping17->themes.chatBackgroundIdiom.wipeReturnPCs[0] + 0x4004);
+    assert(!RUINShouldPreserveChatBackgroundTheme(
+        (void *)(mapping17->themes.chatBackgroundIdiom.idiomHelperReturnPC + 0x4000),
+        stackFixture.helperFrame));
+    assert(!RUINShouldPreserveChatBackgroundTheme(
+        (void *)(mapping17->themes.chatBackgroundIdiom.idiomHelperReturnPC + 0x4004),
+        stackFixture.helperFrame));
+    chatBackgroundIdiomMapping = savedBgMapping;
+    chatBackgroundIdiomSlide = savedBgSlide;
+    atomic_store(&chatBackgroundIdiomState, savedBgState);
     storageReady = keychainReady = YES;
     [defaults setBool:!enabled forKey:RUINSecondaryLoginEnabledKey];
     Tap((id)welcome, tap); assert(loginCalls == 1 && welcome.presentedViewController);

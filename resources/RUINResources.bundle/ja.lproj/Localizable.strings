@@ -71,6 +71,7 @@
 "font.select" = "フォントを選択";
 "font.title" = "カスタムフォント";
 "login.back_to_primary_action" = "通常ログインに戻る";
+"login.copy_diagnostics" = "診断情報をコピー";
 "login.data_protection_message" = "既存のトーク履歴と鍵を保護するため、操作を開始できません。署名および保存先の診断状態を確認してください。";
 "login.data_protection_title" = "データ保護のため処理を開始できません";
 "login.method_changed" = "ログイン方法を切り替えました";

@@ -71,6 +71,7 @@
 "font.select" = "Select Font";
 "font.title" = "Custom Font";
 "login.back_to_primary_action" = "Back to normal login";
+"login.copy_diagnostics" = "Copy Diagnostics";
 "login.data_protection_message" = "To protect existing chat history and keys, this operation cannot be started. Please check the signing and storage diagnostics.";
 "login.data_protection_title" = "Unable to Proceed to Protect Data";
 "login.method_changed" = "Switched login method";

@@ -71,6 +71,7 @@
 "font.select" = "选择字体";
 "font.title" = "自定义字体";
 "login.back_to_primary_action" = "返回普通登录";
+"login.copy_diagnostics" = "复制诊断信息";
 "login.data_protection_message" = "为保护现有的聊天记录与密钥，无法开始此操作。请检查签名及存储位置的诊断状态。";
 "login.data_protection_title" = "为保护数据无法开始";
 "login.method_changed" = "已切换登录方式";

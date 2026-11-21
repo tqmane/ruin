@@ -66,12 +66,26 @@ typedef struct {
 } RUINThemeFeatureAddressesMapping;
 
 typedef struct {
+    RUINMappingStatus status;
+    uintptr_t idiomHelperReturnPC;
+    uintptr_t wipeReturnPCs[2];
+    const RUINInstructionAnchor *anchors;
+    size_t anchorCount;
+} RUINThemeChatBackgroundIdiomMapping;
+
+typedef struct {
     RUINThemeShopNavigationMapping shopNavigation;
     RUINThemeShopEligibilityMapping shopEligibility;
     RUINThemeValidationMapping validation;
     RUINThemeLocalPolicyMapping localPolicy;
     RUINThemeFeatureAddressesMapping featureAddresses;
+    RUINThemeChatBackgroundIdiomMapping chatBackgroundIdiom;
 } RUINThemeMappings;
 
 FOUNDATION_EXPORT BOOL RUINThemeLocalPolicyCallersMatch(const RUINThemeLocalPolicyMapping *mapping,
     const uintptr_t *PCs, size_t count);
+FOUNDATION_EXPORT BOOL RUINThemeChatBackgroundIdiomWipeMatches(
+    const RUINThemeChatBackgroundIdiomMapping *mapping,
+    intptr_t slide,
+    uintptr_t helperReturnPC,
+    uintptr_t wipeReturnPC);

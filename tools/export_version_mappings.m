@@ -104,6 +104,7 @@ static NSDictionary *MappingJSON(const RUINVersionMapping *mapping)
     const RUINThemeValidationMapping *validation = &theme->validation;
     const RUINThemeLocalPolicyMapping *localPolicy = &theme->localPolicy;
     const RUINThemeFeatureAddressesMapping *featureAddresses = &theme->featureAddresses;
+    const RUINThemeChatBackgroundIdiomMapping *chatBackgroundIdiom = &theme->chatBackgroundIdiom;
     const RUINNativeTabMapping *tabs = &mapping->nativeTabs;
     NSMutableArray *refreshReads = [NSMutableArray arrayWithCapacity:5];
     for (size_t i = 0; i < sizeof(tabs->refreshReads) / sizeof(*tabs->refreshReads); i++) {
@@ -187,6 +188,12 @@ static NSDictionary *MappingJSON(const RUINVersionMapping *mapping)
                 @"defaultsFreezeReplacementVA": Address(featureAddresses->status, featureAddresses->defaultsFreezeReplacementVA),
                 @"manualDownloadSourceReplacementVA": Address(featureAddresses->status, featureAddresses->manualDownloadSourceReplacementVA),
                 @"resetMethodVA": Address(featureAddresses->status, featureAddresses->resetMethodVA)
+            },
+            @"chatBackgroundIdiom": @{
+                @"status": Status(chatBackgroundIdiom->status),
+                @"idiomHelperReturnPC": Address(chatBackgroundIdiom->status, chatBackgroundIdiom->idiomHelperReturnPC),
+                @"wipeReturnPCs": AddressArray(chatBackgroundIdiom->status, chatBackgroundIdiom->wipeReturnPCs, 2),
+                @"anchors": AnchorArray(chatBackgroundIdiom->anchors, chatBackgroundIdiom->anchorCount)
             }
         },
         @"messaging": @{
